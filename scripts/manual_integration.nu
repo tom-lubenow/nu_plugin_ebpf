@@ -983,20 +983,20 @@ step 63 "sk_msg pinned sockhash live attach and detach" {
                 error make { msg: $"expected sk_msg dry-run describe to be 'binary', got ($describe)" }
             }
 
-            let helper_dry_run_code = ([
+            let adjust_message_dry_run_code = ([
                 'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx|'
-                '    helper-call "bpf_msg_cork_bytes" $ctx 8'
-                '    helper-call "bpf_msg_apply_bytes" $ctx 8'
-                '    helper-call "bpf_msg_pull_data" $ctx 0 8 0'
-                '    helper-call "bpf_msg_push_data" $ctx 0 8 0'
-                '    helper-call "bpf_msg_pop_data" $ctx 0 8 0'
+                '    adjust-message --cork 8'
+                '    adjust-message --apply 8'
+                '    adjust-message --pull 0 8'
+                '    adjust-message --push 0 8'
+                '    adjust-message --pop 0 8'
                 '    "pass"'
                 '} | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)
 
-            let helper_describe = (run-nu-with-plugin $plugin_bin $helper_dry_run_code | str trim)
-            if $helper_describe != "binary" {
-                error make { msg: $"expected sk_msg helper dry-run describe to be 'binary', got ($helper_describe)" }
+            let adjust_message_describe = (run-nu-with-plugin $plugin_bin $adjust_message_dry_run_code | str trim)
+            if $adjust_message_describe != "binary" {
+                error make { msg: $"expected sk_msg adjust-message dry-run describe to be 'binary', got ($adjust_message_describe)" }
             }
 
             let live_code = ([
