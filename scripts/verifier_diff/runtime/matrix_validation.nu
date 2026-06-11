@@ -887,7 +887,7 @@ def validate-program-callback-btf-kernel-feature-expectations [] {
     }
 }
 
-def validate-fixture-metadata [fixtures] {
+def validate-verifier-feature-expectations [] {
     validate-program-target-kernel-feature-expectations
     validate-program-language-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
@@ -903,6 +903,12 @@ def validate-fixture-metadata [fixtures] {
     validate-program-kfunc-kernel-feature-expectations
     validate-program-kfunc-kernel-feature-detail-expectations
     validate-program-callback-btf-kernel-feature-expectations
+}
+
+def validate-fixture-metadata [--expectations fixtures] {
+    if $expectations {
+        validate-verifier-feature-expectations
+    }
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 

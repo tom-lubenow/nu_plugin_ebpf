@@ -1,3 +1,28 @@
+let SOURCE_BACKED_SYSCALL_TRACEPOINT_FIELD_SPECS = (
+    $FILE_TRACEPOINT_FIELD_SPECS
+    | append $FILE_DATA_TRACEPOINT_FIELD_SPECS
+    | append $SOCKET_TRACEPOINT_FIELD_SPECS
+    | append $PATH_TRACEPOINT_FIELD_SPECS
+    | append $QUOTA_TRACEPOINT_FIELD_SPECS
+    | append $PROCESS_TRACEPOINT_FIELD_SPECS
+    | append $FD_TRACEPOINT_FIELD_SPECS
+    | append $MM_TRACEPOINT_FIELD_SPECS
+    | append $TIME_TRACEPOINT_FIELD_SPECS
+    | append $IO_URING_TRACEPOINT_FIELD_SPECS
+    | append $AIO_TRACEPOINT_FIELD_SPECS
+    | append $IOPRIO_TRACEPOINT_FIELD_SPECS
+    | append $KEY_TRACEPOINT_FIELD_SPECS
+    | append $SIGNAL_TRACEPOINT_FIELD_SPECS
+    | append $LANDLOCK_TRACEPOINT_FIELD_SPECS
+    | append $LSM_SYSCALL_TRACEPOINT_FIELD_SPECS
+    | append $IDENTITY_TRACEPOINT_FIELD_SPECS
+    | append $SCHED_TRACEPOINT_FIELD_SPECS
+    | append $FUTEX_TRACEPOINT_FIELD_SPECS
+    | append $MQUEUE_TRACEPOINT_FIELD_SPECS
+    | append $IPC_TRACEPOINT_FIELD_SPECS
+    | append $X86_TRACEPOINT_FIELD_SPECS
+)
+
 def target-uses-bpf-tracing-prog-type [target] {
     let target_text = ($target | default "")
     [
@@ -832,32 +857,8 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         return $fallback
     }
 
-    let source_backed_syscall_specs = (
-        $FILE_TRACEPOINT_FIELD_SPECS
-        | append $FILE_DATA_TRACEPOINT_FIELD_SPECS
-        | append $SOCKET_TRACEPOINT_FIELD_SPECS
-        | append $PATH_TRACEPOINT_FIELD_SPECS
-        | append $QUOTA_TRACEPOINT_FIELD_SPECS
-        | append $PROCESS_TRACEPOINT_FIELD_SPECS
-        | append $FD_TRACEPOINT_FIELD_SPECS
-        | append $MM_TRACEPOINT_FIELD_SPECS
-        | append $TIME_TRACEPOINT_FIELD_SPECS
-        | append $IO_URING_TRACEPOINT_FIELD_SPECS
-        | append $AIO_TRACEPOINT_FIELD_SPECS
-        | append $IOPRIO_TRACEPOINT_FIELD_SPECS
-        | append $KEY_TRACEPOINT_FIELD_SPECS
-        | append $SIGNAL_TRACEPOINT_FIELD_SPECS
-        | append $LANDLOCK_TRACEPOINT_FIELD_SPECS
-        | append $LSM_SYSCALL_TRACEPOINT_FIELD_SPECS
-        | append $IDENTITY_TRACEPOINT_FIELD_SPECS
-        | append $SCHED_TRACEPOINT_FIELD_SPECS
-        | append $FUTEX_TRACEPOINT_FIELD_SPECS
-        | append $MQUEUE_TRACEPOINT_FIELD_SPECS
-        | append $IPC_TRACEPOINT_FIELD_SPECS
-        | append $X86_TRACEPOINT_FIELD_SPECS
-    )
     let source_backed_feature = (
-        source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs
+        source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $SOURCE_BACKED_SYSCALL_TRACEPOINT_FIELD_SPECS
     )
     if $source_backed_feature != null {
         return $source_backed_feature

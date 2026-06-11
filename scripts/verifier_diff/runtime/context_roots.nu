@@ -3071,6 +3071,10 @@ def bound-context-projection-kernel-features [source: string target context_name
     if not ($source | str contains "let") and not ($source | str contains "mut") {
         return []
     }
+    let has_get_pipeline = (($source | str contains "get") and ($source | str contains "|"))
+    if not $has_get_pipeline and not (source-has-non-context-record-projection? $source $context_names) {
+        return []
+    }
     if not (source-has-context-root-projection? $source $context_names) {
         return []
     }

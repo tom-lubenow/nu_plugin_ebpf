@@ -536,6 +536,9 @@ def program-context-field-kernel-features [source: string target] {
     if not (source-uses-context-variable? $source $context_names) {
         return []
     }
+    if not ($source | str contains ".") and not (($source | str contains "get") and ($source | str contains "|")) {
+        return []
+    }
     let may_have_bound_aliases = (source-may-bind-derived-context-variable? $source)
     mut bound_aliases = []
     mut bound_aliases_loaded = false

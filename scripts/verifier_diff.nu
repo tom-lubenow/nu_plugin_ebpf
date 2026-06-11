@@ -138,7 +138,7 @@ def verifier-diff-main [options] {
     }
 
     if $validate {
-        let _validated_fixtures = (validate-fixture-metadata $FIXTURES)
+        let _validated_fixtures = (validate-fixture-metadata --expectations $FIXTURES)
         print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
         return
     }
