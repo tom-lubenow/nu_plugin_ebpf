@@ -45,12 +45,14 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let reverse = self.named_flags.iter().any(|flag| flag == "reverse");
         let natural = self.named_flags.iter().any(|flag| flag == "natural");
+        let ignore_case = self.named_flags.iter().any(|flag| flag == "ignore-case");
         let values_flag = self.named_flags.iter().any(|flag| flag == "values");
-        if let Some(flag) = self
-            .named_flags
-            .iter()
-            .find(|flag| !matches!(flag.as_str(), "reverse" | "natural" | "values"))
-        {
+        if let Some(flag) = self.named_flags.iter().find(|flag| {
+            !matches!(
+                flag.as_str(),
+                "reverse" | "natural" | "ignore-case" | "values"
+            )
+        }) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "sort --{flag} is not supported for stack-backed numeric lists in eBPF"
             )));
@@ -78,7 +80,8 @@ impl<'a> HirToMirLowering<'a> {
                     "sort --values supports only compile-time record inputs in eBPF".into(),
                 ));
             };
-            let sorted = Self::compile_time_record_sort_values(&record, reverse, natural)?;
+            let sorted =
+                Self::compile_time_record_sort_values(&record, reverse, natural, ignore_case)?;
             self.lower_compile_time_list_transform_result(
                 src_dst,
                 &nu_protocol::Value::record(sorted, Span::unknown()),
@@ -120,6 +123,18 @@ impl<'a> HirToMirLowering<'a> {
             {
                 return Err(CompileError::UnsupportedInstruction(
                     "sort --natural is only supported for numeric lists in eBPF".into(),
+                ));
+            }
+            if ignore_case
+                && keyed.iter().any(|key| {
+                    !matches!(
+                        key,
+                        CompileTimeSortKey::Int(_) | CompileTimeSortKey::Float(_)
+                    )
+                })
+            {
+                return Err(CompileError::UnsupportedInstruction(
+                    "sort --ignore-case is only supported for numeric lists in eBPF".into(),
                 ));
             }
 
@@ -267,6 +282,7 @@ impl<'a> HirToMirLowering<'a> {
         record: &nu_protocol::Record,
         reverse: bool,
         natural: bool,
+        ignore_case: bool,
     ) -> Result<nu_protocol::Record, CompileError> {
         let mut keyed = record
             .iter()
@@ -300,6 +316,19 @@ impl<'a> HirToMirLowering<'a> {
         {
             return Err(CompileError::UnsupportedInstruction(
                 "sort --values --natural is only supported for numeric record values in eBPF"
+                    .into(),
+            ));
+        }
+        if ignore_case
+            && keyed.iter().any(|(key, _, _)| {
+                !matches!(
+                    key,
+                    CompileTimeSortKey::Int(_) | CompileTimeSortKey::Float(_)
+                )
+            })
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "sort --values --ignore-case is only supported for numeric record values in eBPF"
                     .into(),
             ));
         }

@@ -28,18 +28,17 @@ const VERIFIER_DIFF_FIXTURES_2877_2886 = [
         error_contains: "uniq does not accept arguments in eBPF"
     }
     {
-        name: "core-list-sort-rejects-ignore-case-flag"
+        name: "core-list-sort-ignore-case-numeric"
         category: "list-diagnostics"
-        tags: [aggregate list diagnostics reject sort flag]
+        tags: [aggregate list sort ignore-case accept]
         target: "kprobe:vfs_read"
         program: [
             '{|ctx|'
-            '  [1 2] | sort --ignore-case'
+            '  [1 2] | sort --ignore-case | get 0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "sort --ignore-case is not supported for stack-backed numeric lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-all-rejects-scalar-input"

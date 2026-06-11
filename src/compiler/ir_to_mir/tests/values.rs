@@ -30794,6 +30794,34 @@ fn test_lower_sort_natural_on_numeric_list_is_supported() {
 }
 
 #[test]
+fn test_lower_sort_ignore_case_on_numeric_list_is_supported() {
+    let sort_decl = DeclId::new(1236);
+    let get_decl = DeclId::new(1237);
+    let mut hir = make_numeric_list_call_then_get_program(sort_decl, get_decl, None, 0);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
+        panic!("expected sort call");
+    };
+    args.flags.push(b"ignore-case".to_vec());
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort --ignore-case should lower as numeric sort on stack-backed numeric lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --ignore-case followed by get should compile through codegen");
+}
+
+#[test]
 fn test_lower_sort_natural_rejects_compile_time_string_lists() {
     let sort_decl = DeclId::new(1233);
     let hir = HirProgram::new(
@@ -30862,7 +30890,7 @@ fn test_lower_sort_values_on_constant_record_sorts_fields_by_value() {
         ("b", Value::int(4, Span::test_data())),
         ("a", Value::int(3, Span::test_data())),
     ]);
-    let sorted = HirToMirLowering::compile_time_record_sort_values(&record, false, false)
+    let sorted = HirToMirLowering::compile_time_record_sort_values(&record, false, false, false)
         .expect("record values should sort by comparable integer values");
     assert_eq!(
         sorted
