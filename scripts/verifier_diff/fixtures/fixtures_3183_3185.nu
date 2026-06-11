@@ -12,7 +12,7 @@ const VERIFIER_DIFF_FIXTURES_3183_3185 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-runtime-string-is-not-empty"
@@ -27,7 +27,7 @@ const VERIFIER_DIFF_FIXTURES_3183_3185 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-runtime-string-length"
@@ -42,6 +42,6 @@ const VERIFIER_DIFF_FIXTURES_3183_3185 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
 ]

@@ -12,7 +12,7 @@ const VERIFIER_DIFF_FIXTURES_3146_3153 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-ends-with-accepts-runtime-left-literal-right"
@@ -27,7 +27,7 @@ const VERIFIER_DIFF_FIXTURES_3146_3153 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-in-accepts-literal-left-runtime-right"
@@ -42,7 +42,7 @@ const VERIFIER_DIFF_FIXTURES_3146_3153 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-has-accepts-runtime-left-literal-right"
@@ -57,7 +57,7 @@ const VERIFIER_DIFF_FIXTURES_3146_3153 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-starts-with-rejects-literal-left-runtime-right"

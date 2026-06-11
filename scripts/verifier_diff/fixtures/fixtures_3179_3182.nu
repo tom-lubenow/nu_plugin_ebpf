@@ -12,7 +12,7 @@ const VERIFIER_DIFF_FIXTURES_3179_3182 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-length-accepts-runtime-input-utf8-bytes"
@@ -27,7 +27,7 @@ const VERIFIER_DIFF_FIXTURES_3179_3182 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-length-rejects-runtime-input-chars"

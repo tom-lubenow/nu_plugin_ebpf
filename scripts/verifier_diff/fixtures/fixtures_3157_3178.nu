@@ -12,7 +12,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-starts-with-accepts-runtime-input-overlong-prefix"
@@ -27,7 +27,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-ends-with-accepts-runtime-input-empty-suffix"
@@ -42,7 +42,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-ends-with-accepts-runtime-input-overlong-suffix"
@@ -57,7 +57,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-contains-accepts-runtime-input-empty-substring"
@@ -72,7 +72,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-contains-accepts-runtime-input-overlong-substring"
@@ -87,7 +87,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-starts-with-accepts-runtime-left-empty-prefix"
@@ -102,7 +102,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-starts-with-accepts-runtime-left-overlong-prefix"
@@ -117,7 +117,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-ends-with-accepts-runtime-left-empty-suffix"
@@ -132,7 +132,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-ends-with-accepts-runtime-left-overlong-suffix"
@@ -147,7 +147,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-in-accepts-empty-needle-runtime-right"
@@ -162,7 +162,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-in-accepts-overlong-needle-runtime-right"
@@ -177,7 +177,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-has-accepts-runtime-left-empty-needle"
@@ -192,7 +192,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-has-accepts-runtime-left-overlong-needle"
@@ -207,7 +207,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-starts-with-accepts-runtime-left-empty-prefix"
@@ -222,7 +222,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-starts-with-accepts-runtime-left-overlong-prefix"
@@ -237,7 +237,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-ends-with-accepts-runtime-left-empty-suffix"
@@ -252,7 +252,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-ends-with-accepts-runtime-left-overlong-suffix"
@@ -267,7 +267,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-in-accepts-empty-needle-runtime-right"
@@ -282,7 +282,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-in-accepts-overlong-needle-runtime-right"
@@ -297,7 +297,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-has-accepts-runtime-left-empty-needle"
@@ -312,7 +312,7 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-operator-not-has-accepts-runtime-left-overlong-needle"
@@ -327,6 +327,6 @@ const VERIFIER_DIFF_FIXTURES_3157_3178 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
 ]

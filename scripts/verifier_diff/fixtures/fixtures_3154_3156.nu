@@ -12,7 +12,7 @@ const VERIFIER_DIFF_FIXTURES_3154_3156 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-ends-with-accepts-runtime-input-literal-suffix"
@@ -27,7 +27,7 @@ const VERIFIER_DIFF_FIXTURES_3154_3156 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-string-contains-accepts-runtime-input-literal-substring"
@@ -42,6 +42,6 @@ const VERIFIER_DIFF_FIXTURES_3154_3156 = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
 ]
