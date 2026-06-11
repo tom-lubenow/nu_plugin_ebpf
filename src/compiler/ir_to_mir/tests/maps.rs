@@ -4383,6 +4383,36 @@ fn test_map_delete_on_map_in_map_result_lowers_dynamic_inner_delete() {
             )),
         "expected dynamic delete through the inner map template"
     );
+
+    let mut delete_key_and_result = None;
+    let mut pending_delete_key = None;
+    for inst in result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+    {
+        match inst {
+            MirInst::MapDeleteDynamic { inner_map, key, .. } if *inner_map == expected_inner => {
+                pending_delete_key = Some(*key);
+            }
+            MirInst::Copy {
+                dst,
+                src: MirValue::Const(0),
+            } if pending_delete_key.is_some() => {
+                delete_key_and_result = pending_delete_key.map(|key| (key, *dst));
+                break;
+            }
+            _ => {}
+        }
+    }
+    let (key_vreg, result_vreg) =
+        delete_key_and_result.expect("expected dynamic delete result copy");
+    assert_ne!(
+        key_vreg, result_vreg,
+        "dynamic map-delete must not reuse the key vreg for its integer result"
+    );
 }
 
 #[test]
@@ -4504,6 +4534,37 @@ fn test_map_contains_on_map_in_map_result_lowers_dynamic_inner_lookup() {
                 MirInst::MapLookupDynamic { inner_map, .. } if *inner_map == expected_inner
             )),
         "expected dynamic lookup through the inner map template for membership"
+    );
+
+    let mut contains_key_and_result = None;
+    let mut pending_lookup_key = None;
+    for inst in result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+    {
+        match inst {
+            MirInst::MapLookupDynamic { inner_map, key, .. } if *inner_map == expected_inner => {
+                pending_lookup_key = Some(*key);
+            }
+            MirInst::BinOp {
+                dst,
+                op: BinOpKind::Ne,
+                ..
+            } if pending_lookup_key.is_some() => {
+                contains_key_and_result = pending_lookup_key.map(|key| (key, *dst));
+                break;
+            }
+            _ => {}
+        }
+    }
+    let (key_vreg, result_vreg) =
+        contains_key_and_result.expect("expected dynamic contains result comparison");
+    assert_ne!(
+        key_vreg, result_vreg,
+        "dynamic map-contains must not reuse the key vreg for its bool result"
     );
 }
 

@@ -5193,6 +5193,11 @@ impl<'a> HirToMirLowering<'a> {
                         key_reg,
                         "map-delete dynamic map",
                     )?;
+                    let result_vreg = if src_dst_had_value {
+                        self.assign_fresh_vreg(src_dst)
+                    } else {
+                        dst_vreg
+                    };
 
                     self.emit(MirInst::MapDeleteDynamic {
                         map_ptr: map_arg_vreg,
@@ -5200,7 +5205,7 @@ impl<'a> HirToMirLowering<'a> {
                         key: key_vreg,
                     });
                     self.emit(MirInst::Copy {
-                        dst: dst_vreg,
+                        dst: result_vreg,
                         src: MirValue::Const(0),
                     });
                     self.reset_call_result_metadata(src_dst);
@@ -5245,13 +5250,18 @@ impl<'a> HirToMirLowering<'a> {
                             key_reg,
                             "map-delete",
                         )?;
+                        let result_vreg = if src_dst_had_value {
+                            self.assign_fresh_vreg(src_dst)
+                        } else {
+                            dst_vreg
+                        };
 
                         self.emit(MirInst::MapDelete {
                             map: map_ref,
                             key: key_vreg,
                         });
                         self.emit(MirInst::Copy {
-                            dst: dst_vreg,
+                            dst: result_vreg,
                             src: MirValue::Const(0),
                         });
                         self.reset_call_result_metadata(src_dst);
@@ -8321,14 +8331,19 @@ impl<'a> HirToMirLowering<'a> {
             .or(self.pipeline_input_reg)
             .or_else(|| src_dst_had_value.then_some(src_dst));
         let object_vreg = self.local_storage_object_vreg(object_vreg, object_reg);
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
 
         let map_vreg = self.emit_typed_map_fd_load(map_ref.name, map_ref.kind);
         self.emit(MirInst::CallHelper {
-            dst: dst_vreg,
+            dst: result_vreg,
             helper: helper as u32,
             args: vec![MirValue::VReg(map_vreg), MirValue::VReg(object_vreg)],
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
@@ -8602,6 +8617,11 @@ impl<'a> HirToMirLowering<'a> {
 
         let (value_ptr_vreg, value_ty) =
             self.materialize_map_value_probe_pointer(value_reg, stored_value_vreg, CONTEXT)?;
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
 
         let map_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadMapFd {
@@ -8625,12 +8645,12 @@ impl<'a> HirToMirLowering<'a> {
         self.vreg_type_hints.insert(status_vreg, MirType::I64);
 
         self.emit(MirInst::BinOp {
-            dst: dst_vreg,
+            dst: result_vreg,
             op: BinOpKind::Eq,
             lhs: MirValue::VReg(status_vreg),
             rhs: MirValue::Const(0),
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
@@ -8677,6 +8697,11 @@ impl<'a> HirToMirLowering<'a> {
             .or_else(|| src_dst_had_value.then_some(src_dst));
         let key_vreg = self.map_key_vreg_for_named_schema(&map_ref, key_vreg, key_reg, CONTEXT)?;
         let lookup_vreg = self.func.alloc_vreg();
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
 
         self.emit(MirInst::MapLookup {
             dst: lookup_vreg,
@@ -8696,12 +8721,12 @@ impl<'a> HirToMirLowering<'a> {
         };
         self.vreg_type_hints.insert(lookup_vreg, lookup_ty);
         self.emit(MirInst::BinOp {
-            dst: dst_vreg,
+            dst: result_vreg,
             op: BinOpKind::Ne,
             lhs: MirValue::VReg(lookup_vreg),
             rhs: MirValue::Const(0),
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
@@ -8738,6 +8763,11 @@ impl<'a> HirToMirLowering<'a> {
         let key_vreg =
             self.map_key_vreg_for_named_schema(&inner_map, key_vreg, key_reg, CONTEXT)?;
         let lookup_vreg = self.func.alloc_vreg();
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
 
         self.emit(MirInst::MapLookupDynamic {
             dst: lookup_vreg,
@@ -8755,12 +8785,12 @@ impl<'a> HirToMirLowering<'a> {
             },
         );
         self.emit(MirInst::BinOp {
-            dst: dst_vreg,
+            dst: result_vreg,
             op: BinOpKind::Ne,
             lhs: MirValue::VReg(lookup_vreg),
             rhs: MirValue::Const(0),
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
@@ -8794,13 +8824,18 @@ impl<'a> HirToMirLowering<'a> {
             src_dst_had_value,
             map_ref,
         )?;
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
         self.emit(MirInst::BinOp {
-            dst: dst_vreg,
+            dst: result_vreg,
             op: BinOpKind::Ne,
             lhs: MirValue::VReg(lookup_vreg),
             rhs: MirValue::Const(0),
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
@@ -8873,6 +8908,11 @@ impl<'a> HirToMirLowering<'a> {
                         .into(),
                 )
             })?;
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
 
         let helper = self
             .probe_ctx
@@ -8900,12 +8940,12 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(status_vreg, MirType::I64);
         self.emit(MirInst::BinOp {
-            dst: dst_vreg,
+            dst: result_vreg,
             op: BinOpKind::Eq,
             lhs: MirValue::VReg(status_vreg),
             rhs: MirValue::Const(1),
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);
         Ok(())
     }
