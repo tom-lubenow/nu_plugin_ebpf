@@ -4,7 +4,6 @@ const REPO_ROOT = (path self | path dirname | path dirname)
 source ($REPO_ROOT | path join scripts verifier_diff metadata core_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff metadata tracepoint_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff metadata context_features.nu)
-source ($REPO_ROOT | path join scripts verifier_diff metadata expectations.nu)
 
 source ($REPO_ROOT | path join scripts verifier_diff fixtures.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime core.nu)
@@ -138,9 +137,7 @@ def verifier-diff-main [options] {
     }
 
     if $validate {
-        let _validated_fixtures = (validate-fixture-metadata --expectations $FIXTURES)
-        print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
-        return
+        exec nu ($REPO_ROOT | path join scripts verifier_diff_validate.nu)
     }
 
     if $check_host_syscall_tracepoints {
