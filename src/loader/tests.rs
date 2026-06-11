@@ -1544,6 +1544,47 @@ fn test_merge_generic_map_value_semantics_drops_conflicts() {
 }
 
 #[test]
+fn test_merge_generic_map_key_semantics_drops_conflicts() {
+    let shared = MapRef {
+        name: "shared_keys".to_string(),
+        kind: MapKind::Hash,
+    };
+    let unique = MapRef {
+        name: "other_keys".to_string(),
+        kind: MapKind::Hash,
+    };
+    let string_semantics = AnnotatedValueSemantics::Record(vec![(
+        "comm".to_string(),
+        AnnotatedValueSemantics::String {
+            slot_len: 16,
+            content_cap: 8,
+        },
+    )]);
+    let list_semantics = AnnotatedValueSemantics::Record(vec![(
+        "vals".to_string(),
+        AnnotatedValueSemantics::NumericList {
+            max_len: 2,
+            known_len: Some(2),
+        },
+    )]);
+
+    let merged = EbpfState::merge_generic_map_key_semantics(
+        [
+            HashMap::from([
+                (shared.clone(), string_semantics.clone()),
+                (unique.clone(), list_semantics.clone()),
+            ]),
+            HashMap::from([(shared.clone(), string_semantics.clone())]),
+            HashMap::from([(shared.clone(), list_semantics.clone())]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique), Some(&list_semantics));
+    assert!(!merged.contains_key(&shared));
+}
+
+#[test]
 fn test_attach_with_pin_rejects_struct_ops_objects() {
     let state = EbpfState::new();
     let object = EbpfObject::struct_ops("demo", "file", vec![0; 8]).build();

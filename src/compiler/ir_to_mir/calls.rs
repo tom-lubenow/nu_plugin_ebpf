@@ -4695,7 +4695,20 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     self.register_named_map_key_type(&map_ref, &key_ty);
                     if let Some(key_semantics) = key_semantics {
-                        self.register_named_map_key_semantics(&map_ref, &key_semantics);
+                        if self.externally_seeded_map_key_semantics.contains(&map_ref)
+                            && let Some(existing) = self.named_map_key_semantics(&map_ref)
+                        {
+                            if Self::merge_annotated_value_semantics(existing, &key_semantics)
+                                .is_none()
+                            {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "map-define key semantics for '{}' conflicts with pinned map schema",
+                                    map_ref.name
+                                )));
+                            }
+                        } else {
+                            self.register_named_map_key_semantics(&map_ref, &key_semantics);
+                        }
                     }
                 } else if matches!(map_ref.kind, MapKind::HashOfMaps) {
                     return Err(CompileError::UnsupportedInstruction(

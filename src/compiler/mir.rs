@@ -2613,6 +2613,8 @@ pub struct MirTypeHints {
     /// appear as direct LoadCtxField instructions after lowering.
     pub used_ctx_fields: HashSet<CtxField>,
     pub generic_map_key_types: HashMap<MapRef, MirType>,
+    pub generic_map_key_semantics:
+        HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
     /// Generic maps explicitly declared with `map-define`, including map-in-map outers.
     pub declared_generic_maps: HashSet<MapRef>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,

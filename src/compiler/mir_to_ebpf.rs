@@ -34,6 +34,7 @@ use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::{
     BpfHelper, EbpfInsn, EbpfReg, HelperSignature, KfuncSignature, opcode,
 };
+use crate::compiler::ir_to_mir::AnnotatedValueSemantics;
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::lir_integrity::{validate_lir_function, validate_lir_program};
 use crate::compiler::mir::{
@@ -98,6 +99,8 @@ pub struct MirCompileResult {
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Optional typed generic map key schemas keyed by map identity
     pub generic_map_key_types: HashMap<MapRef, MirType>,
+    /// Optional logical semantics for generic map keys with richer layouts
+    pub generic_map_key_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
     /// Optional map-in-map inner template declarations keyed by outer map identity
@@ -130,6 +133,7 @@ impl MirCompileResult {
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
+            generic_map_key_semantics,
             generic_map_max_entries,
             generic_map_inner_templates,
         } = self;
@@ -151,6 +155,7 @@ impl MirCompileResult {
         .with_used_kfuncs(used_kfuncs)
         .with_used_context_fields(used_ctx_fields)
         .with_generic_map_key_types(generic_map_key_types)
+        .with_generic_map_key_semantics(generic_map_key_semantics)
         .with_generic_map_max_entries(generic_map_max_entries)
         .with_generic_map_inner_templates(generic_map_inner_templates)
         .with_readonly_globals(readonly_globals)
@@ -592,6 +597,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
+            generic_map_key_semantics: HashMap::new(),
             generic_map_max_entries: self.generic_map_max_entries,
             generic_map_inner_templates: self.generic_map_inner_templates,
         })
@@ -706,6 +712,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_key_types.clone())
         .unwrap_or_default();
+    let generic_map_key_semantics = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.generic_map_key_semantics.clone())
+        .unwrap_or_default();
     let declared_generic_maps = normalized_type_hints
         .as_ref()
         .map(|hints| hints.declared_generic_maps.clone())
@@ -736,6 +746,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         generic_map_value_types,
     );
     let mut result = compiler.compile()?;
+    result.generic_map_key_semantics = generic_map_key_semantics;
     result.used_ctx_fields.extend(implied_ctx_fields);
     result.readonly_globals = readonly_globals;
     result.data_globals = data_globals;

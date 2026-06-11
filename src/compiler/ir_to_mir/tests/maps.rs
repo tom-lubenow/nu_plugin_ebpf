@@ -4085,6 +4085,7 @@ fn test_map_define_max_entries_registers_capacity() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -4713,6 +4714,7 @@ fn test_external_map_in_map_inner_template_is_preserved() {
         None,
         None,
         None,
+        None,
         Some(&external_inner_templates),
         None,
         None,
@@ -4755,6 +4757,7 @@ fn test_map_define_map_in_map_rejects_conflicting_external_inner_template() {
         &hir,
         None,
         &decl_names,
+        None,
         None,
         None,
         None,
@@ -4858,6 +4861,7 @@ fn test_map_define_graph_root_schema_registers_value_type() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -4898,6 +4902,7 @@ fn test_map_define_rejects_zero_max_entries() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -4919,6 +4924,7 @@ fn test_map_define_rejects_conflicting_external_max_entries() {
         &hir,
         None,
         &decl_names,
+        None,
         None,
         None,
         Some(&external_max_entries),
@@ -4969,6 +4975,7 @@ fn test_map_define_rejects_conflicting_declared_max_entries() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -4988,6 +4995,7 @@ fn test_map_define_rejects_local_storage_max_entries() {
         &hir,
         None,
         &decl_names,
+        None,
         None,
         None,
         None,
@@ -5092,6 +5100,7 @@ fn test_external_key_schema_materializes_record_key() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -5115,6 +5124,114 @@ fn test_external_key_schema_materializes_record_key() {
             pointee: Box::new(key_ty),
             address_space: AddressSpace::Stack,
         })
+    );
+}
+
+#[test]
+fn test_external_key_semantics_preserve_string_record_key() {
+    let map_put_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(map_put_decl, "map-put".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("comm".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("nu".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(123),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String("typed_keys".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("hash".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(42),
+                },
+                HirStmt::Call {
+                    decl_id: map_put_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5), RegId::new(0)],
+                        named: vec![(b"kind".to_vec(), RegId::new(6))],
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let map_ref = MapRef {
+        name: "typed_keys".to_string(),
+        kind: MapKind::Hash,
+    };
+    let (key_ty, key_semantics) = HirToMirLowering::parse_named_map_key_type_spec_with_semantics(
+        "record{comm:string:8,pid:int}",
+    )
+    .expect("record key type should parse");
+    let key_semantics = key_semantics.expect("string field should carry key semantics");
+    let external_key_schema = HashMap::from([(map_ref.clone(), key_ty)]);
+    let external_key_semantics = HashMap::from([(map_ref, key_semantics)]);
+
+    let result = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        Some(&external_key_schema),
+        Some(&external_key_semantics),
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("external record key semantics should lower");
+
+    assert_eq!(result.generic_map_key_types, external_key_schema);
+    assert_eq!(result.generic_map_key_semantics, external_key_semantics);
+    assert_eq!(
+        result.type_hints.generic_map_key_semantics,
+        result.generic_map_key_semantics
     );
 }
 
@@ -5357,6 +5474,7 @@ fn test_map_define_rejects_conflicting_external_key_schema() {
         &decl_names,
         None,
         Some(&external_key_schema),
+        None,
         None,
         None,
         None,

@@ -15416,6 +15416,18 @@ pub(super) fn compile_closure_with_context(
                 })
         })
         .transpose()?;
+    let external_map_key_semantics = pin_group
+        .map(|group| {
+            state
+                .pinned_generic_map_key_semantics(group)
+                .map_err(|e| match e {
+                    LoadError::LockPoisoned => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label("loader state lock poisoned", call_head),
+                    other => LabeledError::new("Failed to attach eBPF probe")
+                        .with_label(other.to_string(), call_head),
+                })
+        })
+        .transpose()?;
     let external_map_value_types = pin_group
         .map(|group| {
             state
@@ -15487,6 +15499,7 @@ pub(super) fn compile_closure_with_context(
         &decl_names,
         Some(&hir_types),
         external_map_key_types.as_ref(),
+        external_map_key_semantics.as_ref(),
         external_map_max_entries.as_ref(),
         external_map_inner_templates.as_ref(),
         external_map_value_types.as_ref(),
@@ -15503,6 +15516,7 @@ pub(super) fn compile_closure_with_context(
         program: mut mir_program,
         mut type_hints,
         generic_map_key_types: _,
+        generic_map_key_semantics: _,
         generic_map_value_types,
         generic_map_max_entries: _,
         generic_map_inner_templates: _,

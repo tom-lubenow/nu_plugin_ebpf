@@ -59,6 +59,7 @@ fn test_emit_ptr_copy_rejects_out_of_range_offsets() {
         None,
         None,
         None,
+        None,
         &user_functions,
         &decl_signatures,
     );
@@ -5050,6 +5051,7 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
         None,
         None,
         None,
+        None,
         &user_functions,
         &decl_signatures,
     );
@@ -5161,7 +5163,7 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
         "expected the loop body to load the projected struct field from the iterated element"
     );
 
-    let (mut program, mut type_hints, _, _, _, _, _, _, _, _) = lowering.finish_with_hints();
+    let (mut program, mut type_hints, _, _, _, _, _, _, _, _, _) = lowering.finish_with_hints();
     optimize_with_ssa_hints(
         &mut program.main,
         None,
