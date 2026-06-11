@@ -6868,6 +6868,25 @@ fn test_struct_ops_object_spec_initializes_integer_list_value_field() {
 }
 
 #[test]
+fn test_struct_ops_object_spec_rejects_pointer_hop_value_field_initializer() {
+    use crate::kernel_btf::TrampolineFieldSelector;
+
+    let path = [
+        TrampolineFieldSelector::Field("f_inode".to_string()),
+        TrampolineFieldSelector::Field("i_ino".to_string()),
+    ];
+    let err = StructOpsObjectSpec::zeroed_from_kernel_btf("demo", "file")
+        .expect("expected zeroed file object spec")
+        .with_value_field_path(&path, StructOpsValueField::Int(7))
+        .expect_err("pointer-hop struct_ops value field should fail");
+
+    assert!(
+        err.to_string().contains("crosses a pointer hop"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_spec_rejects_oversized_string_value_field() {
     use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 

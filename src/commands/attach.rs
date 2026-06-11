@@ -99,7 +99,8 @@ Body forms:
     Nested record values are also supported for by-value substruct members.
     Nested list values are also supported for by-value array members, including
     arrays of records.
-    Pointer-hop field initialization is still rejected.
+    Pointer-hop field initialization is rejected because it would write outside
+    the struct_ops value blob.
 
 Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
