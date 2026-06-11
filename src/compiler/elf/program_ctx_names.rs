@@ -546,6 +546,32 @@ mod tests {
         include_str!("../../../scripts/verifier_diff/metadata/context_features.nu"),
         "\n",
         include_str!("../../../scripts/verifier_diff/metadata/expectations.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations/context_fields.nu"),
+        "\n",
+        include_str!(
+            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_1.nu"
+        ),
+        "\n",
+        include_str!(
+            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_2.nu"
+        ),
+        "\n",
+        include_str!(
+            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_3.nu"
+        ),
+        "\n",
+        include_str!(
+            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_4.nu"
+        ),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_surfaces.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_helpers.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_kfuncs.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_callbacks.nu"),
     );
 
     fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {

@@ -91,6 +91,21 @@ const VERIFIER_DIFF_FIXTURES_1501_1531 = [
         error_contains: "expects bpf_res_spin_lock pointer"
     }
     {
+        name: "source-kfunc-res-spin-unlock-rejects-non-lock-kernel-pointer"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_res_spin_lock pointer"
+    }
+    {
         name: "source-kfunc-res-spin-irqsave-rejects-non-lock-kernel-pointer"
         category: "helper-state"
         tags: [kfunc res-spin-lock irq source reject]
@@ -99,6 +114,22 @@ const VERIFIER_DIFF_FIXTURES_1501_1531 = [
             '{|ctx|'
             '  let flags = "00000000"'
             '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_res_spin_lock pointer"
+    }
+    {
+        name: "source-kfunc-res-spin-irqrestore-rejects-non-lock-kernel-pointer"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
             '  0'
             '}'
         ]

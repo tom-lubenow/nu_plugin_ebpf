@@ -65,6 +65,7 @@ const VERIFIER_DIFF_FIXTURES_0469_0500 = [
             '  helper-call "bpf_get_smp_processor_id"'
             '  helper-call "bpf_get_numa_node_id"'
             '  helper-call "bpf_jiffies64"'
+            '  helper-call "bpf_ktime_get_ns"'
             '  helper-call "bpf_ktime_get_boot_ns"'
             '  helper-call "bpf_ktime_get_tai_ns"'
             '  0'

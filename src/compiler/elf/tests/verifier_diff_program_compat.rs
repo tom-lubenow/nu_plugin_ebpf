@@ -27,6 +27,32 @@ const VERIFIER_DIFF_SOURCE: &str = concat!(
     "\n",
     include_str!("../../../../scripts/verifier_diff/metadata/expectations.nu"),
     "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations/context_fields.nu"),
+    "\n",
+    include_str!(
+        "../../../../scripts/verifier_diff/metadata/expectations/program_context_fields_1.nu"
+    ),
+    "\n",
+    include_str!(
+        "../../../../scripts/verifier_diff/metadata/expectations/program_context_fields_2.nu"
+    ),
+    "\n",
+    include_str!(
+        "../../../../scripts/verifier_diff/metadata/expectations/program_context_fields_3.nu"
+    ),
+    "\n",
+    include_str!(
+        "../../../../scripts/verifier_diff/metadata/expectations/program_context_fields_4.nu"
+    ),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations/program_surfaces.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations/program_helpers.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations/program_kfuncs.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations/program_callbacks.nu"),
+    "\n",
     include_str!("../../../../scripts/verifier_diff/fixtures.nu"),
     "\n",
     include_str!("../../../../scripts/verifier_diff/runtime/core.nu"),
@@ -56,6 +82,15 @@ fn verifier_diff_source_with_fixtures() -> String {
         "scripts/verifier_diff/metadata/tracepoint_features.nu",
         "scripts/verifier_diff/metadata/context_features.nu",
         "scripts/verifier_diff/metadata/expectations.nu",
+        "scripts/verifier_diff/metadata/expectations/context_fields.nu",
+        "scripts/verifier_diff/metadata/expectations/program_context_fields_1.nu",
+        "scripts/verifier_diff/metadata/expectations/program_context_fields_2.nu",
+        "scripts/verifier_diff/metadata/expectations/program_context_fields_3.nu",
+        "scripts/verifier_diff/metadata/expectations/program_context_fields_4.nu",
+        "scripts/verifier_diff/metadata/expectations/program_surfaces.nu",
+        "scripts/verifier_diff/metadata/expectations/program_helpers.nu",
+        "scripts/verifier_diff/metadata/expectations/program_kfuncs.nu",
+        "scripts/verifier_diff/metadata/expectations/program_callbacks.nu",
         "scripts/verifier_diff/fixtures.nu",
     ] {
         let path = manifest_dir.join(relative);
