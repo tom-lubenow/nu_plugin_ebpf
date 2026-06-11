@@ -30788,6 +30788,165 @@ fn test_lower_sort_natural_rejects_compile_time_string_lists() {
 }
 
 #[test]
+fn test_lower_sort_values_on_constant_record_sorts_fields_by_value() {
+    let sort_decl = DeclId::new(1234);
+    let values_decl = DeclId::new(1235);
+    let get_decl = DeclId::new(1236);
+    let record = test_record(vec![
+        ("b", Value::int(4, Span::test_data())),
+        ("a", Value::int(3, Span::test_data())),
+    ]);
+    let sorted = HirToMirLowering::compile_time_record_sort_values(&record, false, false)
+        .expect("record values should sort by comparable integer values");
+    assert_eq!(
+        sorted
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str(),
+                    value
+                        .as_int()
+                        .expect("sorted record values should remain integers"),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![("a", 3), ("b", 4)]
+    );
+
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: sort_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"values".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(2),
+                        val: Box::new(Value::int(0, Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(3)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort --values should lower on compile-time records");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --values on a compile-time record should compile through codegen");
+}
+
+#[test]
+fn test_lower_sort_values_rejects_non_record_inputs() {
+    let sort_decl = DeclId::new(1237);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::int(2, Span::test_data()),
+                                Value::int(1, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::Call {
+                        decl_id: sort_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"values".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sort --values should remain record-only");
+
+    assert!(
+        err.to_string()
+            .contains("sort --values supports only compile-time record inputs"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
     let sort_decl = DeclId::new(125);
     let values = (0..17)

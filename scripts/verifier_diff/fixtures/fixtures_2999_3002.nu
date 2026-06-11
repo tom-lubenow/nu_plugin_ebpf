@@ -13,18 +13,17 @@ const VERIFIER_DIFF_FIXTURES_2999_3002 = [
         kernel: "accept"
     }
     {
-        name: "core-list-sort-rejects-values-flag"
+        name: "core-list-sort-values-record"
         category: "language-core"
-        tags: [list sort diagnostics reject flag]
+        tags: [list sort values accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  {b: 4 a: 3} | sort --values'
+            '  {b: 4 a: 3} | sort --values | values | get 0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "sort --values is not supported for stack-backed numeric lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-split-list-rejects-invalid-split-mode"

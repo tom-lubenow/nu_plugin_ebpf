@@ -45,10 +45,11 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let reverse = self.named_flags.iter().any(|flag| flag == "reverse");
         let natural = self.named_flags.iter().any(|flag| flag == "natural");
+        let values_flag = self.named_flags.iter().any(|flag| flag == "values");
         if let Some(flag) = self
             .named_flags
             .iter()
-            .find(|flag| !matches!(flag.as_str(), "reverse" | "natural"))
+            .find(|flag| !matches!(flag.as_str(), "reverse" | "natural" | "values"))
         {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "sort --{flag} is not supported for stack-backed numeric lists in eBPF"
@@ -64,6 +65,26 @@ impl<'a> HirToMirLowering<'a> {
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
+
+        if values_flag {
+            let Some(record) = input_reg
+                .and_then(|reg| self.get_metadata(reg))
+                .and_then(|meta| match meta.constant_value.as_ref() {
+                    Some(nu_protocol::Value::Record { val, .. }) => Some(val.clone().into_owned()),
+                    _ => None,
+                })
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "sort --values supports only compile-time record inputs in eBPF".into(),
+                ));
+            };
+            let sorted = Self::compile_time_record_sort_values(&record, reverse, natural)?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::record(sorted, Span::unknown()),
+            )?;
+            return Ok(());
+        }
 
         if let Some(mut values) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
@@ -240,6 +261,61 @@ impl<'a> HirToMirLowering<'a> {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);
         }
         Ok(())
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn compile_time_record_sort_values(
+        record: &nu_protocol::Record,
+        reverse: bool,
+        natural: bool,
+    ) -> Result<nu_protocol::Record, CompileError> {
+        let mut keyed = record
+            .iter()
+            .map(|(name, value)| {
+                Self::compile_time_sort_key(value).map(|key| (key, name.clone(), value.clone()))
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "sort --values supports compile-time record values with boolean, integer, finite float, binary, or string values in eBPF"
+                        .into(),
+                )
+            })?;
+        if let Some((first, rest)) = keyed.split_first()
+            && rest
+                .iter()
+                .any(|(key, _, _)| std::mem::discriminant(key) != std::mem::discriminant(&first.0))
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "sort --values requires compile-time record values with one comparable type in eBPF"
+                    .into(),
+            ));
+        }
+        if natural
+            && keyed.iter().any(|(key, _, _)| {
+                !matches!(
+                    key,
+                    CompileTimeSortKey::Int(_) | CompileTimeSortKey::Float(_)
+                )
+            })
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "sort --values --natural is only supported for numeric record values in eBPF"
+                    .into(),
+            ));
+        }
+
+        keyed.sort_by(|(left_key, left_name, _), (right_key, right_name, _)| {
+            let ord = left_key
+                .cmp(right_key)
+                .then_with(|| left_name.cmp(right_name));
+            if reverse { ord.reverse() } else { ord }
+        });
+
+        let mut out = nu_protocol::Record::new();
+        for (_, name, value) in keyed {
+            out.push(name, value);
+        }
+        Ok(out)
     }
 
     fn typed_fixed_array_sort_scalar_type(ty: &MirType) -> bool {
