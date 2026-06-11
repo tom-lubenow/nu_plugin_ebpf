@@ -221,18 +221,17 @@ const VERIFIER_DIFF_FIXTURES_1813_1843 = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-shift-default-runtime-reject"
+        name: "core-scalar-bits-shift-default-runtime"
         category: "language-core"
-        tags: [scalar bits shl default runtime reject]
+        tags: [scalar bits shl default runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  (random int) | bits shl 1'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bits shl default auto-width shifts require compile-time known integer input"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-scalar-bits-shift-unsigned-i64-runtime"
@@ -391,17 +390,16 @@ const VERIFIER_DIFF_FIXTURES_1813_1843 = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-rotate-default-runtime-reject"
+        name: "core-scalar-bits-rotate-default-runtime"
         category: "language-core"
-        tags: [scalar bits rol default runtime reject]
+        tags: [scalar bits rol default runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  (random int) | bits rol 1'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bits rol default auto-width rotates require compile-time known integer input"
+        local: "accept"
+        kernel: "accept"
     }
 ]

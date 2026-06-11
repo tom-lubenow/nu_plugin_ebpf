@@ -7,7 +7,7 @@ const VERIFIER_DIFF_FIXTURES_3080_3081 = [
         program: [
             '{|ctx|'
             '  let n = random int'
-            '  seq 10 10 20 | append $n | append 30 | math median'
+            '  [20] | append $n | math median'
             '}'
         ]
         local: "reject"

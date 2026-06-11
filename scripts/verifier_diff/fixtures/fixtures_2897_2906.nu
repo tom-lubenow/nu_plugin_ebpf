@@ -48,12 +48,12 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math ceil'
+            '  "abc" | math ceil'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math ceil currently supports integer input only in eBPF"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-math-floor-rejects-string-input"
@@ -62,12 +62,12 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math floor'
+            '  "abc" | math floor'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math floor currently supports integer input only in eBPF"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-math-round-rejects-string-input"
@@ -76,12 +76,12 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math round'
+            '  "abc" | math round'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math round currently supports integer input only in eBPF"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-math-round-precision-rejects-float-list-result"
@@ -104,7 +104,7 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math arccos'
+            '  $ctx.pid | math arccos'
             '}'
         ]
         local: "reject"
@@ -118,7 +118,7 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math arccosh'
+            '  $ctx.pid | math arccosh'
             '}'
         ]
         local: "reject"

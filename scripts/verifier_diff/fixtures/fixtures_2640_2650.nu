@@ -34,12 +34,12 @@ const VERIFIER_DIFF_FIXTURES_2640_2650 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits not'
+            '  "abc" | bits not'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits not requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-shr-rejects-negative-shift-count"

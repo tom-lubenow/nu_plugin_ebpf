@@ -118,12 +118,12 @@ const VERIFIER_DIFF_FIXTURES_2725_2736 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math abs'
+            '  "abc" | math abs'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math abs currently supports integer input only in eBPF"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-math-median-rejects-missing-input"
@@ -146,12 +146,12 @@ const VERIFIER_DIFF_FIXTURES_2725_2736 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math median'
+            '  "abc" | math median'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math median requires compile-time known integer-list or stack-backed numeric-list input in eBPF"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-math-product-rejects-missing-input"

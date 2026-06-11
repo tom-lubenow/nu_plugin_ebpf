@@ -34,12 +34,12 @@ const VERIFIER_DIFF_FIXTURES_2907_2916 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits or 1'
+            '  "abc" | bits or 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits or requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-xor-rejects-string-input"
@@ -48,12 +48,12 @@ const VERIFIER_DIFF_FIXTURES_2907_2916 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits xor 1'
+            '  "abc" | bits xor 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits xor requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-or-rejects-string-target"
@@ -62,12 +62,12 @@ const VERIFIER_DIFF_FIXTURES_2907_2916 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  1 | bits or $ctx.comm'
+            '  1 | bits or "abc"'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits or requires integer target argument in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "expected one of a list of accepted shapes: [Binary, Int]"
     }
     {
         name: "core-bits-xor-rejects-string-target"
@@ -76,12 +76,12 @@ const VERIFIER_DIFF_FIXTURES_2907_2916 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  1 | bits xor $ctx.comm'
+            '  1 | bits xor "abc"'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits xor requires integer target argument in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "expected one of a list of accepted shapes: [Binary, Int]"
     }
     {
         name: "core-bits-or-rejects-binary-target-integer-input"

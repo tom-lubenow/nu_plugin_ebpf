@@ -104,7 +104,7 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | compact'
+            '  $ctx.pid | compact'
             '}'
         ]
         local: "reject"

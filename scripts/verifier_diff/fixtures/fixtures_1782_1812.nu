@@ -342,18 +342,17 @@ const VERIFIER_DIFF_FIXTURES_1782_1812 = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-not-default-runtime-reject"
+        name: "core-scalar-bits-not-default-runtime"
         category: "language-core"
-        tags: [scalar bits "not" default runtime reject]
+        tags: [scalar bits "not" default runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  random int | bits not'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bits not default auto-width integer mode requires compile-time known input"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-scalar-bits-not-default"

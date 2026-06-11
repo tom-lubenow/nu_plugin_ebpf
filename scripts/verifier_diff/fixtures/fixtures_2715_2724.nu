@@ -48,7 +48,7 @@ const VERIFIER_DIFF_FIXTURES_2715_2724 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | uniq'
+            '  $ctx.pid | uniq'
             '}'
         ]
         local: "reject"
@@ -76,7 +76,7 @@ const VERIFIER_DIFF_FIXTURES_2715_2724 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | find 1'
+            '  $ctx.pid | find 1'
             '}'
         ]
         local: "reject"
@@ -104,7 +104,7 @@ const VERIFIER_DIFF_FIXTURES_2715_2724 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | sort'
+            '  $ctx.pid | sort'
             '}'
         ]
         local: "reject"

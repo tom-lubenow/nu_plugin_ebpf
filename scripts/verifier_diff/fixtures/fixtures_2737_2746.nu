@@ -34,12 +34,12 @@ const VERIFIER_DIFF_FIXTURES_2737_2746 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  1 | bits and $ctx.comm'
+            '  1 | bits and "abc"'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits and requires integer target argument in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "expected one of a list of accepted shapes: [Binary, Int]"
     }
     {
         name: "core-bits-and-rejects-string-input"
@@ -48,12 +48,12 @@ const VERIFIER_DIFF_FIXTURES_2737_2746 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits and 1'
+            '  "abc" | bits and 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits and requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-shl-rejects-string-input"
@@ -62,12 +62,12 @@ const VERIFIER_DIFF_FIXTURES_2737_2746 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits shl 1'
+            '  "abc" | bits shl 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits shl requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-ror-rejects-string-input"
@@ -76,12 +76,12 @@ const VERIFIER_DIFF_FIXTURES_2737_2746 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | bits ror 1'
+            '  "abc" | bits ror 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits ror requires integer pipeline input in eBPF; got MIR type Array { elem: U8, len: 16 }"
+        error_contains: "Command does not support string input"
     }
     {
         name: "core-bits-xor-rejects-mixed-numeric-list"

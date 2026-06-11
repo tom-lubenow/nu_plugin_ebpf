@@ -90,7 +90,7 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | math mode'
+            '  $ctx.pid | math mode'
             '}'
         ]
         local: "reject"

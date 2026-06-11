@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_1844_1875 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits ror unsigned --number-bytes 8 requires compile-time known integer input"
+        error_contains: "bits ror unsigned --number-bytes 8 runtime u32 input supports rotate counts 0, or from 33 through 64, in eBPF; got 1"
     }
     {
         name: "core-null-length"
