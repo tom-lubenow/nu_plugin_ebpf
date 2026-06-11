@@ -124,6 +124,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn callback_map_key_metadata(&self, map_ref: &MapRef, key_ty: &MirType) -> Option<RegMetadata> {
+        match key_ty {
+            MirType::Array { .. } | MirType::Struct { .. } => Some(RegMetadata {
+                field_type: Some(MirType::Ptr {
+                    pointee: Box::new(key_ty.clone()),
+                    address_space: AddressSpace::Map,
+                }),
+                annotated_semantics: self.named_map_key_semantics(map_ref).cloned(),
+                ..Default::default()
+            }),
+            _ => None,
+        }
+    }
+
     pub(super) fn validate_timer_helper_call_args(
         &self,
         helper: BpfHelper,
@@ -243,6 +257,7 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     key_ty.clone()
                 };
+                let key_metadata = self.callback_map_key_metadata(map_ref, &key_ty);
                 let value_metadata =
                     self.callback_map_value_metadata(map_ref, key_origin_ty, &value_ty);
                 Ok(vec![
@@ -258,7 +273,7 @@ impl<'a> HirToMirLowering<'a> {
                             pointee: Box::new(key_ty),
                             address_space: AddressSpace::Map,
                         }),
-                        metadata: None,
+                        metadata: key_metadata,
                         synthetic_stack_slot: None,
                         non_null: true,
                         trusted_btf: false,
@@ -324,6 +339,7 @@ impl<'a> HirToMirLowering<'a> {
                     origin.key_ty.clone(),
                     &origin.value_ty,
                 );
+                let key_metadata = self.callback_map_key_metadata(&origin.map_ref, &origin.key_ty);
                 Ok(vec![
                     SubfunctionArgSeed {
                         type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
@@ -337,7 +353,7 @@ impl<'a> HirToMirLowering<'a> {
                             pointee: Box::new(origin.key_ty),
                             address_space: AddressSpace::Map,
                         }),
-                        metadata: None,
+                        metadata: key_metadata,
                         synthetic_stack_slot: None,
                         non_null: true,
                         trusted_btf: false,
@@ -475,6 +491,7 @@ impl<'a> HirToMirLowering<'a> {
                     )
                 })?;
                 let origin = self.bpf_wq_arg_origin(kfunc, 0, wq_reg)?;
+                let key_metadata = self.callback_map_key_metadata(&origin.map_ref, &origin.key_ty);
                 Ok(vec![
                     SubfunctionArgSeed {
                         type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
@@ -488,7 +505,7 @@ impl<'a> HirToMirLowering<'a> {
                             pointee: Box::new(origin.key_ty),
                             address_space: AddressSpace::Map,
                         }),
-                        metadata: None,
+                        metadata: key_metadata,
                         synthetic_stack_slot: None,
                         non_null: true,
                         trusted_btf: false,

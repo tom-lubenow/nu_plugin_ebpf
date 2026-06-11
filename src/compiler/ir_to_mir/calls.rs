@@ -4681,7 +4681,8 @@ impl<'a> HirToMirLowering<'a> {
                 if let Some((_, key_type_reg)) = self.named_args.get("key-type").copied() {
                     let key_type_spec =
                         self.literal_string_arg(key_type_reg, "map-define --key-type")?;
-                    let key_ty = Self::parse_named_map_key_type_spec(&key_type_spec)?;
+                    let (key_ty, key_semantics) =
+                        Self::parse_named_map_key_type_spec_with_semantics(&key_type_spec)?;
                     self.validate_declared_map_key_type(&map_ref, &key_ty, "map-define")?;
                     if self.externally_seeded_map_key_types.contains(&map_ref)
                         && let Some(existing) = self.named_map_key_type(&map_ref)
@@ -4693,6 +4694,9 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     self.register_named_map_key_type(&map_ref, &key_ty);
+                    if let Some(key_semantics) = key_semantics {
+                        self.register_named_map_key_semantics(&map_ref, &key_semantics);
+                    }
                 } else if matches!(map_ref.kind, MapKind::HashOfMaps) {
                     return Err(CompileError::UnsupportedInstruction(
                         "map-define --kind hash-of-maps requires --key-type for the outer map"

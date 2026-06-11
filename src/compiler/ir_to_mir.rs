@@ -442,6 +442,8 @@ pub struct HirToMirLowering<'a> {
     declared_map_value_types: HashSet<MapRef>,
     /// Map-in-map outers declared explicitly with `map-define --inner-map`
     declared_map_inner_templates: HashSet<MapRef>,
+    /// Logical semantics for generic map keys with richer runtime layouts.
+    map_key_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Logical semantics for generic map values with richer runtime layouts.
     map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Generic maps whose observed value schemas conflict
@@ -450,6 +452,8 @@ pub struct HirToMirLowering<'a> {
     conflicting_map_key_types: HashSet<MapRef>,
     /// Generic maps whose declared max-entry counts conflict
     conflicting_map_max_entries: HashSet<MapRef>,
+    /// Generic maps whose observed key semantics conflict
+    conflicting_map_key_semantics: HashSet<MapRef>,
     /// Generic maps whose observed value semantics conflict
     conflicting_map_value_semantics: HashSet<MapRef>,
     /// Map key schemas seeded from already-attached pinned programs
@@ -596,10 +600,12 @@ impl<'a> HirToMirLowering<'a> {
             map_value_types,
             declared_map_value_types: HashSet::new(),
             declared_map_inner_templates: HashSet::new(),
+            map_key_semantics: HashMap::new(),
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
             conflicting_map_key_types: HashSet::new(),
             conflicting_map_max_entries: HashSet::new(),
+            conflicting_map_key_semantics: HashSet::new(),
             conflicting_map_value_semantics: HashSet::new(),
             externally_seeded_map_key_types,
             externally_seeded_map_max_entries,
@@ -661,6 +667,7 @@ impl<'a> HirToMirLowering<'a> {
             !self.conflicting_map_key_types.contains(map)
                 && !self.conflicting_map_value_types.contains(map)
                 && !self.conflicting_map_max_entries.contains(map)
+                && !self.conflicting_map_key_semantics.contains(map)
                 && !self.conflicting_map_value_semantics.contains(map)
         });
 

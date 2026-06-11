@@ -1745,9 +1745,16 @@ impl<'a> HirToMirLowering<'a> {
         Ok((parsed.ty, parsed.semantics))
     }
 
+    #[cfg(test)]
     pub(super) fn parse_named_map_key_type_spec(spec: &str) -> Result<MirType, CompileError> {
+        Self::parse_named_map_key_type_spec_with_semantics(spec).map(|(ty, _)| ty)
+    }
+
+    pub(super) fn parse_named_map_key_type_spec_with_semantics(
+        spec: &str,
+    ) -> Result<(MirType, Option<AnnotatedValueSemantics>), CompileError> {
         let parsed = ParsedNamedGlobalType::parse_with_context(spec, NamedTypeSpecContext::MapKey)?;
-        Ok(parsed.ty)
+        Ok((parsed.ty, parsed.semantics))
     }
 
     fn infer_mutable_global_layout(
