@@ -70,8 +70,8 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_udp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_udp" $ctx $tuple 12 0 0)'
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
             '  }'
@@ -130,8 +130,8 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
             '  "pass"'
             '}'
         ]
@@ -147,9 +147,9 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
+            '  let tuple = "0123456789ab"'
             '  let selector = (helper-call "bpf_get_prandom_u32")'
-            '  let sk = (if $selector == 0 { helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0 } else { 0 })'
+            '  let sk = (if $selector == 0 { helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0 } else { 0 })'
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
             '  }'
@@ -167,8 +167,8 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
             '  helper-call "bpf_sk_release" $sk'
             '  "pass"'
             '}'
@@ -185,8 +185,8 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
             '    helper-call "bpf_sk_release" $sk'
@@ -206,8 +206,8 @@ const VERIFIER_DIFF_FIXTURES_1376_1406 = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
             '    $sk.family | count'

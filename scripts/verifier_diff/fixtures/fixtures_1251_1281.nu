@@ -209,7 +209,7 @@ const VERIFIER_DIFF_FIXTURES_1251_1281 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "expects object reference"
+        error_contains: "expects object pointer containing bpf_refcount"
     }
     {
         name: "source-kfunc-percpu-obj-new-drop"

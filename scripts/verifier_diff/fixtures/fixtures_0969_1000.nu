@@ -92,9 +92,15 @@ const VERIFIER_DIFF_FIXTURES_0969_1000 = [
         program: [
             '{|ctx|'
             '  let opt = "0123456789abcdef"'
-            '  helper-call "bpf_load_hdr_opt" $ctx $opt 16 0'
-            '  helper-call "bpf_store_hdr_opt" $ctx $opt 16 0'
-            '  helper-call "bpf_reserve_hdr_opt" $ctx 16 0'
+            '  if ($ctx.op == 4) {'
+            '    helper-call "bpf_load_hdr_opt" $ctx $opt 16 0'
+            '  }'
+            '  if ($ctx.op == 15) {'
+            '    helper-call "bpf_store_hdr_opt" $ctx $opt 16 0'
+            '  }'
+            '  if ($ctx.op == 14) {'
+            '    helper-call "bpf_reserve_hdr_opt" $ctx 16 0'
+            '  }'
             '  1'
             '}'
         ]

@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_1063_1093 = [
             '{|ctx|'
             '  map-define encap_hdr --kind array --value-type bytes:16 --max-entries 1'
             '  let hdr = (0 | map-get encap_hdr --kind array)'
-            '  if $hdr { helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16 }'
+            '  if $hdr { helper-call "bpf_lwt_push_encap" $ctx 2 $hdr 16 }'
             '  "reroute"'
             '}'
         ]
@@ -69,7 +69,7 @@ const VERIFIER_DIFF_FIXTURES_1063_1093 = [
             '{|ctx|'
             '  let data = $ctx.data'
             '  let hdr = "0123456789abcdef"'
-            '  helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16'
+            '  helper-call "bpf_lwt_push_encap" $ctx 2 $hdr 16'
             '  ($data | get 0) | count'
             '  "reroute"'
             '}'
@@ -86,7 +86,7 @@ const VERIFIER_DIFF_FIXTURES_1063_1093 = [
         program: [
             '{|ctx|'
             '  let hdr = "0123456789abcdef"'
-            '  helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16'
+            '  helper-call "bpf_lwt_push_encap" $ctx 2 $hdr 16'
             '  ($ctx.data | get 0) | count'
             '  "reroute"'
             '}'
@@ -167,7 +167,7 @@ const VERIFIER_DIFF_FIXTURES_1063_1093 = [
             '{|ctx|'
             '  map-define seg6_action --kind array --value-type bytes:16 --max-entries 1'
             '  let param = (0 | map-get seg6_action --kind array)'
-            '  if $param { helper-call "bpf_lwt_seg6_action" $ctx 0 $param 16 }'
+            '  if $param { helper-call "bpf_lwt_seg6_action" $ctx 2 $param 16 }'
             '  "pass"'
             '}'
         ]

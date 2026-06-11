@@ -7,8 +7,8 @@ const VERIFIER_DIFF_FIXTURES_0688_0718 = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  let state = "0123456789abcdef"'
-            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 0'
+            '  let state = "0123456789abcdefghijklmnopqr"'
+            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 28 0'
             '  0'
             '}'
         ]

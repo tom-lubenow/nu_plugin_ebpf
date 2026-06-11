@@ -228,10 +228,10 @@ const VERIFIER_DIFF_FIXTURES_0719_0750 = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  map-define scratch --kind array --value-type bytes:4 --max-entries 1'
+            '  map-define scratch --kind array --value-type bytes:64 --max-entries 1'
             '  let params = (0 | map-get scratch --kind array)'
             '  let sk = $ctx.sk'
-            '  if $sk { if $params { helper-call "bpf_fib_lookup" $sk $params 4 0 } }'
+            '  if $sk { if $params { helper-call "bpf_fib_lookup" $sk $params 64 0 } }'
             '  0'
             '}'
         ]
