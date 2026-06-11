@@ -1579,7 +1579,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_global_semantics.get(name)
     }
 
-    fn merge_annotated_value_semantics(
+    pub(super) fn merge_annotated_value_semantics(
         existing: &AnnotatedValueSemantics,
         incoming: &AnnotatedValueSemantics,
     ) -> Option<AnnotatedValueSemantics> {

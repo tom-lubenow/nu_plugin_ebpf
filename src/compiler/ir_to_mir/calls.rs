@@ -4790,14 +4790,18 @@ impl<'a> HirToMirLowering<'a> {
                             .externally_seeded_map_value_semantics
                             .contains(&map_ref)
                             && let Some(existing) = self.named_map_value_semantics(&map_ref)
-                            && existing != &value_semantics
                         {
-                            return Err(CompileError::UnsupportedInstruction(format!(
-                                "map-define value semantics for '{}' conflicts with pinned map schema",
-                                map_ref.name
-                            )));
+                            if Self::merge_annotated_value_semantics(existing, &value_semantics)
+                                .is_none()
+                            {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "map-define value semantics for '{}' conflicts with pinned map schema",
+                                    map_ref.name
+                                )));
+                            }
+                        } else {
+                            self.register_named_map_value_semantics(&map_ref, &value_semantics);
                         }
-                        self.register_named_map_value_semantics(&map_ref, &value_semantics);
                     }
                 }
 
@@ -8131,19 +8135,21 @@ impl<'a> HirToMirLowering<'a> {
             let explicit_schema = self.declared_map_value_types.contains(map_ref);
             if (self.externally_seeded_map_value_semantics.contains(map_ref) || explicit_schema)
                 && let Some(existing) = self.named_map_value_semantics(map_ref)
-                && existing != &value_semantics
             {
-                let schema_source = if explicit_schema {
-                    "declared"
-                } else {
-                    "pinned"
-                };
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} value semantics for '{}' conflicts with {schema_source} map schema",
-                    map_ref.name,
-                )));
+                if Self::merge_annotated_value_semantics(existing, &value_semantics).is_none() {
+                    let schema_source = if explicit_schema {
+                        "declared"
+                    } else {
+                        "pinned"
+                    };
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} value semantics for '{}' conflicts with {schema_source} map schema",
+                        map_ref.name,
+                    )));
+                }
+            } else {
+                self.register_named_map_value_semantics(map_ref, &value_semantics);
             }
-            self.register_named_map_value_semantics(map_ref, &value_semantics);
         }
         Ok(())
     }

@@ -5231,6 +5231,30 @@ fn test_map_value_type_spec_supports_fixed_array_numeric_list_semantics() {
 }
 
 #[test]
+fn test_declared_map_value_semantics_accepts_fixed_record_array_known_list_length() {
+    let (_, declared) = HirToMirLowering::parse_named_map_value_type_spec(
+        "array{record{id:int,samples:list:int:2}:2}",
+    )
+    .expect("fixed-array record map value type should parse");
+    let declared = declared.expect("declared fixed-array record should carry list semantics");
+    let observed = AnnotatedValueSemantics::FixedArray {
+        elem: Box::new(AnnotatedValueSemantics::Record(vec![(
+            "samples".to_string(),
+            AnnotatedValueSemantics::NumericList {
+                max_len: 2,
+                known_len: Some(2),
+            },
+        )])),
+        len: 2,
+    };
+
+    assert!(
+        HirToMirLowering::merge_annotated_value_semantics(&declared, &observed).is_some(),
+        "declared map value semantics should accept compatible literal list lengths"
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_rejects_fixed_array_kptr_element() {
     let err = HirToMirLowering::parse_named_map_value_type_spec("array{kptr:task_struct:2}")
         .expect_err("fixed arrays of kptr slots should remain unsupported");
