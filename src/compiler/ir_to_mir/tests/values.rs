@@ -39970,6 +39970,86 @@ fn test_lower_reject_on_metadata_record_materializes_remaining_layout() {
         .expect("reject on metadata-backed record should compile through codegen");
 }
 
+fn add_optional_flag_to_call(hir: &mut HirProgram, decl_id: DeclId) {
+    let call = hir.main.blocks[0]
+        .stmts
+        .iter_mut()
+        .find_map(|stmt| match stmt {
+            HirStmt::Call {
+                decl_id: call_decl,
+                args,
+                ..
+            } if *call_decl == decl_id => Some(args),
+            _ => None,
+        })
+        .expect("expected command call");
+    call.flags.push(b"optional".to_vec());
+}
+
+#[test]
+fn test_lower_get_optional_on_metadata_record_gets_present_field() {
+    let get_decl = DeclId::new(950);
+    let mut hir = make_record_get_field_program(get_decl, "pid");
+    add_optional_flag_to_call(&mut hir, get_decl);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get --optional should lower for present metadata-backed record fields");
+
+    assert_returned_scalar_i64_or_const(&result, 7);
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("get --optional on a present field should compile through codegen");
+}
+
+#[test]
+fn test_lower_select_optional_on_metadata_record_selects_present_field() {
+    let select_decl = DeclId::new(951);
+    let mut hir = make_record_projection_then_field_program(select_decl, &["pid"], true, "pid");
+    add_optional_flag_to_call(&mut hir, select_decl);
+    let decl_names = HashMap::from([(select_decl, "select".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("select --optional should lower for present metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("select --optional on a present field should compile through codegen");
+}
+
+#[test]
+fn test_lower_reject_optional_on_metadata_record_rejects_present_field() {
+    let reject_decl = DeclId::new(952);
+    let mut hir = make_record_projection_then_field_program(reject_decl, &["pid"], false, "cpu");
+    add_optional_flag_to_call(&mut hir, reject_decl);
+    let decl_names = HashMap::from([(reject_decl, "reject".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reject --optional should lower for present metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("reject --optional on a present field should compile through codegen");
+}
+
 #[test]
 fn test_lower_select_missing_metadata_record_field_is_rejected() {
     let select_decl = DeclId::new(96);

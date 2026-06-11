@@ -98,45 +98,42 @@ const VERIFIER_DIFF_FIXTURES_2787_2796 = [
         error_contains: "get supports only top-level record field names in eBPF"
     }
     {
-        name: "core-record-get-rejects-optional-flag"
+        name: "core-record-get-optional-present-field"
         category: "records"
-        tags: [records get diagnostics reject flag]
+        tags: [records get optional accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  {pid: 1} | get --optional pid'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "get does not accept named flags or arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
-        name: "core-record-select-rejects-optional-flag"
+        name: "core-record-select-optional-present-field"
         category: "records"
-        tags: [records select diagnostics reject flag]
+        tags: [records select optional accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  {pid: 1} | select --optional pid'
+            '  {pid: 1} | select --optional pid | get pid'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "select does not accept named flags or arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
-        name: "core-record-reject-rejects-optional-flag"
+        name: "core-record-reject-optional-present-field"
         category: "records"
-        tags: [records reject-cmd diagnostics reject flag]
+        tags: [records reject-cmd optional accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  {pid: 1} | reject --optional pid'
+            '  {pid: 1 cpu: 2} | reject --optional pid | get cpu'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "reject does not accept named flags or arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
 ]

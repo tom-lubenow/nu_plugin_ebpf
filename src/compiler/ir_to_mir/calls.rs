@@ -7585,11 +7585,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "get" => {
-                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get does not accept named flags or arguments in eBPF".into(),
-                    ));
-                }
+                let _optional = self.validate_optional_record_flag("get")?;
                 if self.positional_args.len() != 1 {
                     return Err(CompileError::UnsupportedInstruction(
                         "get accepts exactly one positional argument in eBPF".into(),

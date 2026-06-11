@@ -4,6 +4,36 @@ use crate::compiler::mir::AddressSpace;
 const MAX_RECORD_COLUMNS_RESULTS: usize = 64;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn validate_optional_record_flag(
+        &self,
+        cmd_name: &str,
+    ) -> Result<bool, CompileError> {
+        if !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named arguments in eBPF"
+            )));
+        }
+
+        let mut optional = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "optional" if !optional => optional = true,
+                "optional" => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} duplicate --optional flags are not supported in eBPF"
+                    )));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} supports only the --optional flag in eBPF"
+                    )));
+                }
+            }
+        }
+
+        Ok(optional)
+    }
+
     fn metadata_record_values_supported_field(meta: &RegMetadata, field: &RecordField) -> bool {
         let storage_is_numeric_scalar = matches!(
             field.ty,
@@ -388,11 +418,7 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} does not accept named flags or arguments in eBPF"
-            )));
-        }
+        let _optional = self.validate_optional_record_flag(cmd_name)?;
         if self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires at least one record field name in eBPF"
@@ -1572,11 +1598,7 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "get does not accept named flags or arguments in eBPF".into(),
-            ));
-        }
+        let _optional = self.validate_optional_record_flag("get")?;
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "get requires exactly one record field name argument in eBPF".into(),
