@@ -41551,6 +41551,117 @@ fn test_lower_transpose_ignore_titles_on_mixed_constant_record_feeds_metadata_ge
         .expect("mixed record transpose --ignore-titles/get should compile through codegen");
 }
 
+fn make_record_transpose_as_record_length_program(
+    transpose_decl: DeclId,
+    length_decl: DeclId,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let record = test_record(vec![("pid", Value::int(1, Span::test_data()))]);
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: transpose_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            flags,
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: length_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+#[test]
+fn test_lower_transpose_as_record_on_constant_record_feeds_length() {
+    let transpose_decl = DeclId::new(236);
+    let length_decl = DeclId::new(237);
+    let hir = make_record_transpose_as_record_length_program(
+        transpose_decl,
+        length_decl,
+        vec![b"as-record".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --as-record should lower compile-time known records");
+
+    assert_program_returns_constant(&result.program, 2, "transpose --as-record length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("transpose --as-record followed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_transpose_as_record_ignore_titles_on_constant_record_feeds_length() {
+    let transpose_decl = DeclId::new(238);
+    let length_decl = DeclId::new(239);
+    let hir = make_record_transpose_as_record_length_program(
+        transpose_decl,
+        length_decl,
+        vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --as-record --ignore-titles should lower compile-time known records");
+
+    assert_program_returns_constant(
+        &result.program,
+        1,
+        "transpose --as-record --ignore-titles length",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "transpose --as-record --ignore-titles followed by length should compile through codegen",
+    );
+}
+
 #[test]
 fn test_lower_insert_adds_metadata_record_field() {
     let insert_decl = DeclId::new(97);

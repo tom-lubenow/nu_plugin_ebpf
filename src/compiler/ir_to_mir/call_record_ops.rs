@@ -1438,16 +1438,26 @@ impl<'a> HirToMirLowering<'a> {
                     .into(),
             ));
         }
-        let ignore_titles = match self.named_flags.as_slice() {
-            [] => false,
-            [flag] if matches!(flag.as_str(), "ignore-titles" | "i") => true,
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "transpose supports only the --ignore-titles flag for record input in eBPF"
-                        .into(),
-                ));
+        let mut ignore_titles = false;
+        let mut as_record = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "ignore-titles" | "i" if !ignore_titles => ignore_titles = true,
+                "as-record" if !as_record => as_record = true,
+                "ignore-titles" | "i" | "as-record" => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "transpose duplicate flags are not supported for record input in eBPF"
+                            .into(),
+                    ));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "transpose supports only the --ignore-titles and --as-record flags for record input in eBPF"
+                            .into(),
+                    ));
+                }
             }
-        };
+        }
 
         let mut output_names = ["column0".to_string(), "column1".to_string()];
         for (idx, (_, reg)) in self.positional_args.iter().enumerate() {
@@ -1471,29 +1481,78 @@ impl<'a> HirToMirLowering<'a> {
             ));
         };
 
-        let mut rows = Vec::with_capacity(val.len());
-        for (key, value) in val.iter() {
-            let mut row = nu_protocol::Record::new();
-            if ignore_titles {
-                row.push(output_names[0].clone(), value.clone());
+        let output_value = if as_record {
+            if val.is_empty() {
+                nu_protocol::Value::list(Vec::new(), Span::unknown())
             } else {
-                row.push(
-                    output_names[0].clone(),
-                    nu_protocol::Value::string(key.to_string(), Span::unknown()),
-                );
-                row.push(output_names[1].clone(), value.clone());
+                let mut out = nu_protocol::Record::new();
+                if val.len() == 1 {
+                    let (key, value) = val.iter().next().expect("record has one field");
+                    if ignore_titles {
+                        out.push(output_names[0].clone(), value.clone());
+                    } else {
+                        out.push(
+                            output_names[0].clone(),
+                            nu_protocol::Value::string(key.to_string(), Span::unknown()),
+                        );
+                        out.push(output_names[1].clone(), value.clone());
+                    }
+                } else if ignore_titles {
+                    let values = val
+                        .iter()
+                        .map(|(_, value)| value.clone())
+                        .collect::<Vec<_>>();
+                    out.push(
+                        output_names[0].clone(),
+                        nu_protocol::Value::list(values, Span::unknown()),
+                    );
+                } else {
+                    let keys = val
+                        .iter()
+                        .map(|(key, _)| {
+                            nu_protocol::Value::string(key.to_string(), Span::unknown())
+                        })
+                        .collect::<Vec<_>>();
+                    let values = val
+                        .iter()
+                        .map(|(_, value)| value.clone())
+                        .collect::<Vec<_>>();
+                    out.push(
+                        output_names[0].clone(),
+                        nu_protocol::Value::list(keys, Span::unknown()),
+                    );
+                    out.push(
+                        output_names[1].clone(),
+                        nu_protocol::Value::list(values, Span::unknown()),
+                    );
+                }
+                nu_protocol::Value::record(out, Span::unknown())
             }
-            rows.push(nu_protocol::Value::record(row, Span::unknown()));
-        }
-        let value_list = nu_protocol::Value::list(rows, Span::unknown());
+        } else {
+            let mut rows = Vec::with_capacity(val.len());
+            for (key, value) in val.iter() {
+                let mut row = nu_protocol::Record::new();
+                if ignore_titles {
+                    row.push(output_names[0].clone(), value.clone());
+                } else {
+                    row.push(
+                        output_names[0].clone(),
+                        nu_protocol::Value::string(key.to_string(), Span::unknown()),
+                    );
+                    row.push(output_names[1].clone(), value.clone());
+                }
+                rows.push(nu_protocol::Value::record(row, Span::unknown()));
+            }
+            nu_protocol::Value::list(rows, Span::unknown())
+        };
 
         if self.current_call_result_metadata_only {
-            self.lower_compile_time_only_constant_value(src_dst, &value_list);
+            self.lower_compile_time_only_constant_value(src_dst, &output_value);
             return Ok(());
         }
 
-        if crate::compiler::hir::supports_constant_value(&value_list) {
-            self.lower_constant_value(src_dst, &value_list)?;
+        if crate::compiler::hir::supports_constant_value(&output_value) {
+            self.lower_constant_value(src_dst, &output_value)?;
             return Ok(());
         }
 
