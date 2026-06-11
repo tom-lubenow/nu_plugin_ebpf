@@ -368,12 +368,14 @@ def program-kfunc-kernel-features [source: string target] {
     }
 
     let context_names = (program-context-variable-names $source)
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
     let record_context_aliases = (program-record-context-aliases $source $context_names)
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
         if (
             (line-assigns-context-field? $trimmed $context_names ["sun_path"])
+            or (line-assigns-bound-context-root-field? $trimmed $bound_aliases ["sun_path"])
             or (line-assigns-record-context-field? $trimmed $record_context_aliases ["sun_path"] [""])
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
@@ -498,12 +500,45 @@ def source-uses-context-variable? [source: string context_names] {
     false
 }
 
+def line-assigns-bound-context-root-field? [line: string aliases fields] {
+    let trimmed = ($line | str trim)
+    for alias in $aliases {
+        let root = ($alias | get -o root | default "")
+        if $root != "" {
+            continue
+        }
+
+        for field in $fields {
+            let marker = $"$($alias.name).($field)"
+            for raw_tail in (marker-tails-outside-simple-string $trimmed $marker) {
+                let tail = ($raw_tail | str trim)
+                if not ($tail | str starts-with "=") {
+                    continue
+                }
+                if ($tail | str starts-with "==") {
+                    continue
+                }
+
+                let rhs = ($tail | str substring 1.. | str trim)
+                if $rhs != "" {
+                    return true
+                }
+            }
+        }
+    }
+
+    false
+}
+
 def program-context-field-kernel-features [source: string target] {
     mut features = []
     let context_names = (program-context-variable-names $source)
     if not (source-uses-context-variable? $source $context_names) {
         return []
     }
+    let may_have_bound_aliases = (source-may-bind-derived-context-variable? $source)
+    mut bound_aliases = []
+    mut bound_aliases_loaded = false
 
     for line in ($source | lines) {
         for context_name in $context_names {
@@ -513,6 +548,31 @@ def program-context-field-kernel-features [source: string target] {
                     continue
                 }
 
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
+            }
+        }
+
+        if $may_have_bound_aliases and not $bound_aliases_loaded and ($line | str contains ".") {
+            $bound_aliases = (program-bound-context-root-aliases $source $context_names)
+            $bound_aliases_loaded = true
+        }
+        if ($bound_aliases | is-empty) {
+            continue
+        }
+
+        for alias in $bound_aliases {
+            let prefix = $"$($alias.name)."
+            let root = ($alias | get -o root | default "")
+            for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
+                let raw_access = if $root == "" {
+                    $raw_tail
+                } else {
+                    $"($root).($raw_tail)"
+                }
                 $features = (
                     append-missing-kernel-features
                         $features
@@ -537,6 +597,8 @@ def program-surface-kernel-features [source: string target] {
     let target_text = ($target | default "")
     let context_names = (program-context-variable-names $source)
     let source_uses_context = (source-uses-context-variable? $source $context_names)
+    mut bound_aliases = []
+    mut bound_aliases_loaded = false
     mut record_context_aliases = []
     mut record_context_aliases_loaded = false
     mut map_kind_bindings = []
@@ -598,15 +660,35 @@ def program-surface-kernel-features [source: string target] {
         }
 
         let trimmed = ($line | str trim)
-        let assigns_sysctl_new_value = (
-            $source_uses_context
-            and (line-assigns-context-field? $trimmed $context_names ["new_value" "sysctl_new_value"])
-        )
         let target_supports_ctx_sk_assign = (
             ($target_text | str starts-with "sk_lookup:")
             or ($target_text | str starts-with "tc_action:")
             or (($target_text | str starts-with "tc:") and ($target_text | str contains ":ingress"))
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
+        )
+        let may_have_bound_context_helper_write = (
+            $source_uses_context
+            and ((($target_text | str starts-with "cgroup_sysctl:") and (
+                ($trimmed | str contains ".new_value")
+                or ($trimmed | str contains ".sysctl_new_value")
+            ))
+            or ($target_supports_ctx_sk_assign and (
+                ($trimmed | str contains ".sk")
+                or ($trimmed | str contains ".sock")
+                or ($trimmed | str contains ".socket")
+            ))
+            or (($target_text | str starts-with "sock_ops:") and ($trimmed | str contains ".cb_flags")))
+        )
+        if $may_have_bound_context_helper_write and not $bound_aliases_loaded {
+            $bound_aliases = (program-bound-context-root-aliases $source $context_names)
+            $bound_aliases_loaded = true
+        }
+        let assigns_sysctl_new_value = (
+            $source_uses_context
+            and (
+                (line-assigns-context-field? $trimmed $context_names ["new_value" "sysctl_new_value"])
+                or (line-assigns-bound-context-root-field? $trimmed $bound_aliases ["new_value" "sysctl_new_value"])
+            )
         )
         let may_have_record_context_helper_write = (
             $source_uses_context
@@ -628,7 +710,10 @@ def program-surface-kernel-features [source: string target] {
         let assigns_ctx_sk = (
             $source_uses_context
             and $target_supports_ctx_sk_assign
-            and (line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"])
+            and (
+                (line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"])
+                or (line-assigns-bound-context-root-field? $trimmed $bound_aliases ["sk" "sock" "socket"])
+            )
         )
         let assigns_record_ctx_sk = (
             $source_uses_context
@@ -754,6 +839,7 @@ def program-surface-kernel-features [source: string target] {
         }
         if ($target_text | str starts-with "sock_ops:") and (
             ($source_uses_context and (line-assigns-context-field? $trimmed $context_names ["cb_flags"]))
+            or (line-assigns-bound-context-root-field? $trimmed $bound_aliases ["cb_flags"])
             or $assigns_record_sock_ops_cb_flags
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
