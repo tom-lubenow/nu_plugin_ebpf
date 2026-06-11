@@ -2136,6 +2136,49 @@ fn test_lower_runtime_integer_pow_runtime_exponent_is_rejected() {
 }
 
 #[test]
+fn test_lower_glob_from_rejects_with_actionable_diagnostic() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("*.rs".into()),
+                },
+                HirStmt::GlobFrom {
+                    src_dst: RegId::new(0),
+                    no_expand: false,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("glob expansion should be rejected by eBPF lowering");
+
+    assert!(
+        err.to_string()
+            .contains("Glob expansion is not supported in eBPF"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_unsupported_runtime_binary_operator_with_constant_operands() {
     use nu_protocol::ast::{Comparison, Math, Operator};
 
