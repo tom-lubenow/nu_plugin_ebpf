@@ -5105,6 +5105,78 @@ fn test_map_key_type_spec_supports_fixed_array_bytes() {
 }
 
 #[test]
+fn test_map_key_type_spec_supports_fixed_array_string() {
+    let ty = HirToMirLowering::parse_named_map_key_type_spec("array{string:8:2}")
+        .expect("fixed-array string map key type should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 24,
+            }),
+            len: 2,
+        }
+    );
+}
+
+#[test]
+fn test_map_key_type_spec_supports_fixed_array_numeric_list() {
+    let ty = HirToMirLowering::parse_named_map_key_type_spec("array{list:int:2:2}")
+        .expect("fixed-array numeric-list map key type should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: 3,
+            }),
+            len: 2,
+        }
+    );
+}
+
+#[test]
+fn test_map_key_type_spec_supports_record_fixed_array_numeric_list_field() {
+    let ty = HirToMirLowering::parse_named_map_key_type_spec(
+        "record{sets:array{list:int:2:2},pid:int}",
+    )
+    .expect("record key with fixed-array numeric-list field should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Struct {
+            name: None,
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "sets".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::Array {
+                            elem: Box::new(MirType::I64),
+                            len: 3,
+                        }),
+                        len: 2,
+                    },
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "pid".to_string(),
+                    ty: MirType::I64,
+                    offset: 48,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        }
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_supports_fixed_array_string_semantics() {
     let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec("array{string:8:2}")
         .expect("fixed-array string map value type should parse");
