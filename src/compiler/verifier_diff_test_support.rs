@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 const VERIFIER_DIFF_ENTRYPOINT: &str = "scripts/verifier_diff.nu";
 const VERIFIER_DIFF_FIXTURES: &str = "scripts/verifier_diff/fixtures.nu";
+const VERIFIER_DIFF_PROGRAM_CONTEXT_FIELD_EXPECTATION_CHUNKS_DIR: &str =
+    "scripts/verifier_diff/metadata/expectations/program_context_fields";
 
 const VERIFIER_DIFF_METADATA_SOURCES: &[&str] = &[
     "scripts/verifier_diff/metadata/core_features.nu",
@@ -32,10 +34,6 @@ const VERIFIER_DIFF_METADATA_SOURCES: &[&str] = &[
     "scripts/verifier_diff/metadata/context_bpf_helper_ids.nu",
     "scripts/verifier_diff/metadata/expectations.nu",
     "scripts/verifier_diff/metadata/expectations/context_fields.nu",
-    "scripts/verifier_diff/metadata/expectations/program_context_fields_1.nu",
-    "scripts/verifier_diff/metadata/expectations/program_context_fields_2.nu",
-    "scripts/verifier_diff/metadata/expectations/program_context_fields_3.nu",
-    "scripts/verifier_diff/metadata/expectations/program_context_fields_4.nu",
     "scripts/verifier_diff/metadata/expectations/program_surfaces.nu",
     "scripts/verifier_diff/metadata/expectations/program_helpers.nu",
     "scripts/verifier_diff/metadata/expectations/program_kfuncs.nu",
@@ -73,7 +71,9 @@ const VERIFIER_DIFF_RUNTIME_SOURCES: &[&str] = &[
 ];
 
 pub(crate) fn verifier_diff_metadata_source() -> String {
-    read_verifier_diff_source_files(VERIFIER_DIFF_METADATA_SOURCES, "verifier diff metadata")
+    let mut source = String::new();
+    append_verifier_diff_metadata_sources(&mut source);
+    source
 }
 
 pub(crate) fn verifier_diff_source() -> String {
@@ -91,11 +91,7 @@ fn verifier_diff_source_inner(include_fixture_chunks: bool) -> String {
         VERIFIER_DIFF_ENTRYPOINT,
         "verifier diff entrypoint",
     );
-    append_verifier_diff_source_files(
-        &mut source,
-        VERIFIER_DIFF_METADATA_SOURCES,
-        "verifier diff metadata",
-    );
+    append_verifier_diff_metadata_sources(&mut source);
     append_verifier_diff_source(
         &mut source,
         VERIFIER_DIFF_FIXTURES,
@@ -112,15 +108,35 @@ fn verifier_diff_source_inner(include_fixture_chunks: bool) -> String {
     source
 }
 
-fn read_verifier_diff_source_files(relatives: &[&str], label: &str) -> String {
-    let mut source = String::new();
-    append_verifier_diff_source_files(&mut source, relatives, label);
-    source
+fn append_verifier_diff_metadata_sources(source: &mut String) {
+    append_verifier_diff_source_files(
+        source,
+        VERIFIER_DIFF_METADATA_SOURCES,
+        "verifier diff metadata",
+    );
+    append_verifier_diff_source_paths(
+        source,
+        verifier_diff_program_context_field_expectation_chunk_paths(),
+        "verifier diff program context-field expectation",
+    );
 }
 
 fn append_verifier_diff_source_files(source: &mut String, relatives: &[&str], label: &str) {
     for relative in relatives {
         append_verifier_diff_source(source, relative, label);
+    }
+}
+
+fn append_verifier_diff_source_paths<I>(source: &mut String, paths: I, label: &str)
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    for path in paths {
+        source.push_str(
+            &fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {label} {}: {err}", path.display())),
+        );
+        source.push('\n');
     }
 }
 
@@ -135,24 +151,31 @@ fn append_verifier_diff_source(source: &mut String, relative: &str, label: &str)
 }
 
 fn append_verifier_diff_fixture_chunks(source: &mut String) {
-    for path in verifier_diff_fixture_chunk_paths() {
-        source.push_str(&fs::read_to_string(&path).unwrap_or_else(|err| {
-            panic!(
-                "failed to read verifier diff fixture {}: {err}",
-                path.display()
-            )
-        }));
-        source.push('\n');
-    }
+    append_verifier_diff_source_paths(
+        source,
+        verifier_diff_fixture_chunk_paths(),
+        "verifier diff fixture",
+    );
 }
 
 fn verifier_diff_fixture_chunk_paths() -> Vec<PathBuf> {
-    let fixture_dir = manifest_dir().join("scripts/verifier_diff/fixtures");
-    let mut fixture_paths = fs::read_dir(&fixture_dir)
+    verifier_diff_chunk_paths("scripts/verifier_diff/fixtures", "fixtures_")
+}
+
+fn verifier_diff_program_context_field_expectation_chunk_paths() -> Vec<PathBuf> {
+    verifier_diff_chunk_paths(
+        VERIFIER_DIFF_PROGRAM_CONTEXT_FIELD_EXPECTATION_CHUNKS_DIR,
+        "program_context_fields_",
+    )
+}
+
+fn verifier_diff_chunk_paths(relative_dir: &str, file_prefix: &str) -> Vec<PathBuf> {
+    let chunk_dir = manifest_dir().join(relative_dir);
+    let mut chunk_paths = fs::read_dir(&chunk_dir)
         .unwrap_or_else(|err| {
             panic!(
-                "failed to read verifier diff fixture directory {}: {err}",
-                fixture_dir.display()
+                "failed to read verifier diff chunk directory {}: {err}",
+                chunk_dir.display()
             )
         })
         .map(|entry| {
@@ -163,11 +186,11 @@ fn verifier_diff_fixture_chunk_paths() -> Vec<PathBuf> {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("fixtures_") && name.ends_with(".nu"))
+                .is_some_and(|name| name.starts_with(file_prefix) && name.ends_with(".nu"))
         })
         .collect::<Vec<_>>();
-    fixture_paths.sort();
-    fixture_paths
+    chunk_paths.sort();
+    chunk_paths
 }
 
 fn manifest_dir() -> &'static Path {
