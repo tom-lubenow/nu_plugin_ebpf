@@ -2,10 +2,10 @@ use super::*;
 
 #[test]
 fn test_verifier_diff_kfunc_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let explicit_records =
-        verifier_diff_feature_table_records(verifier_diff, "KFUNC_KERNEL_FEATURES", "name");
-    let fallback_records = verifier_diff_kfunc_fallback_records(verifier_diff);
+        verifier_diff_feature_table_records(&verifier_diff, "KFUNC_KERNEL_FEATURES", "name");
+    let fallback_records = verifier_diff_kfunc_fallback_records(&verifier_diff);
 
     for (name, record) in &explicit_records {
         let requirement = KfuncCompatibilityRequirement::for_name(name).unwrap_or_else(|| {

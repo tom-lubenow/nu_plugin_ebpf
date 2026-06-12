@@ -538,42 +538,6 @@ mod tests {
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
-    const VERIFIER_DIFF_METADATA_SOURCE: &str = concat!(
-        include_str!("../../../scripts/verifier_diff/metadata/core_features.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/context_features.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations/context_fields.nu"),
-        "\n",
-        include_str!(
-            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_1.nu"
-        ),
-        "\n",
-        include_str!(
-            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_2.nu"
-        ),
-        "\n",
-        include_str!(
-            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_3.nu"
-        ),
-        "\n",
-        include_str!(
-            "../../../scripts/verifier_diff/metadata/expectations/program_context_fields_4.nu"
-        ),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_surfaces.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_helpers.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_kfuncs.nu"),
-        "\n",
-        include_str!("../../../scripts/verifier_diff/metadata/expectations/program_callbacks.nu"),
-    );
-
     fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {
         let mut seen = HashSet::new();
 
@@ -748,9 +712,10 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_generic_context_field_metadata_matches_rust() {
-        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
+        let verifier_diff =
+            crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
         let table_body =
-            verifier_diff_const_body(verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES", '[');
+            verifier_diff_const_body(&verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES", '[');
 
         for line in table_body.lines() {
             let Some(field_name) = verifier_diff_quoted_field(line, "field") else {
@@ -766,7 +731,7 @@ mod tests {
                     panic!("ctx.{field_name} should have Rust compatibility metadata")
                 });
             let (key, min_kernel, source, max_kernel, max_kernel_source) =
-                verifier_diff_feature_record(verifier_diff, feature_const);
+                verifier_diff_feature_record(&verifier_diff, feature_const);
 
             assert_eq!(
                 key,
@@ -796,9 +761,10 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_target_context_field_metadata_matches_rust() {
-        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
+        let verifier_diff =
+            crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
         let table_body = verifier_diff_const_body(
-            verifier_diff,
+            &verifier_diff,
             "TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS",
             '[',
         );
@@ -833,7 +799,7 @@ mod tests {
                 panic!("{target} ctx.{field_name} should have Rust compatibility metadata")
             });
             let (key, min_kernel, source, max_kernel, max_kernel_source) =
-                verifier_diff_feature_record(verifier_diff, feature_const);
+                verifier_diff_feature_record(&verifier_diff, feature_const);
 
             assert_eq!(
                 key,
@@ -863,9 +829,10 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_context_field_helper_metadata_matches_rust() {
-        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
+        let verifier_diff =
+            crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
         let table_body = verifier_diff_const_body(
-            verifier_diff,
+            &verifier_diff,
             "CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS",
             '[',
         );
@@ -900,7 +867,7 @@ mod tests {
                 )
             });
             let (key, min_kernel, source, max_kernel, max_kernel_source) =
-                verifier_diff_feature_record(verifier_diff, feature_const);
+                verifier_diff_feature_record(&verifier_diff, feature_const);
 
             assert_eq!(
                 key,
@@ -930,9 +897,10 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_context_projection_metadata_matches_rust() {
-        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
+        let verifier_diff =
+            crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
         let table_body = verifier_diff_const_body(
-            verifier_diff,
+            &verifier_diff,
             "CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS",
             '[',
         );
@@ -1003,7 +971,7 @@ mod tests {
                 )
             };
             let (key, min_kernel, source, max_kernel, max_kernel_source) =
-                verifier_diff_feature_record(verifier_diff, feature_const);
+                verifier_diff_feature_record(&verifier_diff, feature_const);
 
             assert_eq!(
                 key, actual_key,

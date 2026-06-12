@@ -43,6 +43,8 @@ pub(crate) mod test_mir_builders;
 mod type_hints;
 pub mod type_infer;
 pub mod vcc;
+#[cfg(test)]
+pub(crate) mod verifier_diff_test_support;
 pub mod verifier_types;
 
 pub use crate::program_spec::{

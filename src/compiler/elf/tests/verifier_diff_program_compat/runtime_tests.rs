@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_verifier_diff_fixture_summary_exposes_target() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let summary_body = verifier_diff
         .split_once("def fixture-summary [fixture compat_kernel] {")
         .expect("expected fixture-summary function")
@@ -30,7 +30,7 @@ fn test_verifier_diff_fixture_summary_exposes_target() {
 
 #[test]
 fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let preflight = verifier_diff
         .find("let required_kernel_candidates = (")
         .expect("expected required --kernel preflight block");
@@ -53,7 +53,7 @@ fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
 
 #[test]
 fn test_verifier_diff_matrix_includes_aggregate_row() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let matrix_rows_body = verifier_diff
         .split_once(
             "def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {",

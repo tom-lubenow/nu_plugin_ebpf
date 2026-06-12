@@ -1,15 +1,5 @@
 use super::*;
 
-const VERIFIER_DIFF_METADATA_SOURCE: &str = concat!(
-    include_str!("../../../scripts/verifier_diff/metadata/core_features.nu"),
-    "\n",
-    include_str!("../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
-    "\n",
-    include_str!("../../../scripts/verifier_diff/metadata/context_features.nu"),
-    "\n",
-    include_str!("../../../scripts/verifier_diff/metadata/expectations.nu"),
-);
-
 #[test]
 fn test_mov64_imm_encoding() {
     let insn = EbpfInsn::mov64_imm(EbpfReg::R0, 0);
@@ -893,8 +883,9 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
 
 #[test]
 fn test_verifier_diff_helper_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
-    let helper_ids_body = nu_const_body(verifier_diff, "BPF_HELPER_IDS", '[');
+    let verifier_diff =
+        crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
+    let helper_ids_body = nu_const_body(&verifier_diff, "BPF_HELPER_IDS", '[');
     let mut helper_ids = std::collections::BTreeMap::new();
     for line in helper_ids_body.lines() {
         let Some(name) = quoted_field(line, "name") else {
@@ -908,7 +899,7 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
         );
     }
 
-    let floors_body = nu_const_body(verifier_diff, "BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID", '[');
+    let floors_body = nu_const_body(&verifier_diff, "BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID", '[');
     let mut floors = Vec::new();
     for line in floors_body.lines() {
         let Some(max_id) = numeric_field(line, "max_id") else {
@@ -966,7 +957,7 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
         );
     }
 
-    let explicit_body = nu_const_body(verifier_diff, "HELPER_KERNEL_FEATURES", '[');
+    let explicit_body = nu_const_body(&verifier_diff, "HELPER_KERNEL_FEATURES", '[');
     for line in explicit_body.lines() {
         let Some(name) = quoted_field(line, "name") else {
             continue;
@@ -986,7 +977,7 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
             panic!("expected explicit verifier_diff.nu helper feature for {name}")
         });
         let (key, min_kernel, source, max_kernel, max_kernel_source) =
-            nu_feature_record(verifier_diff, feature_const);
+            nu_feature_record(&verifier_diff, feature_const);
         assert_eq!(key, requirement.key());
         assert_eq!(
             min_kernel,
@@ -6235,8 +6226,9 @@ fn test_known_kfunc_signatures_have_compatibility_metadata() {
 
 #[test]
 fn test_verifier_diff_kfunc_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
-    let fallback_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
+    let verifier_diff =
+        crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
+    let fallback_body = nu_const_body(&verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
     let mut fallback = std::collections::BTreeMap::new();
     for line in fallback_body.lines() {
         let Some(name) = quoted_field(line, "name") else {
@@ -6310,7 +6302,7 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
         );
     }
 
-    let explicit_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURES", '[');
+    let explicit_body = nu_const_body(&verifier_diff, "KFUNC_KERNEL_FEATURES", '[');
     for line in explicit_body.lines() {
         let Some(name) = quoted_field(line, "name") else {
             continue;
@@ -6319,7 +6311,7 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
             panic!("expected explicit verifier_diff.nu kfunc feature for {name}")
         });
         let (key, min_kernel, source, max_kernel, max_kernel_source) =
-            nu_feature_record(verifier_diff, feature_const);
+            nu_feature_record(&verifier_diff, feature_const);
         assert_eq!(key, format!("kfunc:{name}"));
         let fallback_metadata = fallback.get(name).unwrap_or_else(|| {
             panic!("explicit verifier_diff.nu kfunc feature {name} has no fallback metadata")

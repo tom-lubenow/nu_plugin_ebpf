@@ -31,9 +31,9 @@ fn assert_verifier_feature_record_matches_map_kind(
 
 #[test]
 fn test_verifier_diff_map_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let records =
-        verifier_diff_feature_table_records(verifier_diff, "MAP_KIND_KERNEL_FEATURES", "kind");
+        verifier_diff_feature_table_records(&verifier_diff, "MAP_KIND_KERNEL_FEATURES", "kind");
 
     for kind in MapKind::all() {
         let record = records.get(kind.key()).unwrap_or_else(|| {
@@ -97,9 +97,9 @@ fn assert_verifier_feature_record_matches_map_value(
 
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let records =
-        verifier_diff_feature_table_records(verifier_diff, "MAP_VALUE_KERNEL_FEATURES", "token");
+        verifier_diff_feature_table_records(&verifier_diff, "MAP_VALUE_KERNEL_FEATURES", "token");
     let mut expected_tokens = BTreeSet::new();
 
     for requirement in MapValueCompatibilityRequirement::all() {

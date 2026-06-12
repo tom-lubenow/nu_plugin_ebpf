@@ -47,9 +47,9 @@ const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
 
 #[test]
 fn test_verifier_diff_context_field_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let verifier_diff = verifier_diff_source();
     let records = verifier_diff_feature_table_records(
-        verifier_diff,
+        &verifier_diff,
         "CONTEXT_FIELD_KERNEL_FEATURES",
         "field",
     );

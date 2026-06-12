@@ -35,12 +35,12 @@ fn test_verifier_diff_target_kernel_features_cover_representative_rust_program_s
 
 #[test]
 fn test_verifier_diff_program_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
-    let verifier_records = verifier_diff_program_feature_records(verifier_diff);
-    let vm_only_keys = verifier_diff_kernel_feature_default_lane_keys(verifier_diff, "vm-only");
-    let dry_run_keys = verifier_diff_kernel_feature_default_lane_keys(verifier_diff, "dry-run");
+    let verifier_diff = verifier_diff_source();
+    let verifier_records = verifier_diff_program_feature_records(&verifier_diff);
+    let vm_only_keys = verifier_diff_kernel_feature_default_lane_keys(&verifier_diff, "vm-only");
+    let dry_run_keys = verifier_diff_kernel_feature_default_lane_keys(&verifier_diff, "dry-run");
     let host_gated_keys =
-        verifier_diff_kernel_feature_default_lane_keys(verifier_diff, "host-gated");
+        verifier_diff_kernel_feature_default_lane_keys(&verifier_diff, "host-gated");
     let mut expected_keys = BTreeSet::new();
 
     for requirement in ProgramCompatibilityRequirement::all() {
@@ -143,8 +143,8 @@ fn test_verifier_diff_program_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_program_target_expectations_match_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
-    let expectations = verifier_diff_program_target_expectations(verifier_diff);
+    let verifier_diff = verifier_diff_source();
+    let expectations = verifier_diff_program_target_expectations(&verifier_diff);
     assert!(
         !expectations.is_empty(),
         "expected verifier_diff.nu program target compatibility expectations"

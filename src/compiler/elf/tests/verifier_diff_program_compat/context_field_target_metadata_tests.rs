@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
-    let records = verifier_diff_target_context_field_feature_records(verifier_diff);
+    let verifier_diff = verifier_diff_source();
+    let records = verifier_diff_target_context_field_feature_records(&verifier_diff);
 
     for record in &records {
         let spec = ProgramSpec::parse(&record.target).unwrap_or_else(|err| {
@@ -54,8 +54,8 @@ fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
-    let verifier_diff = VERIFIER_DIFF_SOURCE;
-    let records = verifier_diff_tracepoint_field_feature_records(verifier_diff);
+    let verifier_diff = verifier_diff_source();
+    let records = verifier_diff_tracepoint_field_feature_records(&verifier_diff);
 
     for record in &records {
         let spec = ProgramSpec::parse(&record.target).unwrap_or_else(|err| {
