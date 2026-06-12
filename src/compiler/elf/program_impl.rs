@@ -57,6 +57,28 @@ fn checked_elf_offset(base: u64, add: usize, what: &str) -> Result<u64, CompileE
         .ok_or_else(|| CompileError::InvalidProgram(format!("{what} overflows ELF offset range")))
 }
 
+const BTF_MAP_MEMBER_SIZE: usize = 8;
+const BTF_MAP_BASE_MEMBER_COUNT: usize = 5;
+
+#[derive(Debug, Clone, Copy)]
+struct BtfMapStructInfo {
+    type_id: u32,
+    data_size: u32,
+}
+
+fn checked_btf_map_data_size(fixed_member_count: usize) -> Result<u32, CompileError> {
+    let size = fixed_member_count.checked_mul(BTF_MAP_MEMBER_SIZE).ok_or_else(|| {
+        CompileError::InvalidProgram(format!(
+            "BTF map metadata with {fixed_member_count} fixed members overflows size calculation"
+        ))
+    })?;
+    u32::try_from(size).map_err(|_| {
+        CompileError::InvalidProgram(format!(
+            "BTF map metadata size {size} exceeds BTF u32 encoding limit"
+        ))
+    })
+}
+
 fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibilityRequirement> {
     let mut seen = HashSet::new();
     let mut requirements = Vec::new();
@@ -1893,21 +1915,17 @@ impl EbpfObject {
                 sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_WRITE as u64,
             };
 
-            // BTF-defined maps use a struct with pointer-sized fields.
-            // Fields: type, key/key_size, value/value_size, max_entries,
-            // map_flags, pinning (6 pointers * 8 bytes).
-            let btf_map_size = 48u64;
-
             for map in &self.maps {
-                // BTF-defined map data is all zeros (values come from BTF type metadata)
-                let map_data = [0u8; 48];
+                let btf_map_size = self.top_level_btf_map_data_size(map)?;
+                // BTF-defined map data is all zeros (values come from BTF type metadata).
+                let map_data = vec![0u8; btf_map_size as usize];
                 let map_offset = obj.append_section_data(maps_section_id, &map_data, 8);
 
                 // Add a symbol for this map (must be GLOBAL with DEFAULT visibility for libbpf/Aya)
                 let sym_id = obj.add_symbol(Symbol {
                     name: map.name.as_bytes().to_vec(),
                     value: map_offset,
-                    size: btf_map_size,
+                    size: u64::from(btf_map_size),
                     kind: SymbolKind::Data,
                     scope: SymbolScope::Linkage, // GLOBAL binding
                     weak: false,
@@ -2698,6 +2716,18 @@ impl EbpfObject {
             .find(|map| map.name == map_ref.name && map.def.map_kind() == Some(map_ref.kind))
     }
 
+    fn btf_map_fixed_member_count(&self, _map: &EbpfMap, include_pinning: bool) -> usize {
+        BTF_MAP_BASE_MEMBER_COUNT + usize::from(include_pinning)
+    }
+
+    fn btf_map_data_size(&self, map: &EbpfMap, include_pinning: bool) -> Result<u32, CompileError> {
+        checked_btf_map_data_size(self.btf_map_fixed_member_count(map, include_pinning))
+    }
+
+    fn top_level_btf_map_data_size(&self, map: &EbpfMap) -> Result<u32, CompileError> {
+        self.btf_map_data_size(map, true)
+    }
+
     fn emit_btf_map_struct_type(
         &self,
         btf: &mut BtfBuilder,
@@ -2706,7 +2736,7 @@ impl EbpfObject {
         byte_type: u32,
         include_pinning: bool,
         inner_template: Option<&EbpfMap>,
-    ) -> u32 {
+    ) -> Result<BtfMapStructInfo, CompileError> {
         let map_kind = map.def.map_kind();
         let requires_typed_local_storage = map_kind.is_some_and(MapKind::is_local_storage);
 
@@ -2753,6 +2783,7 @@ impl EbpfObject {
             members.push(("pinning", pinning_ptr));
         }
 
+        let data_size = self.btf_map_data_size(map, include_pinning)?;
         if let Some(inner_template) = inner_template {
             let inner_struct = self.emit_btf_map_struct_type(
                 btf,
@@ -2761,14 +2792,19 @@ impl EbpfObject {
                 byte_type,
                 false,
                 None,
-            );
-            let inner_ptr = btf.add_ptr(inner_struct);
+            )?;
+            let inner_ptr = btf.add_ptr(inner_struct.type_id);
             let values_array = btf.add_array(inner_ptr, int_type, 0);
             members.push(("values", values_array));
-            let fixed_size = ((members.len() - 1) * 8) as u32;
-            btf.add_btf_map_struct_with_size(&members, fixed_size)
+            Ok(BtfMapStructInfo {
+                type_id: btf.add_btf_map_struct_with_size(&members, data_size),
+                data_size,
+            })
         } else {
-            btf.add_btf_map_struct(&members)
+            Ok(BtfMapStructInfo {
+                type_id: btf.add_btf_map_struct_with_size(&members, data_size),
+                data_size,
+            })
         }
     }
 
@@ -2841,23 +2877,22 @@ impl EbpfObject {
                 let inner_template = self
                     .generic_map_inner_template_ref(map)
                     .and_then(|map_ref| self.map_by_ref(&map_ref));
-                let struct_type = self.emit_btf_map_struct_type(
+                let map_struct = self.emit_btf_map_struct_type(
                     &mut btf,
                     map,
                     int_type,
                     byte_type,
                     true,
                     inner_template,
-                );
+                )?;
 
                 // Add a variable for this map
-                let var_type = btf.add_var(&map.name, struct_type, BtfVarLinkage::GlobalAlloc);
+                let var_type =
+                    btf.add_var(&map.name, map_struct.type_id, BtfVarLinkage::GlobalAlloc);
 
-                // Size of BTF-defined map struct (6 pointers * 8 bytes = 48 bytes)
-                let map_size = 48u32;
-                vars.push((var_type, offset, map_size));
+                vars.push((var_type, offset, map_struct.data_size));
                 offset = offset
-                    .checked_add(map_size)
+                    .checked_add(map_struct.data_size)
                     .ok_or_else(|| invalid_btf(".maps data section offset overflow"))?;
             }
 

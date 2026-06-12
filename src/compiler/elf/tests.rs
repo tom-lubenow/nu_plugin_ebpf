@@ -6172,6 +6172,7 @@ fn test_elf_map_btf_emits_bpf_refcount_value_type() {
 #[test]
 fn test_elf_map_btf_emits_map_in_map_inner_template_values_member() {
     use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+    use object::ObjectSymbol as _;
 
     let mut builder = EbpfBuilder::new();
     builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
@@ -6228,6 +6229,16 @@ fn test_elf_map_btf_emits_map_in_map_inner_template_values_member() {
         96,
         "map-in-map values metadata is a flexible BTF member, not extra fixed .maps data"
     );
+    let inner_symbol = parsed
+        .symbols()
+        .find(|symbol| symbol.name() == Ok("inner"))
+        .expect("expected inner map symbol");
+    let outer_symbol = parsed
+        .symbols()
+        .find(|symbol| symbol.name() == Ok("outer"))
+        .expect("expected outer map symbol");
+    assert_eq!(inner_symbol.size(), 48);
+    assert_eq!(outer_symbol.size(), 48);
     let btf_section = parsed
         .section_by_name(".BTF")
         .expect("expected .BTF section");
