@@ -1637,7 +1637,6 @@ impl ProgramAttachKind {
             Self::TcAction => ProgramLiveAttachUnsupportedReason::TcAction,
             Self::SkReuseport => ProgramLiveAttachUnsupportedReason::SkReuseport,
             Self::FlowDissector => ProgramLiveAttachUnsupportedReason::FlowDissector,
-            Self::Netfilter => ProgramLiveAttachUnsupportedReason::Netfilter,
             Self::Lwt => ProgramLiveAttachUnsupportedReason::Lwt,
             Self::Extension => ProgramLiveAttachUnsupportedReason::Extension,
             Self::Syscall => ProgramLiveAttachUnsupportedReason::Syscall,

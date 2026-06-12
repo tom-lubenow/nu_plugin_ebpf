@@ -1869,12 +1869,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "libbpf-backed load/link path plus map/event integration",
         ),
         (
-            EbpfProgramType::Netfilter,
-            "ipv4:pre_routing",
-            "netfilter",
-            "libbpf-backed BPF-link path plus map/event integration",
-        ),
-        (
             EbpfProgramType::LwtIn,
             "demo-route",
             "lwt_in",

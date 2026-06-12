@@ -27,6 +27,27 @@ struct bpf_link {
     _private: [u8; 0],
 }
 
+#[repr(C)]
+pub struct BpfNetfilterOpts {
+    sz: usize,
+    pf: u32,
+    hooknum: u32,
+    priority: i32,
+    flags: u32,
+}
+
+impl BpfNetfilterOpts {
+    pub fn new(pf: u32, hooknum: u32, priority: i32, flags: u32) -> Self {
+        Self {
+            sz: mem::size_of::<Self>(),
+            pf,
+            hooknum,
+            priority,
+            flags,
+        }
+    }
+}
+
 type BpfObjectOpenMemFn =
     unsafe extern "C" fn(*const c_void, usize, *const c_void) -> *mut bpf_object;
 type BpfObjectLoadFn = unsafe extern "C" fn(*mut bpf_object) -> c_int;
@@ -42,6 +63,8 @@ type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_
 type BpfProgramAttachRawTracepointFn =
     unsafe extern "C" fn(*const bpf_program, *const c_char) -> *mut bpf_link;
 type BpfProgramAttachTraceFn = unsafe extern "C" fn(*const bpf_program) -> *mut bpf_link;
+type BpfProgramAttachNetfilterFn =
+    unsafe extern "C" fn(*const bpf_program, *const BpfNetfilterOpts) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -58,6 +81,7 @@ struct LibbpfApi {
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
     bpf_program_attach_trace: BpfProgramAttachTraceFn,
+    bpf_program_attach_netfilter: Option<BpfProgramAttachNetfilterFn>,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -144,6 +168,10 @@ impl LibbpfApi {
                     handle,
                     b"bpf_program__attach_trace\0",
                 )?,
+                bpf_program_attach_netfilter: Self::load_optional_symbol(
+                    handle,
+                    b"bpf_program__attach_netfilter\0",
+                ),
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
             });
@@ -168,6 +196,21 @@ impl LibbpfApi {
             ));
         }
         Ok(unsafe { mem::transmute_copy(&raw) })
+    }
+
+    fn load_optional_symbol<T>(handle: *mut c_void, symbol: &'static [u8]) -> Option<T> {
+        let symbol_name = CStr::from_bytes_with_nul(symbol).expect("static symbol must be valid");
+        // SAFETY: `handle` came from `dlopen`, `symbol_name` is a valid C string, and the
+        // returned address is immediately converted into the expected function pointer type.
+        unsafe {
+            libc::dlerror();
+        }
+        let raw = unsafe { libc::dlsym(handle, symbol_name.as_ptr()) };
+        if raw.is_null() {
+            None
+        } else {
+            Some(unsafe { mem::transmute_copy(&raw) })
+        }
     }
 }
 
@@ -507,6 +550,49 @@ impl LibbpfProgramHandle {
             return Err(LoadError::Load(format!(
                 "libbpf returned a null {program_label} link"
             )));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
+
+    pub fn load_and_attach_netfilter(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        opts: BpfNetfilterOpts,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let attach_netfilter = api.bpf_program_attach_netfilter.ok_or_else(|| {
+            LoadError::Load(
+                "libbpf does not provide bpf_program__attach_netfilter; netfilter live attach requires libbpf 1.3 or newer".to_string(),
+            )
+        })?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+
+        let object = open_libbpf_object(&elf_bytes, "Failed to open netfilter object with libbpf")?;
+        load_libbpf_object(object, "Failed to load netfilter object")?;
+        let program = Self::loaded_program(object, &program_name, "netfilter")?;
+
+        // SAFETY: `program` is loaded by libbpf and `opts` follows libbpf's netfilter ABI.
+        let link = unsafe { attach_netfilter(program, &opts) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(
+                "Failed to attach netfilter program",
+                attach_err,
+            ));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(
+                "libbpf returned a null netfilter link".to_string(),
+            ));
         }
 
         Ok(Self {

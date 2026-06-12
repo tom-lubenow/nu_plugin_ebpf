@@ -142,6 +142,32 @@ fn setup_libbpf_runtime_maps(
     })
 }
 
+const NFPROTO_IPV4: u32 = 2;
+const NFPROTO_IPV6: u32 = 10;
+const NF_INET_PRE_ROUTING: u32 = 0;
+const NF_INET_LOCAL_IN: u32 = 1;
+const NF_INET_FORWARD: u32 = 2;
+const NF_INET_LOCAL_OUT: u32 = 3;
+const NF_INET_POST_ROUTING: u32 = 4;
+const BPF_F_NETFILTER_IP_DEFRAG: u32 = 1 << 0;
+
+fn netfilter_family_value(family: crate::program_spec::NetfilterProtocolFamily) -> u32 {
+    match family {
+        crate::program_spec::NetfilterProtocolFamily::Ipv4 => NFPROTO_IPV4,
+        crate::program_spec::NetfilterProtocolFamily::Ipv6 => NFPROTO_IPV6,
+    }
+}
+
+fn netfilter_hook_value(hook: crate::program_spec::NetfilterHook) -> u32 {
+    match hook {
+        crate::program_spec::NetfilterHook::PreRouting => NF_INET_PRE_ROUTING,
+        crate::program_spec::NetfilterHook::LocalIn => NF_INET_LOCAL_IN,
+        crate::program_spec::NetfilterHook::Forward => NF_INET_FORWARD,
+        crate::program_spec::NetfilterHook::LocalOut => NF_INET_LOCAL_OUT,
+        crate::program_spec::NetfilterHook::PostRouting => NF_INET_POST_ROUTING,
+    }
+}
+
 pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
@@ -1015,6 +1041,15 @@ impl EbpfState {
         }
         if matches!(program.prog_type.attach_kind(), ProgramAttachKind::FmodRet) {
             return self.attach_libbpf_fmod_ret_object(object, pin_group, program);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::Netfilter
+        ) {
+            let target = spec.netfilter_target().unwrap_or_else(|| {
+                unreachable!("netfilter attach kind must use netfilter program spec")
+            });
+            return self.attach_libbpf_netfilter_object(object, pin_group, program, target);
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
@@ -2007,6 +2042,37 @@ impl EbpfState {
             &program.name,
             program.prog_type.canonical_prefix(),
         )?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_netfilter_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &crate::program_spec::NetfilterTarget,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "netfilter libbpf loading does not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let flags = if target.defrag {
+            BPF_F_NETFILTER_IP_DEFRAG
+        } else {
+            0
+        };
+        let opts = BpfNetfilterOpts::new(
+            netfilter_family_value(target.family),
+            netfilter_hook_value(target.hook),
+            target.priority,
+            flags,
+        );
+
+        let elf_bytes = object.to_elf()?;
+        let handle =
+            LibbpfProgramHandle::load_and_attach_netfilter(elf_bytes, &program.name, opts)?;
         self.insert_libbpf_program_active_probe(handle, program)
     }
 
