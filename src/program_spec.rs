@@ -439,14 +439,9 @@ impl ProgramLiveAttachOptInReason {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramLiveAttachUnsupportedReason {
-    RawTracepointWritable,
-    FmodRet,
     LsmCgroup,
-    Netkit,
     TcAction,
     SkReuseport,
-    FlowDissector,
-    Netfilter,
     Lwt,
     Extension,
     Syscall,
@@ -458,14 +453,9 @@ pub enum ProgramLiveAttachUnsupportedReason {
 impl ProgramLiveAttachUnsupportedReason {
     pub fn key(self) -> &'static str {
         match self {
-            Self::RawTracepointWritable => "raw-tracepoint-writable",
-            Self::FmodRet => "fmod-ret-loader",
             Self::LsmCgroup => "lsm-cgroup-link",
-            Self::Netkit => "netkit-loader",
             Self::TcAction => "tc-action-loader",
             Self::SkReuseport => "sk-reuseport-loader",
-            Self::FlowDissector => "flow-dissector-loader",
-            Self::Netfilter => "netfilter-link",
             Self::Lwt => "route-lwt-link",
             Self::Extension => "extension-target-program",
             Self::Syscall => "syscall-no-hook",
@@ -477,16 +467,9 @@ impl ProgramLiveAttachUnsupportedReason {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::RawTracepointWritable => {
-                "Writable raw tracepoint sections need loader support that preserves their verifier semantics."
-            }
-            Self::FmodRet => "fmod_ret requires BPF_MODIFY_RETURN load and attach support.",
             Self::LsmCgroup => "Cgroup LSM requires cgroup-aware BPF link setup.",
-            Self::Netkit => "Netkit needs an explicit loader attach implementation.",
             Self::TcAction => "tc_action needs an explicit loader attach implementation.",
             Self::SkReuseport => "sk_reuseport needs an explicit loader attach implementation.",
-            Self::FlowDissector => "flow_dissector needs an explicit loader attach implementation.",
-            Self::Netfilter => "Netfilter needs BPF-link attach support.",
             Self::Lwt => "Route LWT programs need route/link attach support.",
             Self::Extension => {
                 "Extension/freplace needs a loaded target program and BTF/function pairing."
@@ -504,29 +487,14 @@ impl ProgramLiveAttachUnsupportedReason {
 
     pub fn note(self) -> &'static str {
         match self {
-            Self::RawTracepointWritable => {
-                "the current object loader does not preserve writable raw-tracepoint sections, and rewriting them as raw_tracepoint would change verifier semantics"
-            }
-            Self::FmodRet => {
-                "the current Aya loader surface does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support"
-            }
             Self::LsmCgroup => {
                 "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
-            }
-            Self::Netkit => {
-                "netkit attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a netkit attach wrapper"
             }
             Self::TcAction => {
                 "tc_action attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a tc_action attach wrapper"
             }
             Self::SkReuseport => {
                 "sk_reuseport attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a sk_reuseport attach wrapper"
-            }
-            Self::FlowDissector => {
-                "flow-dissector attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a flow-dissector attach wrapper"
-            }
-            Self::Netfilter => {
-                "netfilter attach requires a libbpf-backed BPF-link path plus map/event integration; the current Aya object loader does not model netfilter sections"
             }
             Self::Lwt => {
                 "route LWT attach requires route/link configuration plus a map/event-preserving loader path; the current Aya object loader does not model LWT sections"

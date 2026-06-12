@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: write tracing and packet logic in familiar Nushell syntax
-- **Attach families**: kprobe/kretprobe/kprobe.multi/kretprobe.multi/ksyscall/kretsyscall/uprobe/uretprobe/uprobe.multi/uretprobe.multi, fentry/fexit/fmod_ret/tp_btf/raw_tracepoint/raw_tracepoint.w/tracepoint/lsm (including sleepable `.s` BTF and user-probe sections), perf_event, XDP/TC/TCX/socket_filter/cgroup and `sk_*` packet paths, compile-only `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, cgroup socket-address UNIX, `freplace`/extension, and `syscall` sections, `lirc_mode2`, and `struct_ops`
+- **Attach families**: kprobe/kretprobe/kprobe.multi/kretprobe.multi/ksyscall/kretsyscall/uprobe/uretprobe/uprobe.multi/uretprobe.multi, fentry/fexit/fmod_ret/tp_btf/raw_tracepoint/raw_tracepoint.w/tracepoint/lsm (including sleepable `.s` BTF and user-probe sections), perf_event, XDP/TC/TCX/socket_filter/cgroup and `sk_*` packet paths, `flow_dissector`, `netfilter`, `netkit`, cgroup socket-address UNIX, compile-only `xdp:devmap`, `xdp:cpumap`, `lwt_*`, `tc_action`, `sk_reuseport`, `lsm_cgroup`, `freplace`/extension, `syscall`, and iterator sections, `lirc_mode2`, and `struct_ops`
 - **Typed kernel-BTF contexts**: named `ctx.arg.<name>` aliases, typed field projection, typed map round-tripping, and typed `struct_ops` callbacks
 - **Small-state and aggregation tools**: leading typed `mut` bindings, named globals, generic maps, counters, histograms, timers, stacks, and event streaming
 
@@ -13,7 +13,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 
 - Most tracing paths are observational, but `struct_ops` can change kernel behavior.
 - Live loads for unclassified or high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops`.
-- `raw_tracepoint.w`, `fmod_ret`, `xdp:devmap`, `xdp:cpumap`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, `syscall`, and direct `struct_ops:<value_type>.<callback>` callback targets currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation or, for callbacks, until they are emitted through a `struct_ops` object.
+- `xdp:devmap`, `xdp:cpumap`, `lwt_*`, `tc_action`, `sk_reuseport`, `lsm_cgroup`, `freplace`, `syscall`, iterators that require a seq-file link, and direct `struct_ops:<value_type>.<callback>` callback targets currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation or, for callbacks, until they are emitted through a `struct_ops` object.
 - Prefer `--dry-run` on the host and use an isolated VM or disposable environment for unclassified or risky `struct_ops` families.
 
 ## Project Status
