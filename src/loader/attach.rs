@@ -76,6 +76,24 @@ fn map_in_map_inner_template_detail(object: &EbpfObject, outer: &MapRef) -> Stri
     }
 }
 
+fn common_object_event_schema(object: &EbpfObject) -> Option<EventSchema> {
+    let mut schemas = object
+        .programs
+        .iter()
+        .filter_map(|program| program.event_schema.as_ref());
+    let first = schemas.next()?.clone();
+    schemas.all(|schema| schema == &first).then_some(first)
+}
+
+fn common_object_bytes_counter_key_schema(object: &EbpfObject) -> Option<CounterKeySchema> {
+    let mut schemas = object
+        .programs
+        .iter()
+        .filter_map(|program| program.bytes_counter_key_schema.as_ref());
+    let first = schemas.next()?.clone();
+    schemas.all(|schema| schema == &first).then_some(first)
+}
+
 pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
@@ -1925,6 +1943,27 @@ impl EbpfState {
 
         let elf_bytes = object.to_elf()?;
         let handle = LibbpfStructOpsHandle::load_and_attach(elf_bytes, name)?;
+        let mut libbpf_maps = handle.export_maps()?;
+        let has_ringbuf = libbpf_maps.contains_key("events");
+        let has_counter_map = libbpf_maps.contains_key("counters");
+        let has_string_counter_map = libbpf_maps.contains_key("str_counters");
+        let has_bytes_counter_map = libbpf_maps.contains_key("bytes_counters");
+        let has_histogram_map = libbpf_maps.contains_key("histogram");
+        let has_kstack_map = libbpf_maps.contains_key("kstacks");
+        let has_ustack_map = libbpf_maps.contains_key("ustacks");
+
+        let ringbuf = if has_ringbuf {
+            let ring_map = libbpf_maps
+                .remove("events")
+                .ok_or_else(|| LoadError::MapNotFound("events".to_string()))?;
+            let ringbuf = RingBuf::try_from(ring_map).map_err(|e| {
+                LoadError::PerfBuffer(format!("Failed to convert libbpf ring buffer map: {e}"))
+            })?;
+            Some(ringbuf)
+        } else {
+            None
+        };
+
         let id = self.next_probe_id();
 
         let active_probe = ActiveProbe {
@@ -1932,25 +1971,55 @@ impl EbpfState {
             probe_spec: format!("struct_ops:{name}:{value_type_name}"),
             attached_at: Instant::now(),
             aya_ebpf: None,
-            libbpf_maps: HashMap::new(),
+            libbpf_maps,
             struct_ops: Some(handle),
             owned_socket: None,
-            has_ringbuf: false,
-            has_counter_map: false,
-            has_string_counter_map: false,
-            has_bytes_counter_map: false,
-            has_histogram_map: false,
-            has_kstack_map: false,
-            has_ustack_map: false,
-            ringbuf: None,
-            event_schema: None,
-            bytes_counter_key_schema: None,
-            generic_map_key_types: HashMap::new(),
-            generic_map_key_semantics: HashMap::new(),
-            generic_map_max_entries: HashMap::new(),
-            generic_map_inner_templates: HashMap::new(),
-            generic_map_value_types: HashMap::new(),
-            generic_map_value_semantics: HashMap::new(),
+            has_ringbuf,
+            has_counter_map,
+            has_string_counter_map,
+            has_bytes_counter_map,
+            has_histogram_map,
+            has_kstack_map,
+            has_ustack_map,
+            ringbuf,
+            event_schema: common_object_event_schema(object),
+            bytes_counter_key_schema: common_object_bytes_counter_key_schema(object),
+            generic_map_key_types: Self::merge_generic_map_types(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_key_types),
+            ),
+            generic_map_key_semantics: Self::merge_generic_map_key_semantics(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_key_semantics),
+            ),
+            generic_map_max_entries: Self::merge_generic_map_max_entries(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_max_entries),
+            ),
+            generic_map_inner_templates: Self::merge_generic_map_inner_templates(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_inner_templates),
+            ),
+            generic_map_value_types: Self::merge_generic_map_value_types(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_value_types),
+            ),
+            generic_map_value_semantics: Self::merge_generic_map_value_semantics(
+                object
+                    .programs
+                    .iter()
+                    .map(|program| &program.generic_map_value_semantics),
+            ),
             pin_group: None,
         };
 

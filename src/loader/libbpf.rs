@@ -3,6 +3,7 @@ use libc::{c_char, c_int, c_long, c_void};
 use std::ffi::{CStr, CString};
 use std::io;
 use std::mem;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::ptr;
 use std::sync::OnceLock;
 
@@ -25,8 +26,11 @@ type BpfObjectOpenMemFn =
     unsafe extern "C" fn(*const c_void, usize, *const c_void) -> *mut bpf_object;
 type BpfObjectLoadFn = unsafe extern "C" fn(*mut bpf_object) -> c_int;
 type BpfObjectCloseFn = unsafe extern "C" fn(*mut bpf_object);
+type BpfObjectNextMapFn = unsafe extern "C" fn(*const bpf_object, *const bpf_map) -> *mut bpf_map;
 type BpfObjectFindMapByNameFn =
     unsafe extern "C" fn(*const bpf_object, *const c_char) -> *mut bpf_map;
+type BpfMapFdFn = unsafe extern "C" fn(*const bpf_map) -> c_int;
+type BpfMapNameFn = unsafe extern "C" fn(*const bpf_map) -> *const c_char;
 type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
@@ -36,7 +40,10 @@ struct LibbpfApi {
     bpf_object_open_mem: BpfObjectOpenMemFn,
     bpf_object_load: BpfObjectLoadFn,
     bpf_object_close: BpfObjectCloseFn,
+    bpf_object_next_map: BpfObjectNextMapFn,
     bpf_object_find_map_by_name: BpfObjectFindMapByNameFn,
+    bpf_map_fd: BpfMapFdFn,
+    bpf_map_name: BpfMapNameFn,
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
@@ -101,10 +108,13 @@ impl LibbpfApi {
                 bpf_object_open_mem: Self::load_symbol(handle, b"bpf_object__open_mem\0")?,
                 bpf_object_load: Self::load_symbol(handle, b"bpf_object__load\0")?,
                 bpf_object_close: Self::load_symbol(handle, b"bpf_object__close\0")?,
+                bpf_object_next_map: Self::load_symbol(handle, b"bpf_object__next_map\0")?,
                 bpf_object_find_map_by_name: Self::load_symbol(
                     handle,
                     b"bpf_object__find_map_by_name\0",
                 )?,
+                bpf_map_fd: Self::load_symbol(handle, b"bpf_map__fd\0")?,
+                bpf_map_name: Self::load_symbol(handle, b"bpf_map__name\0")?,
                 bpf_map_attach_struct_ops: Self::load_symbol(
                     handle,
                     b"bpf_map__attach_struct_ops\0",
@@ -134,6 +144,63 @@ impl LibbpfApi {
         }
         Ok(unsafe { mem::transmute_copy(&raw) })
     }
+}
+
+fn duplicate_libbpf_map_fd(map_name: &str, fd: c_int) -> Result<OwnedFd, LoadError> {
+    if fd < 0 {
+        return Err(negative_rc_message(
+            &format!("Failed to read file descriptor for libbpf map '{map_name}'"),
+            fd,
+        ));
+    }
+
+    // SAFETY: `fd` was returned by libbpf for a loaded BPF map. `dup` gives this loader
+    // independent ownership so the Aya wrapper does not close libbpf's original descriptor.
+    let dup_fd = unsafe { libc::dup(fd) };
+    if dup_fd < 0 {
+        return Err(LoadError::Load(format!(
+            "Failed to duplicate libbpf map '{map_name}' fd: {}",
+            io::Error::last_os_error()
+        )));
+    }
+
+    // SAFETY: `dup_fd` is a fresh descriptor owned by this function.
+    Ok(unsafe { OwnedFd::from_raw_fd(dup_fd) })
+}
+
+fn aya_map_from_map_data(map_name: &str, map_data: MapData) -> Result<AyaMap, LoadError> {
+    let map_type = map_data
+        .info()
+        .and_then(|info| info.map_type())
+        .map_err(|error| {
+            LoadError::Load(format!(
+                "Failed to query libbpf map '{map_name}' metadata: {error}"
+            ))
+        })?;
+
+    Ok(match map_type {
+        MapType::Array => AyaMap::Array(map_data),
+        MapType::BloomFilter => AyaMap::BloomFilter(map_data),
+        MapType::CpuMap => AyaMap::CpuMap(map_data),
+        MapType::DevMap => AyaMap::DevMap(map_data),
+        MapType::DevMapHash => AyaMap::DevMapHash(map_data),
+        MapType::Hash => AyaMap::HashMap(map_data),
+        MapType::LpmTrie => AyaMap::LpmTrie(map_data),
+        MapType::LruHash => AyaMap::LruHashMap(map_data),
+        MapType::PerCpuArray => AyaMap::PerCpuArray(map_data),
+        MapType::PerCpuHash => AyaMap::PerCpuHashMap(map_data),
+        MapType::LruPerCpuHash => AyaMap::PerCpuLruHashMap(map_data),
+        MapType::PerfEventArray => AyaMap::PerfEventArray(map_data),
+        MapType::ProgramArray => AyaMap::ProgramArray(map_data),
+        MapType::Queue => AyaMap::Queue(map_data),
+        MapType::RingBuf => AyaMap::RingBuf(map_data),
+        MapType::SockHash => AyaMap::SockHash(map_data),
+        MapType::SockMap => AyaMap::SockMap(map_data),
+        MapType::Stack => AyaMap::Stack(map_data),
+        MapType::StackTrace => AyaMap::StackTraceMap(map_data),
+        MapType::XskMap => AyaMap::XskMap(map_data),
+        _ => AyaMap::Unsupported(map_data),
+    })
 }
 
 pub struct LibbpfStructOpsHandle {
@@ -216,6 +283,59 @@ impl LibbpfStructOpsHandle {
             object,
             link,
         })
+    }
+
+    pub fn export_maps(&self) -> Result<HashMap<String, AyaMap>, LoadError> {
+        if self.object.is_null() {
+            return Err(LoadError::Load(
+                "cannot export maps from a closed libbpf object".to_string(),
+            ));
+        }
+
+        let api = libbpf_api()?;
+        let mut maps = HashMap::new();
+        let mut previous_map: *mut bpf_map = ptr::null_mut();
+
+        loop {
+            // SAFETY: `self.object` is a loaded libbpf object owned by this handle, and
+            // `previous_map` is either null or a map pointer returned by the prior iteration.
+            let map = unsafe { (api.bpf_object_next_map)(self.object.cast_const(), previous_map) };
+            if map.is_null() {
+                break;
+            }
+
+            // SAFETY: `map` is a live libbpf map pointer.
+            let name_ptr = unsafe { (api.bpf_map_name)(map) };
+            if name_ptr.is_null() {
+                return Err(LoadError::Load(
+                    "libbpf returned a map with a null name".to_string(),
+                ));
+            }
+            // SAFETY: libbpf map names are valid NUL-terminated strings for live maps.
+            let map_name = unsafe { CStr::from_ptr(name_ptr) }
+                .to_string_lossy()
+                .into_owned();
+
+            // SAFETY: `map` is a live libbpf map pointer.
+            let fd = unsafe { (api.bpf_map_fd)(map) };
+            let owned_fd = duplicate_libbpf_map_fd(&map_name, fd)?;
+            let map_data = MapData::from_fd(owned_fd).map_err(|error| {
+                LoadError::Load(format!(
+                    "Failed to import libbpf map '{map_name}' into Aya map data: {error}"
+                ))
+            })?;
+            let aya_map = aya_map_from_map_data(&map_name, map_data)?;
+
+            if maps.insert(map_name.clone(), aya_map).is_some() {
+                return Err(LoadError::Load(format!(
+                    "libbpf object contains duplicate map name '{map_name}'"
+                )));
+            }
+
+            previous_map = map;
+        }
+
+        Ok(maps)
     }
 }
 
