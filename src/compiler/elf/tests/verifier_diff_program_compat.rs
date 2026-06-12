@@ -1,9 +1,13 @@
+mod nu_field_support;
+mod nu_kfunc_support;
 mod nu_support;
 mod parser_support;
 mod rust_support;
 mod source_support;
 
 use context_write_support::*;
+use nu_field_support::*;
+use nu_kfunc_support::*;
 use nu_support::*;
 use parser_support::*;
 use rust_support::*;
