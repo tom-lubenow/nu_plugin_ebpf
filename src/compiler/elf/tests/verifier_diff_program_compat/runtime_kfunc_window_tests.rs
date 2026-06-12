@@ -119,8 +119,20 @@ let unbounded = {
     local: "accept"
     kernel: "accept"
 }
+let local_only = {
+    name: "unit-local-accept-kernel-skip"
+    category: "kfunc"
+    target: "raw_tracepoint:sys_enter"
+    program: [
+        "{|ctx|"
+        "  0"
+        "}"
+    ]
+    local: "accept"
+    kernel: "skip"
+}
 let derived = (
-    [$bounded $unbounded]
+    [$bounded $unbounded $local_only]
     | each {|fixture|
         let features = (fixture-kernel-features $fixture)
         fixture-derived-metadata $fixture $features
@@ -150,11 +162,14 @@ fixture-matrix-rows-from-derived $derived "6.23.0"
             .unwrap_or_else(|| panic!("matrix row should include integer field {field}"))
     };
 
+    assert_eq!(int_field("total"), 3);
     assert_eq!(int_field("kernel_accept"), 2);
+    assert_eq!(int_field("kernel_skip"), 1);
     assert_eq!(int_field("kernel_accept_versioned"), 2);
     assert_eq!(int_field("kernel_accept_unversioned"), 0);
     assert_eq!(int_field("kernel_accept_bounded"), 1);
     assert_eq!(int_field("kernel_accept_unbounded"), 1);
+    assert_eq!(int_field("local_accept_kernel_skip"), 1);
     assert_eq!(int_field("kernel_accept_compatible"), 1);
     assert_eq!(int_field("kernel_accept_incompatible"), 1);
     assert_eq!(int_field("kernel_accept_requires_newer"), 0);

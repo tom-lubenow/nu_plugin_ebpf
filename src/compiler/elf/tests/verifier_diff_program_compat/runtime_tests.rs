@@ -75,4 +75,8 @@ fn test_verifier_diff_matrix_includes_aggregate_row() {
             .contains("fixture-matrix-row \"all\" \"all\" $matrix_fixtures $compat_kernel"),
         "matrix output should include an aggregate row over the selected fixture corpus"
     );
+    assert!(
+        verifier_diff.contains("local_accept_kernel_skip=($row.local_accept_kernel_skip)"),
+        "human matrix output should expose local accepts that still skip kernel comparison"
+    );
 }
