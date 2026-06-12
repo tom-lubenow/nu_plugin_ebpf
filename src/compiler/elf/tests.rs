@@ -4669,6 +4669,7 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         ProgramAttachKind::Tcx,
         ProgramAttachKind::Netkit,
         ProgramAttachKind::Netfilter,
+        ProgramAttachKind::FlowDissector,
         ProgramAttachKind::CgroupSkb,
         ProgramAttachKind::CgroupSock,
         ProgramAttachKind::CgroupSysctl,
@@ -4702,11 +4703,6 @@ fn test_program_attach_kind_loader_live_support_metadata() {
             ProgramAttachKind::SkReuseport,
             "sk_reuseport attach",
             "sk-reuseport-loader",
-        ),
-        (
-            ProgramAttachKind::FlowDissector,
-            "flow-dissector attach",
-            "flow-dissector-loader",
         ),
         (ProgramAttachKind::Lwt, "route LWT attach", "route-lwt-link"),
         (

@@ -77,7 +77,7 @@ Supported attach types:
   - sk_skb
   - sk_skb_parser
   - netfilter
-  - flow_dissector (dry-run compile support; live attach is not implemented yet)
+  - flow_dissector
   - lwt_in, lwt_out, lwt_xmit, lwt_seg6local (dry-run compile support; live attach is not implemented yet)
   - sk_reuseport (dry-run compile support; live attach is not implemented yet)
   - cgroup_sysctl

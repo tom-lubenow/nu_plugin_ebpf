@@ -3567,7 +3567,6 @@ impl ProgramSpec {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn netfilter_target(&self) -> Option<&NetfilterTarget> {
         match self {
             ProgramSpec::Netfilter { target } => Some(target),
@@ -3586,7 +3585,6 @@ impl ProgramSpec {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn flow_dissector_target(&self) -> Option<&FlowDissectorTarget> {
         match self {
             ProgramSpec::FlowDissector { target } => Some(target),

@@ -3,6 +3,7 @@ use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::ffi::CString;
 use std::io::BufRead as _;
+use std::os::fd::AsRawFd;
 use std::process::Command;
 
 fn unsupported_live_attach_error(
@@ -1076,6 +1077,15 @@ impl EbpfState {
                 .unwrap_or_else(|| unreachable!("netkit attach kind must use netkit program spec"));
             return self.attach_libbpf_netkit_object(object, pin_group, program, target);
         }
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::FlowDissector
+        ) {
+            let target = spec.flow_dissector_target().unwrap_or_else(|| {
+                unreachable!("flow_dissector attach kind must use flow_dissector program spec")
+            });
+            return self.attach_libbpf_flow_dissector_object(object, pin_group, program, target);
+        }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
                 Some(resolve_syscall_probe_symbols(syscall)?)
@@ -2119,6 +2129,39 @@ impl EbpfState {
         let elf_bytes = object.to_elf()?;
         let handle =
             LibbpfProgramHandle::load_and_attach_netkit(elf_bytes, &program.name, ifindex, opts)?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_flow_dissector_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &FlowDissectorTarget,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "flow_dissector libbpf loading does not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let netns = std::fs::File::open(&target.netns_path).map_err(|e| {
+            if e.kind() == ErrorKind::PermissionDenied {
+                LoadError::PermissionDenied
+            } else {
+                LoadError::Attach(format!(
+                    "Failed to open flow_dissector network namespace path {}: {e}",
+                    target.netns_path
+                ))
+            }
+        })?;
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfProgramHandle::load_and_attach_netns(
+            elf_bytes,
+            &program.name,
+            netns.as_raw_fd(),
+            "flow_dissector",
+        )?;
         self.insert_libbpf_program_active_probe(handle, program)
     }
 

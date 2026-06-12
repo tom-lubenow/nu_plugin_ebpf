@@ -88,6 +88,7 @@ type BpfProgramAttachNetfilterFn =
     unsafe extern "C" fn(*const bpf_program, *const BpfNetfilterOpts) -> *mut bpf_link;
 type BpfProgramAttachNetkitFn =
     unsafe extern "C" fn(*const bpf_program, c_int, *const BpfNetkitOpts) -> *mut bpf_link;
+type BpfProgramAttachNetnsFn = unsafe extern "C" fn(*const bpf_program, c_int) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -106,6 +107,7 @@ struct LibbpfApi {
     bpf_program_attach_trace: BpfProgramAttachTraceFn,
     bpf_program_attach_netfilter: Option<BpfProgramAttachNetfilterFn>,
     bpf_program_attach_netkit: Option<BpfProgramAttachNetkitFn>,
+    bpf_program_attach_netns: Option<BpfProgramAttachNetnsFn>,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -199,6 +201,10 @@ impl LibbpfApi {
                 bpf_program_attach_netkit: Self::load_optional_symbol(
                     handle,
                     b"bpf_program__attach_netkit\0",
+                ),
+                bpf_program_attach_netns: Self::load_optional_symbol(
+                    handle,
+                    b"bpf_program__attach_netns\0",
                 ),
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
@@ -665,6 +671,50 @@ impl LibbpfProgramHandle {
             return Err(LoadError::Load(
                 "libbpf returned a null netkit link".to_string(),
             ));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
+
+    pub fn load_and_attach_netns(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        netns_fd: c_int,
+        program_label: &str,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let attach_netns = api.bpf_program_attach_netns.ok_or_else(|| {
+            LoadError::Load(format!(
+                "libbpf does not provide bpf_program__attach_netns; {program_label} live attach requires a newer libbpf"
+            ))
+        })?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+        let open_context = format!("Failed to open {program_label} object with libbpf");
+        let load_context = format!("Failed to load {program_label} object");
+        let attach_context = format!("Failed to attach {program_label} program");
+
+        let object = open_libbpf_object(&elf_bytes, &open_context)?;
+        load_libbpf_object(object, &load_context)?;
+        let program = Self::loaded_program(object, &program_name, program_label)?;
+
+        // SAFETY: `program` is loaded by libbpf and `netns_fd` references an open netns file.
+        let link = unsafe { attach_netns(program, netns_fd) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(&attach_context, attach_err));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "libbpf returned a null {program_label} link"
+            )));
         }
 
         Ok(Self {
