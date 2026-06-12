@@ -519,26 +519,32 @@ impl ProgramLiveAttachUnsupportedReason {
                 "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
             }
             Self::Netkit => {
-                "the current Aya loader surface does not expose a netkit attach wrapper"
+                "netkit attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a netkit attach wrapper"
             }
             Self::TcAction => {
-                "the current Aya loader surface does not expose a tc_action attach wrapper"
+                "tc_action attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a tc_action attach wrapper"
             }
             Self::SkReuseport => {
-                "the current Aya loader surface does not expose a sk_reuseport attach wrapper"
+                "sk_reuseport attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a sk_reuseport attach wrapper"
             }
             Self::FlowDissector => {
-                "the current Aya loader surface does not expose a flow-dissector attach wrapper"
+                "flow-dissector attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a flow-dissector attach wrapper"
             }
-            Self::Netfilter => "the loader still needs BPF-link netfilter attach support",
-            Self::Lwt => "the loader still needs route LWT attach support",
+            Self::Netfilter => {
+                "netfilter attach requires a libbpf-backed BPF-link path plus map/event integration; the current Aya object loader does not model netfilter sections"
+            }
+            Self::Lwt => {
+                "route LWT attach requires route/link configuration plus a map/event-preserving loader path; the current Aya object loader does not model LWT sections"
+            }
             Self::Extension => {
                 "extension/freplace live attach requires a loaded target program and BTF/function pairing, not only a target function name"
             }
             Self::Syscall => {
                 "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
             }
-            Self::Iter => "the loader still needs BPF iterator link/seq-file attach support",
+            Self::Iter => {
+                "BPF iterator attach requires iterator link/seq-file setup plus map/event integration; the current Aya object loader does not model iter sections"
+            }
             Self::XdpMapProgram => XDP_MAP_LIVE_ATTACH_UNSUPPORTED,
             Self::CgroupSockAddrUnix => CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED,
             Self::StructOpsCallback => STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
