@@ -2,6 +2,7 @@ mod nu_field_support;
 mod nu_kfunc_support;
 mod nu_support;
 mod parser_support;
+mod parser_target_support;
 mod rust_support;
 mod source_support;
 
@@ -10,6 +11,7 @@ use nu_field_support::*;
 use nu_kfunc_support::*;
 use nu_support::*;
 use parser_support::*;
+use parser_target_support::*;
 use rust_support::*;
 use source_support::*;
 
