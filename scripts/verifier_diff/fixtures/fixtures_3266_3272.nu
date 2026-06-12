@@ -70,6 +70,34 @@ export const VERIFIER_DIFF_FIXTURES_3266_3272 = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bool-sort-first"
+        category: "globals"
+        tags: [globals arrays bool sort first global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true false] | global-define --type "array{bool:2}" flags'
+            '  (((global-get flags) | sort | first) == false)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-bool-sort-reverse-first"
+        category: "globals"
+        tags: [globals arrays bool sort reverse first global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true false] | global-define --type "array{bool:2}" flags'
+            '  (((global-get flags) | sort --reverse | first) == true)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-bool-is-empty"
         category: "globals"
         tags: [globals arrays bool is-empty global-define zero-fill accept]

@@ -30875,8 +30875,9 @@ fn test_lower_sort_natural_rejects_compile_time_string_lists() {
     .expect_err("sort --natural on strings should remain unsupported");
 
     assert!(
-        err.to_string()
-            .contains("sort on typed fixed arrays currently supports only integer scalar elements"),
+        err.to_string().contains(
+            "sort on typed fixed arrays currently supports only integer or bool scalar elements"
+        ),
         "unexpected error: {err}"
     );
 }

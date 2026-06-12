@@ -358,6 +358,7 @@ impl<'a> HirToMirLowering<'a> {
                 | MirType::U16
                 | MirType::U32
                 | MirType::U64
+                | MirType::Bool
         )
     }
 
@@ -395,7 +396,7 @@ impl<'a> HirToMirLowering<'a> {
 
         if !Self::typed_fixed_array_sort_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "sort on typed fixed arrays currently supports only integer scalar elements in eBPF, got {:?}",
+                "sort on typed fixed arrays currently supports only integer or bool scalar elements in eBPF, got {:?}",
                 elem_ty
             )));
         }
@@ -700,6 +701,7 @@ impl<'a> HirToMirLowering<'a> {
 
     fn literal_int_value(value: &nu_protocol::Value) -> Option<i64> {
         match value {
+            nu_protocol::Value::Bool { val, .. } => Some(i64::from(*val)),
             nu_protocol::Value::Int { val, .. } => Some(*val),
             _ => None,
         }
