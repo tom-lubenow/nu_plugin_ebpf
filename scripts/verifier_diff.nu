@@ -14,6 +14,7 @@ source ($REPO_ROOT | path join scripts verifier_diff runtime context_source_pars
 source ($REPO_ROOT | path join scripts verifier_diff runtime context_roots.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime context_function_roots.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime context_projection_features.nu)
+source ($REPO_ROOT | path join scripts verifier_diff runtime program_target_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime program_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime matrix_validation.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime execution.nu)
