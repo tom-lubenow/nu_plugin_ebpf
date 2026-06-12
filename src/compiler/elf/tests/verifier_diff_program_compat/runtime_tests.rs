@@ -1,0 +1,213 @@
+use super::*;
+
+#[test]
+fn test_verifier_diff_fixture_summary_exposes_target() {
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let summary_body = verifier_diff
+        .split_once("def fixture-summary [fixture compat_kernel] {")
+        .expect("expected fixture-summary function")
+        .1
+        .split_once("\ndef fixture-status-count")
+        .expect("expected fixture-status-count after fixture-summary")
+        .0;
+    assert!(
+        summary_body.contains("target: (optional $fixture target \"\")"),
+        "fixture-summary should expose the raw fixture target in --list --json output"
+    );
+
+    let list_body = verifier_diff
+        .split_once("if $list {")
+        .expect("expected list output branch")
+        .1
+        .split_once("\n    if $matrix {")
+        .expect("expected matrix branch after list output branch")
+        .0;
+    assert!(
+        list_body.contains("target=($summary.target)"),
+        "human --list output should include the raw fixture target"
+    );
+}
+
+#[test]
+fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let preflight = verifier_diff
+        .find("let required_kernel_candidates = (")
+        .expect("expected required --kernel preflight block");
+    let plugin_resolution = verifier_diff
+        .find("let plugin_bin = (resolve-plugin-bin $REPO_ROOT)")
+        .expect("expected plugin resolution before local checks");
+    let local_execution = verifier_diff
+        .find("let local_results = (check-local-fixtures")
+        .expect("expected local fixture execution");
+
+    assert!(
+        preflight < plugin_resolution,
+        "--kernel availability should be checked before resolving the plugin"
+    );
+    assert!(
+        preflight < local_execution,
+        "--kernel availability should be checked before running local fixtures"
+    );
+}
+
+#[test]
+fn test_verifier_diff_fixture_summary_reports_too_new_kfunc_window() {
+    let script = r#"source scripts/verifier_diff.nu
+let fixture = {
+    name: "unit-kfunc-window"
+    category: "kfunc"
+    target: "struct_ops:sched_ext_ops"
+    program: [
+        "{"
+        "    name: \"nu.demo_1\""
+        "    cpu_release: {|ctx|"
+        "        let ignored = (kfunc-call \"scx_bpf_reenqueue_local\")"
+        "        0"
+        "    }"
+        "}"
+    ]
+    local: "accept"
+    kernel: "skip"
+}
+let features = (fixture-kernel-features $fixture)
+let derived = (fixture-derived-metadata $fixture $features)
+let summary = (fixture-summary-from-derived $derived "6.23.0")
+{
+    effective_min_kernel: $summary.effective_min_kernel
+    effective_max_kernel_exclusive: $summary.effective_max_kernel_exclusive
+    effective_max_kernel_exclusive_sources: $summary.effective_max_kernel_exclusive_sources
+    compatible_with_compat_kernel: $summary.compatible_with_compat_kernel
+    compat_kernel_reason: $summary.compat_kernel_reason
+    kernel_features: (kernel-feature-labels $summary.kernel_features)
+} | to json"#;
+
+    let Some(output) = run_nu_script(script, "compat-kernel max-exclusive kfunc summary") else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu compat-kernel summary failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu compat-kernel summary should emit JSON");
+    assert_eq!(
+        actual
+            .get("effective_min_kernel")
+            .and_then(serde_json::Value::as_str),
+        Some("6.12")
+    );
+    assert_eq!(
+        actual
+            .get("effective_max_kernel_exclusive")
+            .and_then(serde_json::Value::as_str),
+        Some("6.23")
+    );
+    let max_sources = actual
+        .get("effective_max_kernel_exclusive_sources")
+        .and_then(serde_json::Value::as_array)
+        .expect("summary should include effective max-kernel source list");
+    assert!(max_sources.iter().any(|source| {
+        source
+            .as_str()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
+    }));
+    assert_eq!(
+        actual
+            .get("compatible_with_compat_kernel")
+            .and_then(serde_json::Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        actual
+            .get("compat_kernel_reason")
+            .and_then(serde_json::Value::as_str),
+        Some("kernel<6.23")
+    );
+    let feature_labels = actual
+        .get("kernel_features")
+        .and_then(serde_json::Value::as_array)
+        .expect("summary should include kernel feature labels");
+    assert!(feature_labels.iter().any(|label| {
+        label
+            .as_str()
+            .is_some_and(|label| label.contains("kfunc:scx_bpf_reenqueue_local>=6.12,<6.23"))
+    }));
+}
+
+#[test]
+fn test_verifier_diff_matrix_counts_bounded_kernel_windows() {
+    let script = r#"source scripts/verifier_diff.nu
+let bounded = {
+    name: "unit-bounded-kfunc-window"
+    category: "kfunc"
+    target: "struct_ops:sched_ext_ops"
+    program: [
+        "{"
+        "    name: \"nu.demo_1\""
+        "    cpu_release: {|ctx|"
+        "        let ignored = (kfunc-call \"scx_bpf_reenqueue_local\")"
+        "        0"
+        "    }"
+        "}"
+    ]
+    local: "accept"
+    kernel: "accept"
+}
+let unbounded = {
+    name: "unit-unbounded-kfunc"
+    category: "kfunc"
+    target: "kprobe:ksys_read"
+    program: [
+        "{|ctx|"
+        "  let ignored = (kfunc-call \"bpf_get_task_exe_file\")"
+        "  0"
+        "}"
+    ]
+    local: "accept"
+    kernel: "accept"
+}
+let derived = (
+    [$bounded $unbounded]
+    | each {|fixture|
+        let features = (fixture-kernel-features $fixture)
+        fixture-derived-metadata $fixture $features
+    }
+)
+fixture-matrix-rows-from-derived $derived "6.23.0"
+| where category == "kfunc"
+| first
+| to json"#;
+
+    let Some(output) = run_nu_script(script, "compat-kernel bounded matrix counts") else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu compat-kernel matrix failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu compat-kernel matrix should emit JSON");
+    let int_field = |field: &str| {
+        actual
+            .get(field)
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| panic!("matrix row should include integer field {field}"))
+    };
+
+    assert_eq!(int_field("kernel_accept"), 2);
+    assert_eq!(int_field("kernel_accept_versioned"), 2);
+    assert_eq!(int_field("kernel_accept_unversioned"), 0);
+    assert_eq!(int_field("kernel_accept_bounded"), 1);
+    assert_eq!(int_field("kernel_accept_unbounded"), 1);
+    assert_eq!(int_field("kernel_accept_compatible"), 1);
+    assert_eq!(int_field("kernel_accept_incompatible"), 1);
+    assert_eq!(int_field("kernel_accept_requires_newer"), 0);
+    assert_eq!(int_field("kernel_accept_requires_older"), 1);
+}
