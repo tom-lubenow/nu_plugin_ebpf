@@ -98,6 +98,20 @@ export const VERIFIER_DIFF_FIXTURES_3266_3272 = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bool-find-true-length"
+        category: "globals"
+        tags: [globals arrays bool find length global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true false true] | global-define --type "array{bool:3}" flags'
+            '  (((global-get flags) | find true | length) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-bool-is-empty"
         category: "globals"
         tags: [globals arrays bool is-empty global-define zero-fill accept]

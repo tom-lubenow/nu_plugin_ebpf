@@ -149,10 +149,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_find_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "find on typed fixed arrays currently supports {} in eBPF, got {:?}",
-                Self::typed_fixed_array_numeric_list_scalar_type_description(),
+                Self::typed_fixed_array_find_scalar_type_description(),
                 elem_ty
             )));
         }
@@ -211,11 +211,12 @@ impl<'a> HirToMirLowering<'a> {
                         | MirType::U16
                         | MirType::U32
                         | MirType::U64
+                        | MirType::Bool
                 )
             )
         {
             return Err(CompileError::UnsupportedInstruction(
-                "find search argument must be a numeric scalar in eBPF".into(),
+                "find search argument must be an integer or bool scalar in eBPF".into(),
             ));
         }
         let needle_value = needle_const
@@ -456,8 +457,17 @@ impl<'a> HirToMirLowering<'a> {
 
     fn numeric_value_from_value(value: &nu_protocol::Value) -> Option<i64> {
         match value {
+            nu_protocol::Value::Bool { val, .. } => Some(i64::from(*val)),
             nu_protocol::Value::Int { val, .. } => Some(*val),
             _ => None,
         }
+    }
+
+    fn typed_fixed_array_find_scalar_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::Bool)
+    }
+
+    fn typed_fixed_array_find_scalar_type_description() -> &'static str {
+        "signed integer, bool, or <=32-bit unsigned integer scalar elements"
     }
 }
