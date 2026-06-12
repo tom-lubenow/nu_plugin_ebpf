@@ -160,3 +160,53 @@ fixture-matrix-rows-from-derived $derived "6.23.0"
     assert_eq!(int_field("kernel_accept_requires_newer"), 0);
     assert_eq!(int_field("kernel_accept_requires_older"), 1);
 }
+
+#[test]
+fn test_verifier_diff_compat_kernel_parser_preserves_dotted_versions() {
+    let script = r#"source scripts/verifier_diff.nu
+let ok = (parse-main-args ["--matrix" "--compat-kernel=5.10"])
+let bad = try {
+    parse-main-args ["--matrix" "--compat-kernel" 5.10]
+    { rejected: false message: "" }
+} catch {|err|
+    { rejected: true message: $err.msg }
+}
+{
+    compat_kernel: $ok.compat_kernel
+    rejected_unquoted_numeric: $bad.rejected
+    rejection_message: $bad.message
+} | to json"#;
+
+    let Some(output) = run_nu_script(script, "compat-kernel parser preserves dotted versions")
+    else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu compat-kernel parser check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("compat-kernel parser check should emit JSON");
+    assert_eq!(
+        actual
+            .get("compat_kernel")
+            .and_then(serde_json::Value::as_str),
+        Some("5.10")
+    );
+    assert_eq!(
+        actual
+            .get("rejected_unquoted_numeric")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert!(
+        actual
+            .get("rejection_message")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| message.contains("--compat-kernel=5.10")),
+        "rejection should tell users to preserve dotted versions with assignment syntax"
+    );
+}

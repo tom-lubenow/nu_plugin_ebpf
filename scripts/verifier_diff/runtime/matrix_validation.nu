@@ -400,6 +400,39 @@ def matrix-test-lane-count [fixtures lane: string] {
     | length
 }
 
+def fixture-matrix-row [tier: string category: string fixtures compat_kernel] {
+    let base = {
+        tier: $tier
+        category: $category
+        total: ($fixtures | length)
+        local_accept: (matrix-status-count $fixtures local accept)
+        local_reject: (matrix-status-count $fixtures local reject)
+        local_skip: (matrix-status-count $fixtures local skip)
+        kernel_accept: (matrix-status-count $fixtures kernel accept)
+        kernel_reject: (matrix-status-count $fixtures kernel reject)
+        kernel_skip: (matrix-status-count $fixtures kernel skip)
+        kernel_accept_versioned: (matrix-kernel-accept-versioned-count $fixtures true)
+        kernel_accept_unversioned: (matrix-kernel-accept-versioned-count $fixtures false)
+        kernel_accept_bounded: (matrix-kernel-accept-bounded-count $fixtures true)
+        kernel_accept_unbounded: (matrix-kernel-accept-bounded-count $fixtures false)
+        lane_host_safe: (matrix-test-lane-count $fixtures "host-safe")
+        lane_host_gated: (matrix-test-lane-count $fixtures "host-gated")
+        lane_dry_run: (matrix-test-lane-count $fixtures "dry-run")
+        lane_vm_only: (matrix-test-lane-count $fixtures "vm-only")
+    }
+
+    if $compat_kernel == null {
+        $base
+    } else {
+        $base
+        | upsert compat_kernel $compat_kernel
+        | upsert kernel_accept_compatible (matrix-kernel-accept-compatible-count $fixtures true)
+        | upsert kernel_accept_incompatible (matrix-kernel-accept-compatible-count $fixtures false)
+        | upsert kernel_accept_requires_newer (matrix-kernel-accept-compat-reason-count $fixtures "kernel>=")
+        | upsert kernel_accept_requires_older (matrix-kernel-accept-compat-reason-count $fixtures "kernel<")
+    }
+}
+
 def fixture-matrix-rows [fixtures compat_kernel] {
     let matrix_fixtures = (
         $fixtures
@@ -444,39 +477,12 @@ def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {
                 | where {|fixture| (optional $fixture category "") == $category }
             )
 
-            let base = {
-                tier: $tier
-                category: $category
-                total: ($category_fixtures | length)
-                local_accept: (matrix-status-count $category_fixtures local accept)
-                local_reject: (matrix-status-count $category_fixtures local reject)
-                local_skip: (matrix-status-count $category_fixtures local skip)
-                kernel_accept: (matrix-status-count $category_fixtures kernel accept)
-                kernel_reject: (matrix-status-count $category_fixtures kernel reject)
-                kernel_skip: (matrix-status-count $category_fixtures kernel skip)
-                kernel_accept_versioned: (matrix-kernel-accept-versioned-count $category_fixtures true)
-                kernel_accept_unversioned: (matrix-kernel-accept-versioned-count $category_fixtures false)
-                kernel_accept_bounded: (matrix-kernel-accept-bounded-count $category_fixtures true)
-                kernel_accept_unbounded: (matrix-kernel-accept-bounded-count $category_fixtures false)
-                lane_host_safe: (matrix-test-lane-count $category_fixtures "host-safe")
-                lane_host_gated: (matrix-test-lane-count $category_fixtures "host-gated")
-                lane_dry_run: (matrix-test-lane-count $category_fixtures "dry-run")
-                lane_vm_only: (matrix-test-lane-count $category_fixtures "vm-only")
-            }
-
-            let row = if $compat_kernel == null {
-                $base
-            } else {
-                $base
-                | upsert compat_kernel $compat_kernel
-                | upsert kernel_accept_compatible (matrix-kernel-accept-compatible-count $category_fixtures true)
-                | upsert kernel_accept_incompatible (matrix-kernel-accept-compatible-count $category_fixtures false)
-                | upsert kernel_accept_requires_newer (matrix-kernel-accept-compat-reason-count $category_fixtures "kernel>=")
-                | upsert kernel_accept_requires_older (matrix-kernel-accept-compat-reason-count $category_fixtures "kernel<")
-            }
-
-            $rows = ($rows | append $row)
+            $rows = ($rows | append (fixture-matrix-row $tier $category $category_fixtures $compat_kernel))
         }
+    }
+
+    if (($matrix_fixtures | length) > 0) {
+        $rows = ($rows | append (fixture-matrix-row "all" "all" $matrix_fixtures $compat_kernel))
     }
 
     $rows

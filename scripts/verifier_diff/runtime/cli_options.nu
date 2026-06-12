@@ -70,7 +70,7 @@ def print-main-help [] {
         "  --list: List verifier fixtures and exit."
         "  --matrix: Print verifier fixture counts by tier and category, then exit."
         "  --json: Emit JSON for --list or --matrix."
-        "  --compat-kernel <string>: With --list or --matrix, compare effective minimums against this kernel release."
+        "  --compat-kernel=<string>: With --list or --matrix, compare effective minimums against this kernel release. Use assignment or quotes so Nushell preserves versions like 5.10."
         "  --kernel: Require kernel verifier checks instead of auto-skipping missing prerequisites."
         "  --no-kernel: Run only local dry-run compiler/VCC checks."
         "  --smoke: Run the default smoke lane: fast-tier, host-safe fixtures."
@@ -130,6 +130,14 @@ def require-flag-value [args idx: int flag: string] {
 
 def string-flag-value [value] {
     $value | into string
+}
+
+def kernel-version-flag-value [flag: string value] {
+    if (($value | describe) != "string") {
+        fail $"($flag) expects a string kernel version; use ($flag)=5.10 or quote the value so Nushell does not normalize it as a number"
+    }
+
+    string-flag-value $value
 }
 
 def fixture-flag-values [value] {
@@ -230,7 +238,12 @@ def parse-main-args [args] {
         } else if $arg in ["--validate-fixture-file" "--compat-kernel" "--category" "--tag" "--tier" "--exclude-tier" "--test-lane" "--local-status" "--kernel-status"] {
             let value = if $has_value { $parsed.value } else { require-flag-value $args $i $arg }
             let key = ($arg | str substring 2.. | str replace --all "-" "_")
-            $options = ($options | upsert $key (string-flag-value $value))
+            let parsed_value = if $arg == "--compat-kernel" {
+                kernel-version-flag-value $arg $value
+            } else {
+                string-flag-value $value
+            }
+            $options = ($options | upsert $key $parsed_value)
             $i = if $has_value { ($i + 1) } else { ($i + 2) }
         } else if $arg == "--fixture" {
             let value = if $has_value { $parsed.value } else { require-flag-value $args $i $arg }

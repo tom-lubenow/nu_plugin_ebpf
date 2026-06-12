@@ -50,3 +50,29 @@ fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
         "--kernel availability should be checked before running local fixtures"
     );
 }
+
+#[test]
+fn test_verifier_diff_matrix_includes_aggregate_row() {
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let matrix_rows_body = verifier_diff
+        .split_once(
+            "def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {",
+        )
+        .expect("expected fixture matrix row builder")
+        .1
+        .split_once("\ndef print-fixture-matrix")
+        .expect("expected matrix print function after row builder")
+        .0;
+
+    assert!(
+        verifier_diff.contains(
+            "def fixture-matrix-row [tier: string category: string fixtures compat_kernel]"
+        ),
+        "matrix row count logic should stay centralized for category and aggregate rows"
+    );
+    assert!(
+        matrix_rows_body
+            .contains("fixture-matrix-row \"all\" \"all\" $matrix_fixtures $compat_kernel"),
+        "matrix output should include an aggregate row over the selected fixture corpus"
+    );
+}
