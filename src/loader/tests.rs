@@ -1606,17 +1606,19 @@ fn test_merge_generic_map_key_semantics_drops_conflicts() {
 }
 
 #[test]
-fn test_attach_with_pin_rejects_struct_ops_objects() {
-    let state = EbpfState::new();
-    let object = EbpfObject::struct_ops("demo", "file", vec![0; 8]).build();
+fn test_libbpf_pin_compatible_struct_ops_object_pins_runtime_maps_only() {
+    let mut object = EbpfObject::struct_ops("demo", "file", vec![0; 8]).build();
+    object.maps.push(EbpfMap {
+        name: "shared".to_string(),
+        def: BpfMapDef::hash(4, 8, 16),
+    });
 
-    let err = state
-        .attach_with_pin(&object, Some("shared"))
-        .expect_err("struct_ops objects should reject pinned map sharing");
+    let pinned = libbpf_pin_compatible_object(&object);
 
-    assert!(
-        matches!(err, LoadError::Load(msg) if msg.contains("do not yet support pinned map sharing"))
-    );
+    assert_eq!(pinned.maps.len(), 1);
+    assert_eq!(pinned.maps[0].def.pinning, BpfPinningType::ByName);
+    assert_eq!(object.maps[0].def.pinning, BpfPinningType::None);
+    assert_eq!(pinned.extra_data_symbols, object.extra_data_symbols);
 }
 
 fn map_in_map_fixture_refs() -> (MapRef, MapRef, MapRef) {

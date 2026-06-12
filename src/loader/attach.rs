@@ -2289,12 +2289,6 @@ impl EbpfState {
         value_type_name: &str,
         options: AttachOptions,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "struct_ops objects do not yet support pinned map sharing".to_string(),
-            ));
-        }
-
         let spec = ProgramSpec::StructOps {
             value_type_name: value_type_name.to_string(),
         };
@@ -2313,10 +2307,20 @@ impl EbpfState {
             return Err(err);
         }
 
-        let elf_bytes = object.to_elf()?;
-        let handle = LibbpfStructOpsHandle::load_and_attach(elf_bytes, name)?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle =
+            LibbpfStructOpsHandle::load_and_attach(elf_bytes, name, pin_root_path.as_deref())?;
         let runtime_maps = setup_libbpf_runtime_maps(handle.export_maps()?)?;
         let id = self.next_probe_id();
+        let pin_group_owned = pin_group.map(|s| s.to_string());
+        if let Some(ref group) = pin_group_owned {
+            let mut refs = self
+                .pin_group_refs
+                .lock()
+                .map_err(|_| LoadError::LockPoisoned)?;
+            *refs.entry(group.clone()).or_insert(0) += 1;
+        }
 
         let active_probe = ActiveProbe {
             id,
@@ -2373,7 +2377,7 @@ impl EbpfState {
                     .iter()
                     .map(|program| &program.generic_map_value_semantics),
             ),
-            pin_group: None,
+            pin_group: pin_group_owned,
         };
 
         self.probes

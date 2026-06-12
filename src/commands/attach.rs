@@ -1480,12 +1480,6 @@ fn run_attach(
                 ),
             );
         }
-        if pin_group.is_some() {
-            return Err(
-                LabeledError::new("Pinned map sharing is not supported for struct_ops")
-                    .with_label("struct_ops objects currently cannot use --pin", call.head),
-            );
-        }
         validate_struct_ops_attach_safety(
             &program_spec,
             dry_run,

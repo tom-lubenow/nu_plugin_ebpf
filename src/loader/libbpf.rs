@@ -466,7 +466,11 @@ pub struct LibbpfStructOpsHandle {
 unsafe impl Send for LibbpfStructOpsHandle {}
 
 impl LibbpfStructOpsHandle {
-    pub fn load_and_attach(elf_bytes: Vec<u8>, map_name: &str) -> Result<Self, LoadError> {
+    pub fn load_and_attach(
+        elf_bytes: Vec<u8>,
+        map_name: &str,
+        pin_root_path: Option<&str>,
+    ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let map_name = CString::new(map_name)
             .map_err(|_| LoadError::Load(format!("invalid struct_ops map name '{map_name}'")))?;
@@ -474,7 +478,7 @@ impl LibbpfStructOpsHandle {
         let object = open_libbpf_object(
             &elf_bytes,
             "Failed to open struct_ops object with libbpf",
-            None,
+            pin_root_path,
         )?;
         load_libbpf_object(object, "Failed to load struct_ops object")?;
 
