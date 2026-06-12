@@ -94,6 +94,54 @@ fn common_object_bytes_counter_key_schema(object: &EbpfObject) -> Option<Counter
     schemas.all(|schema| schema == &first).then_some(first)
 }
 
+struct LibbpfRuntimeMaps {
+    maps: HashMap<String, AyaMap>,
+    has_ringbuf: bool,
+    has_counter_map: bool,
+    has_string_counter_map: bool,
+    has_bytes_counter_map: bool,
+    has_histogram_map: bool,
+    has_kstack_map: bool,
+    has_ustack_map: bool,
+    ringbuf: Option<RingBuf<MapData>>,
+}
+
+fn setup_libbpf_runtime_maps(
+    mut maps: HashMap<String, AyaMap>,
+) -> Result<LibbpfRuntimeMaps, LoadError> {
+    let has_ringbuf = maps.contains_key("events");
+    let has_counter_map = maps.contains_key("counters");
+    let has_string_counter_map = maps.contains_key("str_counters");
+    let has_bytes_counter_map = maps.contains_key("bytes_counters");
+    let has_histogram_map = maps.contains_key("histogram");
+    let has_kstack_map = maps.contains_key("kstacks");
+    let has_ustack_map = maps.contains_key("ustacks");
+
+    let ringbuf = if has_ringbuf {
+        let ring_map = maps
+            .remove("events")
+            .ok_or_else(|| LoadError::MapNotFound("events".to_string()))?;
+        let ringbuf = RingBuf::try_from(ring_map).map_err(|e| {
+            LoadError::PerfBuffer(format!("Failed to convert libbpf ring buffer map: {e}"))
+        })?;
+        Some(ringbuf)
+    } else {
+        None
+    };
+
+    Ok(LibbpfRuntimeMaps {
+        maps,
+        has_ringbuf,
+        has_counter_map,
+        has_string_counter_map,
+        has_bytes_counter_map,
+        has_histogram_map,
+        has_kstack_map,
+        has_ustack_map,
+        ringbuf,
+    })
+}
+
 pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
@@ -958,6 +1006,12 @@ impl EbpfState {
         }
         if let Some(err) = unsupported_live_map_in_map_error(object) {
             return Err(err);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::RawTracepointWritable
+        ) {
+            return self.attach_libbpf_raw_tracepoint_writable_object(object, pin_group, program);
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
@@ -1880,6 +1934,7 @@ impl EbpfState {
             attached_at: Instant::now(),
             aya_ebpf: Some(ebpf),
             libbpf_maps: HashMap::new(),
+            libbpf_program: None,
             struct_ops: None,
             owned_socket,
             has_ringbuf,
@@ -1899,6 +1954,68 @@ impl EbpfState {
             generic_map_value_types: program.generic_map_value_types.clone(),
             generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             pin_group: pin_group_owned,
+        };
+
+        self.probes
+            .lock()
+            .map_err(|_| LoadError::LockPoisoned)?
+            .insert(id, active_probe);
+
+        Ok(id)
+    }
+
+    fn attach_libbpf_raw_tracepoint_writable_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "raw_tracepoint.w libbpf loading does not yet support pinned map sharing"
+                    .to_string(),
+            ));
+        }
+
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfProgramHandle::load_and_attach_raw_tracepoint(
+            elf_bytes,
+            &program.name,
+            &program.target,
+        )?;
+        let runtime_maps = setup_libbpf_runtime_maps(handle.export_maps()?)?;
+        let id = self.next_probe_id();
+
+        let active_probe = ActiveProbe {
+            id,
+            probe_spec: format!(
+                "{}:{}",
+                program.prog_type.canonical_prefix(),
+                program.target
+            ),
+            attached_at: Instant::now(),
+            aya_ebpf: None,
+            libbpf_maps: runtime_maps.maps,
+            libbpf_program: Some(handle),
+            struct_ops: None,
+            owned_socket: None,
+            has_ringbuf: runtime_maps.has_ringbuf,
+            has_counter_map: runtime_maps.has_counter_map,
+            has_string_counter_map: runtime_maps.has_string_counter_map,
+            has_bytes_counter_map: runtime_maps.has_bytes_counter_map,
+            has_histogram_map: runtime_maps.has_histogram_map,
+            has_kstack_map: runtime_maps.has_kstack_map,
+            has_ustack_map: runtime_maps.has_ustack_map,
+            ringbuf: runtime_maps.ringbuf,
+            event_schema: program.event_schema.clone(),
+            bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
+            generic_map_key_types: program.generic_map_key_types.clone(),
+            generic_map_key_semantics: program.generic_map_key_semantics.clone(),
+            generic_map_max_entries: program.generic_map_max_entries.clone(),
+            generic_map_inner_templates: program.generic_map_inner_templates.clone(),
+            generic_map_value_types: program.generic_map_value_types.clone(),
+            generic_map_value_semantics: program.generic_map_value_semantics.clone(),
+            pin_group: None,
         };
 
         self.probes
@@ -1943,27 +2060,7 @@ impl EbpfState {
 
         let elf_bytes = object.to_elf()?;
         let handle = LibbpfStructOpsHandle::load_and_attach(elf_bytes, name)?;
-        let mut libbpf_maps = handle.export_maps()?;
-        let has_ringbuf = libbpf_maps.contains_key("events");
-        let has_counter_map = libbpf_maps.contains_key("counters");
-        let has_string_counter_map = libbpf_maps.contains_key("str_counters");
-        let has_bytes_counter_map = libbpf_maps.contains_key("bytes_counters");
-        let has_histogram_map = libbpf_maps.contains_key("histogram");
-        let has_kstack_map = libbpf_maps.contains_key("kstacks");
-        let has_ustack_map = libbpf_maps.contains_key("ustacks");
-
-        let ringbuf = if has_ringbuf {
-            let ring_map = libbpf_maps
-                .remove("events")
-                .ok_or_else(|| LoadError::MapNotFound("events".to_string()))?;
-            let ringbuf = RingBuf::try_from(ring_map).map_err(|e| {
-                LoadError::PerfBuffer(format!("Failed to convert libbpf ring buffer map: {e}"))
-            })?;
-            Some(ringbuf)
-        } else {
-            None
-        };
-
+        let runtime_maps = setup_libbpf_runtime_maps(handle.export_maps()?)?;
         let id = self.next_probe_id();
 
         let active_probe = ActiveProbe {
@@ -1971,17 +2068,18 @@ impl EbpfState {
             probe_spec: format!("struct_ops:{name}:{value_type_name}"),
             attached_at: Instant::now(),
             aya_ebpf: None,
-            libbpf_maps,
+            libbpf_maps: runtime_maps.maps,
+            libbpf_program: None,
             struct_ops: Some(handle),
             owned_socket: None,
-            has_ringbuf,
-            has_counter_map,
-            has_string_counter_map,
-            has_bytes_counter_map,
-            has_histogram_map,
-            has_kstack_map,
-            has_ustack_map,
-            ringbuf,
+            has_ringbuf: runtime_maps.has_ringbuf,
+            has_counter_map: runtime_maps.has_counter_map,
+            has_string_counter_map: runtime_maps.has_string_counter_map,
+            has_bytes_counter_map: runtime_maps.has_bytes_counter_map,
+            has_histogram_map: runtime_maps.has_histogram_map,
+            has_kstack_map: runtime_maps.has_kstack_map,
+            has_ustack_map: runtime_maps.has_ustack_map,
+            ringbuf: runtime_maps.ringbuf,
             event_schema: common_object_event_schema(object),
             bytes_counter_key_schema: common_object_bytes_counter_key_schema(object),
             generic_map_key_types: Self::merge_generic_map_types(

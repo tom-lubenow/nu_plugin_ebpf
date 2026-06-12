@@ -23,10 +23,10 @@ use aya::util::online_cpus;
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
-use self::libbpf::LibbpfStructOpsHandle;
+use self::libbpf::{LibbpfProgramHandle, LibbpfStructOpsHandle};
 use crate::compiler::ir_to_mir::AnnotatedValueSemantics;
 use crate::compiler::{
-    BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EventSchema,
+    BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EbpfProgramSection, EventSchema,
     KernelTargetValidationKind, MapRef, MirType, ProgramAttachKind,
 };
 
@@ -134,6 +134,8 @@ pub struct ActiveProbe {
     aya_ebpf: Option<Ebpf>,
     /// Maps owned by a libbpf-backed runtime and exposed through Aya map wrappers.
     libbpf_maps: HashMap<String, AyaMap>,
+    /// The loaded libbpf-backed ordinary program runtime handle.
+    libbpf_program: Option<LibbpfProgramHandle>,
     /// The loaded libbpf-backed struct_ops runtime handle.
     struct_ops: Option<LibbpfStructOpsHandle>,
     /// Loader-owned socket kept open for socket_filter attachments.
@@ -185,6 +187,8 @@ impl std::fmt::Debug for ActiveProbe {
                 "runtime",
                 &if self.aya_ebpf.is_some() {
                     "aya"
+                } else if self.libbpf_program.is_some() {
+                    "libbpf"
                 } else if self.struct_ops.is_some() {
                     "struct_ops"
                 } else {

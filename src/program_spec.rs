@@ -4774,22 +4774,16 @@ mod tests {
         let raw_tracepoint_writable =
             ProgramSpec::parse("raw_tracepoint.w:sys_enter").expect("raw_tp.w spec should parse");
         let raw_policy = raw_tracepoint_writable.live_attach_policy();
-        assert!(!raw_policy.loader_supported);
-        assert!(!raw_policy.default_allowed);
+        assert!(raw_policy.loader_supported);
+        assert!(raw_policy.default_allowed);
         assert!(!raw_policy.requires_opt_in);
-        assert_eq!(raw_policy.status(), ProgramLiveAttachStatus::Unsupported);
-        assert_eq!(
-            raw_policy.unsupported_reason,
-            Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable)
-        );
+        assert_eq!(raw_policy.status(), ProgramLiveAttachStatus::DefaultAllowed);
+        assert_eq!(raw_policy.unsupported_reason, None);
         assert_eq!(raw_policy.opt_in_reason, None);
-        assert_eq!(
-            raw_policy.note,
-            Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable.note())
-        );
+        assert_eq!(raw_policy.note, None);
         assert_eq!(
             raw_tracepoint_writable.external_alpha_status(),
-            ProgramExternalAlphaStatus::DryRunOnly
+            ProgramExternalAlphaStatus::HostGated
         );
 
         let cgroup_sock_addr_unix =

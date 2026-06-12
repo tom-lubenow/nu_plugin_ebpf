@@ -1839,12 +1839,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
 
     for (prog_type, target, label, detail) in [
         (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w",
-            "does not preserve writable raw-tracepoint sections",
-        ),
-        (
             EbpfProgramType::TcAction,
             "demo-action",
             "tc_action",

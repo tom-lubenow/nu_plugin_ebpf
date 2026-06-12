@@ -18,6 +18,11 @@ struct bpf_map {
 }
 
 #[repr(C)]
+struct bpf_program {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
 struct bpf_link {
     _private: [u8; 0],
 }
@@ -29,9 +34,13 @@ type BpfObjectCloseFn = unsafe extern "C" fn(*mut bpf_object);
 type BpfObjectNextMapFn = unsafe extern "C" fn(*const bpf_object, *const bpf_map) -> *mut bpf_map;
 type BpfObjectFindMapByNameFn =
     unsafe extern "C" fn(*const bpf_object, *const c_char) -> *mut bpf_map;
+type BpfObjectFindProgramByNameFn =
+    unsafe extern "C" fn(*const bpf_object, *const c_char) -> *mut bpf_program;
 type BpfMapFdFn = unsafe extern "C" fn(*const bpf_map) -> c_int;
 type BpfMapNameFn = unsafe extern "C" fn(*const bpf_map) -> *const c_char;
 type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_link;
+type BpfProgramAttachRawTracepointFn =
+    unsafe extern "C" fn(*const bpf_program, *const c_char) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -42,9 +51,11 @@ struct LibbpfApi {
     bpf_object_close: BpfObjectCloseFn,
     bpf_object_next_map: BpfObjectNextMapFn,
     bpf_object_find_map_by_name: BpfObjectFindMapByNameFn,
+    bpf_object_find_program_by_name: BpfObjectFindProgramByNameFn,
     bpf_map_fd: BpfMapFdFn,
     bpf_map_name: BpfMapNameFn,
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
+    bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -113,11 +124,19 @@ impl LibbpfApi {
                     handle,
                     b"bpf_object__find_map_by_name\0",
                 )?,
+                bpf_object_find_program_by_name: Self::load_symbol(
+                    handle,
+                    b"bpf_object__find_program_by_name\0",
+                )?,
                 bpf_map_fd: Self::load_symbol(handle, b"bpf_map__fd\0")?,
                 bpf_map_name: Self::load_symbol(handle, b"bpf_map__name\0")?,
                 bpf_map_attach_struct_ops: Self::load_symbol(
                     handle,
                     b"bpf_map__attach_struct_ops\0",
+                )?,
+                bpf_program_attach_raw_tracepoint: Self::load_symbol(
+                    handle,
+                    b"bpf_program__attach_raw_tracepoint\0",
                 )?,
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
@@ -203,6 +222,117 @@ fn aya_map_from_map_data(map_name: &str, map_data: MapData) -> Result<AyaMap, Lo
     })
 }
 
+fn open_libbpf_object(elf_bytes: &[u8], context: &str) -> Result<*mut bpf_object, LoadError> {
+    let api = libbpf_api()?;
+
+    // SAFETY: `elf_bytes` stays owned by the returned handle for the lifetime of `object`.
+    let object = unsafe {
+        (api.bpf_object_open_mem)(elf_bytes.as_ptr().cast(), elf_bytes.len(), ptr::null())
+    };
+    let open_err = unsafe { (api.libbpf_get_error)(object.cast()) };
+    if open_err != 0 {
+        return Err(pointer_error_message(context, open_err));
+    }
+    if object.is_null() {
+        return Err(LoadError::Load(format!(
+            "libbpf returned a null object while opening {context}"
+        )));
+    }
+
+    Ok(object)
+}
+
+fn load_libbpf_object(object: *mut bpf_object, context: &str) -> Result<(), LoadError> {
+    let api = libbpf_api()?;
+
+    // SAFETY: `object` is a valid libbpf object returned by `bpf_object__open_mem`.
+    let load_rc = unsafe { (api.bpf_object_load)(object) };
+    if load_rc != 0 {
+        // SAFETY: `object` is valid and should be closed on error.
+        unsafe { (api.bpf_object_close)(object) };
+        return Err(negative_rc_message(context, load_rc));
+    }
+
+    Ok(())
+}
+
+fn close_libbpf_object(object: *mut bpf_object) {
+    if object.is_null() {
+        return;
+    }
+
+    if let Ok(api) = libbpf_api() {
+        // SAFETY: `object` is owned by the caller and is being closed at most once.
+        unsafe { (api.bpf_object_close)(object) };
+    }
+}
+
+fn destroy_libbpf_link(link: *mut bpf_link) {
+    if link.is_null() {
+        return;
+    }
+
+    if let Ok(api) = libbpf_api() {
+        // SAFETY: `link` is owned by the caller and is being destroyed at most once.
+        unsafe {
+            (api.bpf_link_destroy)(link);
+        }
+    }
+}
+
+fn export_maps_from_object(object: *mut bpf_object) -> Result<HashMap<String, AyaMap>, LoadError> {
+    if object.is_null() {
+        return Err(LoadError::Load(
+            "cannot export maps from a closed libbpf object".to_string(),
+        ));
+    }
+
+    let api = libbpf_api()?;
+    let mut maps = HashMap::new();
+    let mut previous_map: *mut bpf_map = ptr::null_mut();
+
+    loop {
+        // SAFETY: `object` is a loaded libbpf object, and `previous_map` is either null
+        // or a map pointer returned by the prior iteration.
+        let map = unsafe { (api.bpf_object_next_map)(object.cast_const(), previous_map) };
+        if map.is_null() {
+            break;
+        }
+
+        // SAFETY: `map` is a live libbpf map pointer.
+        let name_ptr = unsafe { (api.bpf_map_name)(map) };
+        if name_ptr.is_null() {
+            return Err(LoadError::Load(
+                "libbpf returned a map with a null name".to_string(),
+            ));
+        }
+        // SAFETY: libbpf map names are valid NUL-terminated strings for live maps.
+        let map_name = unsafe { CStr::from_ptr(name_ptr) }
+            .to_string_lossy()
+            .into_owned();
+
+        // SAFETY: `map` is a live libbpf map pointer.
+        let fd = unsafe { (api.bpf_map_fd)(map) };
+        let owned_fd = duplicate_libbpf_map_fd(&map_name, fd)?;
+        let map_data = MapData::from_fd(owned_fd).map_err(|error| {
+            LoadError::Load(format!(
+                "Failed to import libbpf map '{map_name}' into Aya map data: {error}"
+            ))
+        })?;
+        let aya_map = aya_map_from_map_data(&map_name, map_data)?;
+
+        if maps.insert(map_name.clone(), aya_map).is_some() {
+            return Err(LoadError::Load(format!(
+                "libbpf object contains duplicate map name '{map_name}'"
+            )));
+        }
+
+        previous_map = map;
+    }
+
+    Ok(maps)
+}
+
 pub struct LibbpfStructOpsHandle {
     _elf_bytes: Vec<u8>,
     object: *mut bpf_object,
@@ -220,39 +350,14 @@ impl LibbpfStructOpsHandle {
         let map_name = CString::new(map_name)
             .map_err(|_| LoadError::Load(format!("invalid struct_ops map name '{map_name}'")))?;
 
-        // SAFETY: `elf_bytes` stays owned by the returned handle for the lifetime of `object`.
-        let object = unsafe {
-            (api.bpf_object_open_mem)(elf_bytes.as_ptr().cast(), elf_bytes.len(), ptr::null())
-        };
-        let open_err = unsafe { (api.libbpf_get_error)(object.cast()) };
-        if open_err != 0 {
-            return Err(pointer_error_message(
-                "Failed to open struct_ops object with libbpf",
-                open_err,
-            ));
-        }
-        if object.is_null() {
-            return Err(LoadError::Load(
-                "libbpf returned a null struct_ops object".to_string(),
-            ));
-        }
-
-        // SAFETY: `object` is a valid libbpf object returned by `bpf_object__open_mem`.
-        let load_rc = unsafe { (api.bpf_object_load)(object) };
-        if load_rc != 0 {
-            // SAFETY: `object` is valid and should be closed on error.
-            unsafe { (api.bpf_object_close)(object) };
-            return Err(negative_rc_message(
-                "Failed to load struct_ops object",
-                load_rc,
-            ));
-        }
+        let object =
+            open_libbpf_object(&elf_bytes, "Failed to open struct_ops object with libbpf")?;
+        load_libbpf_object(object, "Failed to load struct_ops object")?;
 
         // SAFETY: `object` is loaded and `map_name` is a valid C string.
         let map = unsafe { (api.bpf_object_find_map_by_name)(object, map_name.as_ptr()) };
         if map.is_null() {
-            // SAFETY: `object` is valid and should be closed on error.
-            unsafe { (api.bpf_object_close)(object) };
+            close_libbpf_object(object);
             return Err(LoadError::Load(format!(
                 "Failed to find struct_ops map '{name}' in loaded object",
                 name = map_name.to_string_lossy()
@@ -263,16 +368,14 @@ impl LibbpfStructOpsHandle {
         let link = unsafe { (api.bpf_map_attach_struct_ops)(map) };
         let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
         if attach_err != 0 {
-            // SAFETY: `object` is valid and should be closed on error.
-            unsafe { (api.bpf_object_close)(object) };
+            close_libbpf_object(object);
             return Err(pointer_error_message(
                 "Failed to attach struct_ops object",
                 attach_err,
             ));
         }
         if link.is_null() {
-            // SAFETY: `object` is valid and should be closed on error.
-            unsafe { (api.bpf_object_close)(object) };
+            close_libbpf_object(object);
             return Err(LoadError::Load(
                 "libbpf returned a null struct_ops link".to_string(),
             ));
@@ -286,78 +389,105 @@ impl LibbpfStructOpsHandle {
     }
 
     pub fn export_maps(&self) -> Result<HashMap<String, AyaMap>, LoadError> {
-        if self.object.is_null() {
+        export_maps_from_object(self.object)
+    }
+}
+
+pub struct LibbpfProgramHandle {
+    _elf_bytes: Vec<u8>,
+    object: *mut bpf_object,
+    link: *mut bpf_link,
+}
+
+// SAFETY: The handle owns process-local libbpf pointers and is only accessed
+// through the loader's mutex-protected probe table. We never share interior
+// references to the raw pointers across threads.
+unsafe impl Send for LibbpfProgramHandle {}
+
+impl LibbpfProgramHandle {
+    pub fn load_and_attach_raw_tracepoint(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        tracepoint_name: &str,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+        let tracepoint_name = CString::new(tracepoint_name).map_err(|_| {
+            LoadError::Load(format!("invalid raw tracepoint name '{tracepoint_name}'"))
+        })?;
+
+        let object = open_libbpf_object(
+            &elf_bytes,
+            "Failed to open raw_tracepoint.w object with libbpf",
+        )?;
+        load_libbpf_object(object, "Failed to load raw_tracepoint.w object")?;
+
+        // SAFETY: `object` is loaded and `program_name` is a valid C string.
+        let program =
+            unsafe { (api.bpf_object_find_program_by_name)(object, program_name.as_ptr()) };
+        if program.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "Failed to find raw_tracepoint.w program '{name}' in loaded object",
+                name = program_name.to_string_lossy()
+            )));
+        }
+
+        // SAFETY: `program` is loaded by libbpf and `tracepoint_name` names the raw tracepoint.
+        let link =
+            unsafe { (api.bpf_program_attach_raw_tracepoint)(program, tracepoint_name.as_ptr()) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(
+                "Failed to attach raw_tracepoint.w program",
+                attach_err,
+            ));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
             return Err(LoadError::Load(
-                "cannot export maps from a closed libbpf object".to_string(),
+                "libbpf returned a null raw_tracepoint.w link".to_string(),
             ));
         }
 
-        let api = libbpf_api()?;
-        let mut maps = HashMap::new();
-        let mut previous_map: *mut bpf_map = ptr::null_mut();
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
 
-        loop {
-            // SAFETY: `self.object` is a loaded libbpf object owned by this handle, and
-            // `previous_map` is either null or a map pointer returned by the prior iteration.
-            let map = unsafe { (api.bpf_object_next_map)(self.object.cast_const(), previous_map) };
-            if map.is_null() {
-                break;
-            }
-
-            // SAFETY: `map` is a live libbpf map pointer.
-            let name_ptr = unsafe { (api.bpf_map_name)(map) };
-            if name_ptr.is_null() {
-                return Err(LoadError::Load(
-                    "libbpf returned a map with a null name".to_string(),
-                ));
-            }
-            // SAFETY: libbpf map names are valid NUL-terminated strings for live maps.
-            let map_name = unsafe { CStr::from_ptr(name_ptr) }
-                .to_string_lossy()
-                .into_owned();
-
-            // SAFETY: `map` is a live libbpf map pointer.
-            let fd = unsafe { (api.bpf_map_fd)(map) };
-            let owned_fd = duplicate_libbpf_map_fd(&map_name, fd)?;
-            let map_data = MapData::from_fd(owned_fd).map_err(|error| {
-                LoadError::Load(format!(
-                    "Failed to import libbpf map '{map_name}' into Aya map data: {error}"
-                ))
-            })?;
-            let aya_map = aya_map_from_map_data(&map_name, map_data)?;
-
-            if maps.insert(map_name.clone(), aya_map).is_some() {
-                return Err(LoadError::Load(format!(
-                    "libbpf object contains duplicate map name '{map_name}'"
-                )));
-            }
-
-            previous_map = map;
-        }
-
-        Ok(maps)
+    pub fn export_maps(&self) -> Result<HashMap<String, AyaMap>, LoadError> {
+        export_maps_from_object(self.object)
     }
 }
 
 impl Drop for LibbpfStructOpsHandle {
     fn drop(&mut self) {
-        let Ok(api) = libbpf_api() else {
-            return;
-        };
-
         if !self.link.is_null() {
-            // SAFETY: `link` is owned by this handle and destroyed at most once.
-            unsafe {
-                (api.bpf_link_destroy)(self.link);
-            }
+            destroy_libbpf_link(self.link);
             self.link = ptr::null_mut();
         }
 
         if !self.object.is_null() {
-            // SAFETY: `object` is owned by this handle and closed at most once.
-            unsafe {
-                (api.bpf_object_close)(self.object);
-            }
+            close_libbpf_object(self.object);
+            self.object = ptr::null_mut();
+        }
+    }
+}
+
+impl Drop for LibbpfProgramHandle {
+    fn drop(&mut self) {
+        if !self.link.is_null() {
+            destroy_libbpf_link(self.link);
+            self.link = ptr::null_mut();
+        }
+
+        if !self.object.is_null() {
+            close_libbpf_object(self.object);
             self.object = ptr::null_mut();
         }
     }
