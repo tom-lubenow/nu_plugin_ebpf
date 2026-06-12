@@ -396,7 +396,18 @@ pub enum ProgramLiveAttachOptInReason {
     Qdisc,
 }
 
+const PROGRAM_LIVE_ATTACH_OPT_IN_REASONS: &[ProgramLiveAttachOptInReason] = &[
+    ProgramLiveAttachOptInReason::UnclassifiedStructOps,
+    ProgramLiveAttachOptInReason::SchedExt,
+    ProgramLiveAttachOptInReason::HidBpf,
+    ProgramLiveAttachOptInReason::Qdisc,
+];
+
 impl ProgramLiveAttachOptInReason {
+    pub fn all() -> &'static [Self] {
+        PROGRAM_LIVE_ATTACH_OPT_IN_REASONS
+    }
+
     pub fn key(self) -> &'static str {
         match self {
             Self::UnclassifiedStructOps => "unclassified-struct-ops",
@@ -450,7 +461,23 @@ pub enum ProgramLiveAttachUnsupportedReason {
     StructOpsCallback,
 }
 
+const PROGRAM_LIVE_ATTACH_UNSUPPORTED_REASONS: &[ProgramLiveAttachUnsupportedReason] = &[
+    ProgramLiveAttachUnsupportedReason::LsmCgroup,
+    ProgramLiveAttachUnsupportedReason::TcAction,
+    ProgramLiveAttachUnsupportedReason::SkReuseport,
+    ProgramLiveAttachUnsupportedReason::Lwt,
+    ProgramLiveAttachUnsupportedReason::Extension,
+    ProgramLiveAttachUnsupportedReason::Syscall,
+    ProgramLiveAttachUnsupportedReason::Iter,
+    ProgramLiveAttachUnsupportedReason::XdpMapProgram,
+    ProgramLiveAttachUnsupportedReason::StructOpsCallback,
+];
+
 impl ProgramLiveAttachUnsupportedReason {
+    pub fn all() -> &'static [Self] {
+        PROGRAM_LIVE_ATTACH_UNSUPPORTED_REASONS
+    }
+
     pub fn key(self) -> &'static str {
         match self {
             Self::LsmCgroup => "lsm-cgroup-link",
@@ -4932,6 +4959,26 @@ mod tests {
             .map(str::to_string),
         );
 
+        let mut unsupported_reason_keys = HashSet::new();
+        for reason in ProgramLiveAttachUnsupportedReason::all() {
+            assert!(
+                unsupported_reason_keys.insert(reason.key()),
+                "unsupported live-attach reason key repeats for {reason:?}"
+            );
+            assert!(!reason.description().is_empty(), "{reason:?}");
+            assert!(!reason.note().is_empty(), "{reason:?}");
+        }
+
+        let mut opt_in_reason_keys = HashSet::new();
+        for reason in ProgramLiveAttachOptInReason::all() {
+            assert!(
+                opt_in_reason_keys.insert(reason.key()),
+                "unsafe live-attach opt-in reason key repeats for {reason:?}"
+            );
+            assert!(!reason.description().is_empty(), "{reason:?}");
+            assert!(!reason.note().is_empty(), "{reason:?}");
+        }
+
         let mut seen_unsupported_reasons = Vec::new();
         let mut seen_opt_in_reasons = Vec::new();
         for spec_text in spec_texts {
@@ -5015,21 +5062,13 @@ mod tests {
                 );
             }
         }
-        for reason in [
-            ProgramLiveAttachUnsupportedReason::XdpMapProgram,
-            ProgramLiveAttachUnsupportedReason::StructOpsCallback,
-        ] {
+        for reason in ProgramLiveAttachUnsupportedReason::all() {
             assert!(
                 seen_unsupported_reasons.contains(&reason),
-                "special-case unsupported live-attach reason {reason:?} should be covered"
+                "unsupported live-attach reason {reason:?} should be covered by a modeled spec"
             );
         }
-        for reason in [
-            ProgramLiveAttachOptInReason::UnclassifiedStructOps,
-            ProgramLiveAttachOptInReason::SchedExt,
-            ProgramLiveAttachOptInReason::HidBpf,
-            ProgramLiveAttachOptInReason::Qdisc,
-        ] {
+        for reason in ProgramLiveAttachOptInReason::all() {
             assert!(
                 seen_opt_in_reasons.contains(&reason),
                 "unsafe live-attach opt-in reason {reason:?} should be covered"
