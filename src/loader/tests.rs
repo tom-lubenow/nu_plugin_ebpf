@@ -1851,12 +1851,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "libbpf-backed load/link path plus map/event integration",
         ),
         (
-            EbpfProgramType::FmodRet,
-            "do_sys_openat2",
-            "fmod_ret",
-            "does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support",
-        ),
-        (
             EbpfProgramType::LsmCgroup,
             "socket_bind",
             "lsm_cgroup",
@@ -2000,32 +1994,22 @@ fn test_attach_rejects_xdp_map_targets_before_loading() {
 #[test]
 fn test_attach_rejects_compile_only_programs_with_spec_requirements() {
     let state = EbpfState::new();
-    let spec = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
-        .expect("sleepable fmod_ret spec should parse");
-    let object = EbpfProgram::from_bytecode(
-        EbpfProgramType::FmodRet,
-        "bpf_modify_return_test",
-        "main",
-        vec![],
-    )
-    .with_program_spec(spec)
-    .into_object();
+    let spec = ProgramSpec::parse("iter:task").expect("iter task spec should parse");
+    let object = EbpfProgram::from_bytecode(EbpfProgramType::Iter, "task", "main", vec![])
+        .with_program_spec(spec)
+        .into_object();
 
     let err = state
         .attach(&object)
-        .expect_err("compile-only sleepable fmod_ret should reject before ELF emission");
+        .expect_err("compile-only iter should reject before ELF emission");
 
     let LoadError::Attach(msg) = err else {
-        panic!("expected attach error for sleepable fmod_ret");
+        panic!("expected attach error for iter");
     };
-    assert!(msg.contains("live attach for fmod_ret programs is not supported by this loader yet"));
+    assert!(msg.contains("live attach for iter programs is not supported by this loader yet"));
     assert!(msg.contains("external alpha status: dry-run-only"));
-    assert!(msg.contains(ProgramCompatibilityRequirement::KernelBtf.description()));
-    assert!(msg.contains(ProgramCompatibilityRequirement::BpfTrampoline.description()));
-    assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
-    assert!(msg.contains("kernel>=5.2"));
-    assert!(msg.contains("kernel>=5.5"));
-    assert!(msg.contains("kernel>=5.10"));
+    assert!(msg.contains(ProgramCompatibilityRequirement::BpfIterator.description()));
+    assert!(msg.contains(ProgramCompatibilityRequirement::BpfIteratorTaskTarget.description()));
 }
 
 #[test]

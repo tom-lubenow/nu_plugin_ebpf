@@ -41,6 +41,7 @@ type BpfMapNameFn = unsafe extern "C" fn(*const bpf_map) -> *const c_char;
 type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_link;
 type BpfProgramAttachRawTracepointFn =
     unsafe extern "C" fn(*const bpf_program, *const c_char) -> *mut bpf_link;
+type BpfProgramAttachTraceFn = unsafe extern "C" fn(*const bpf_program) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -56,6 +57,7 @@ struct LibbpfApi {
     bpf_map_name: BpfMapNameFn,
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
+    bpf_program_attach_trace: BpfProgramAttachTraceFn,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -137,6 +139,10 @@ impl LibbpfApi {
                 bpf_program_attach_raw_tracepoint: Self::load_symbol(
                     handle,
                     b"bpf_program__attach_raw_tracepoint\0",
+                )?,
+                bpf_program_attach_trace: Self::load_symbol(
+                    handle,
+                    b"bpf_program__attach_trace\0",
                 )?,
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
@@ -405,6 +411,27 @@ pub struct LibbpfProgramHandle {
 unsafe impl Send for LibbpfProgramHandle {}
 
 impl LibbpfProgramHandle {
+    fn loaded_program(
+        object: *mut bpf_object,
+        program_name: &CString,
+        program_label: &str,
+    ) -> Result<*mut bpf_program, LoadError> {
+        let api = libbpf_api()?;
+
+        // SAFETY: `object` is loaded and `program_name` is a valid C string.
+        let program =
+            unsafe { (api.bpf_object_find_program_by_name)(object, program_name.as_ptr()) };
+        if program.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "Failed to find {program_label} program '{name}' in loaded object",
+                name = program_name.to_string_lossy()
+            )));
+        }
+
+        Ok(program)
+    }
+
     pub fn load_and_attach_raw_tracepoint(
         elf_bytes: Vec<u8>,
         program_name: &str,
@@ -424,16 +451,7 @@ impl LibbpfProgramHandle {
         )?;
         load_libbpf_object(object, "Failed to load raw_tracepoint.w object")?;
 
-        // SAFETY: `object` is loaded and `program_name` is a valid C string.
-        let program =
-            unsafe { (api.bpf_object_find_program_by_name)(object, program_name.as_ptr()) };
-        if program.is_null() {
-            close_libbpf_object(object);
-            return Err(LoadError::Load(format!(
-                "Failed to find raw_tracepoint.w program '{name}' in loaded object",
-                name = program_name.to_string_lossy()
-            )));
-        }
+        let program = Self::loaded_program(object, &program_name, "raw_tracepoint.w")?;
 
         // SAFETY: `program` is loaded by libbpf and `tracepoint_name` names the raw tracepoint.
         let link =
@@ -451,6 +469,44 @@ impl LibbpfProgramHandle {
             return Err(LoadError::Load(
                 "libbpf returned a null raw_tracepoint.w link".to_string(),
             ));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
+
+    pub fn load_and_attach_trace(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        program_label: &str,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+        let open_context = format!("Failed to open {program_label} object with libbpf");
+        let load_context = format!("Failed to load {program_label} object");
+        let attach_context = format!("Failed to attach {program_label} program");
+
+        let object = open_libbpf_object(&elf_bytes, &open_context)?;
+        load_libbpf_object(object, &load_context)?;
+        let program = Self::loaded_program(object, &program_name, program_label)?;
+
+        // SAFETY: `program` is loaded by libbpf with section-preserved tracing metadata.
+        let link = unsafe { (api.bpf_program_attach_trace)(program) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(&attach_context, attach_err));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "libbpf returned a null {program_label} link"
+            )));
         }
 
         Ok(Self {

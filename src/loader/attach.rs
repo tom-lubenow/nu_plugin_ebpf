@@ -1013,6 +1013,9 @@ impl EbpfState {
         ) {
             return self.attach_libbpf_raw_tracepoint_writable_object(object, pin_group, program);
         }
+        if matches!(program.prog_type.attach_kind(), ProgramAttachKind::FmodRet) {
+            return self.attach_libbpf_fmod_ret_object(object, pin_group, program);
+        }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
                 Some(resolve_syscall_probe_symbols(syscall)?)
@@ -1983,6 +1986,35 @@ impl EbpfState {
             &program.name,
             &program.target,
         )?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_fmod_ret_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "fmod_ret libbpf loading does not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfProgramHandle::load_and_attach_trace(
+            elf_bytes,
+            &program.name,
+            program.prog_type.canonical_prefix(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn insert_libbpf_program_active_probe(
+        &self,
+        handle: LibbpfProgramHandle,
+        program: &EbpfProgramSection,
+    ) -> Result<u32, LoadError> {
         let runtime_maps = setup_libbpf_runtime_maps(handle.export_maps()?)?;
         let id = self.next_probe_id();
 

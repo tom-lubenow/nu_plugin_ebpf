@@ -56,10 +56,8 @@ the probe point is hit.
 
 Supported attach types:
   - kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall
-  - fentry, fexit, tp_btf
-  - fmod_ret / fmod_ret.s (dry-run compile support; live attach is not implemented yet)
-  - tracepoint, raw_tracepoint
-  - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
+  - fentry, fexit, fmod_ret / fmod_ret.s, tp_btf
+  - tracepoint, raw_tracepoint, raw_tracepoint.w / raw_tp.w
   - uprobe / uprobe.s, uretprobe / uretprobe.s
   - uprobe.multi / uprobe.multi.s, uretprobe.multi / uretprobe.multi.s
   - lsm
