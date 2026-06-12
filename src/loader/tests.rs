@@ -1639,9 +1639,23 @@ fn live_map_in_map_fixture(
     first_inner_templates: HashMap<MapRef, MapRef>,
     extra_inner_templates: Vec<HashMap<MapRef, MapRef>>,
 ) -> EbpfObject {
-    let object = EbpfProgram::with_maps(
+    live_map_in_map_fixture_for_program(
         EbpfProgramType::Xdp,
         "lo",
+        first_inner_templates,
+        extra_inner_templates,
+    )
+}
+
+fn live_map_in_map_fixture_for_program(
+    prog_type: EbpfProgramType,
+    target: &str,
+    first_inner_templates: HashMap<MapRef, MapRef>,
+    extra_inner_templates: Vec<HashMap<MapRef, MapRef>>,
+) -> EbpfObject {
+    let object = EbpfProgram::with_maps(
+        prog_type,
+        target,
         "test",
         vec![],
         0,
@@ -1672,14 +1686,9 @@ fn live_map_in_map_fixture(
     let mut object = object;
     for (index, inner_templates) in extra_inner_templates.into_iter().enumerate() {
         object.programs.push(
-            EbpfProgram::from_bytecode(
-                EbpfProgramType::Xdp,
-                "lo",
-                &format!("extra_{index}"),
-                vec![],
-            )
-            .with_generic_map_inner_templates(inner_templates)
-            .into_program_section(),
+            EbpfProgram::from_bytecode(prog_type, target, &format!("extra_{index}"), vec![])
+                .with_generic_map_inner_templates(inner_templates)
+                .into_program_section(),
         );
     }
     object
@@ -1728,6 +1737,32 @@ fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
                     && msg.contains("--dry-run")
         ),
         "unexpected map-in-map live attach error: {err:?}"
+    );
+}
+
+#[test]
+fn test_libbpf_backed_attach_reaches_pin_guard_before_aya_map_in_map_reject() {
+    let state = EbpfState::new();
+    let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+    let object = live_map_in_map_fixture_for_program(
+        EbpfProgramType::RawTracepointWritable,
+        "sys_enter",
+        HashMap::from([(outer_ref, inner_ref)]),
+        vec![],
+    );
+
+    let err = state
+        .attach_with_pin(&object, Some("shared"))
+        .expect_err("libbpf-backed map-in-map should route before Aya-only rejection");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("raw_tracepoint.w libbpf loading does not yet support pinned map sharing")
+                    && !msg.contains("inner_map_fd")
+        ),
+        "unexpected libbpf-backed map-in-map dispatch error: {err:?}"
     );
 }
 

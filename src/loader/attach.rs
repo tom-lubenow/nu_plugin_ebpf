@@ -1025,9 +1025,6 @@ impl EbpfState {
         if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
         }
-        if let Some(err) = unsupported_live_map_in_map_error(object) {
-            return Err(err);
-        }
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepointWritable
@@ -1072,6 +1069,9 @@ impl EbpfState {
                     object, pin_group, program, target,
                 );
             }
+        }
+        if let Some(err) = unsupported_live_map_in_map_error(object) {
+            return Err(err);
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
