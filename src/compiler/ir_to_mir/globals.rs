@@ -556,11 +556,11 @@ impl ParsedNamedGlobalType {
             if record_path.is_some() {
                 let subject = type_spec_subject(spec, context, record_path);
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{subject} is not supported yet; bpf_list_head/bpf_rb_root roots require a named object type schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields"
+                    "{subject} requires an explicit bpf_list_head:TYPE:FIELD or bpf_rb_root:TYPE:FIELD schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields"
                 )));
             }
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph type spec '{}' is not supported yet; bpf_list_head/bpf_rb_root roots require a named object type schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields",
+                "map value graph type spec '{}' requires an explicit bpf_list_head:TYPE:FIELD or bpf_rb_root:TYPE:FIELD schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields",
                 spec
             )));
         }

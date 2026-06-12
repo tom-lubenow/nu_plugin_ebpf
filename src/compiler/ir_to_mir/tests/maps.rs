@@ -5826,8 +5826,11 @@ fn test_map_value_type_spec_rejects_bare_graph_root() {
 
     let msg = err.to_string();
     assert!(msg.contains("record field 'root' type spec 'bpf_list_head'"));
-    assert!(msg.contains("named object type schema"));
+    assert!(msg.contains(
+        "requires an explicit bpf_list_head:TYPE:FIELD or bpf_rb_root:TYPE:FIELD schema"
+    ));
     assert!(msg.contains("contains:TYPE:FIELD"));
+    assert!(!msg.contains("not supported yet"));
 }
 
 #[test]
@@ -5862,7 +5865,11 @@ fn test_map_value_type_spec_rejects_bare_graph_node() {
 
     let msg = err.to_string();
     assert!(msg.contains("record field 'node' type spec 'bpf_rb_node'"));
+    assert!(msg.contains(
+        "requires an explicit bpf_list_head:TYPE:FIELD or bpf_rb_root:TYPE:FIELD schema"
+    ));
     assert!(msg.contains("matching bpf_list_node/bpf_rb_node object fields"));
+    assert!(!msg.contains("not supported yet"));
 }
 
 #[test]
