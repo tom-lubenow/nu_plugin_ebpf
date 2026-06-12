@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use aya::maps::sock::SockMapFd;
-use aya::maps::{HashMap as AyaHashMap, MapData, MapType, PerCpuHashMap, RingBuf};
+use aya::maps::{HashMap as AyaHashMap, Map as AyaMap, MapData, MapType, PerCpuHashMap, RingBuf};
 use aya::programs::{
     BtfTracePoint, CgroupAttachMode, CgroupDevice, CgroupSkb, CgroupSock, CgroupSockAddr,
     CgroupSockopt, CgroupSysctl, FEntry, FExit, KProbe, LinkOrder, LircMode2, Lsm, PerfEvent,
@@ -132,6 +132,8 @@ pub struct ActiveProbe {
     pub attached_at: Instant,
     /// The loaded Aya eBPF object for ordinary program kinds.
     aya_ebpf: Option<Ebpf>,
+    /// Maps owned by a libbpf-backed runtime and exposed through Aya map wrappers.
+    libbpf_maps: HashMap<String, AyaMap>,
     /// The loaded libbpf-backed struct_ops runtime handle.
     struct_ops: Option<LibbpfStructOpsHandle>,
     /// Loader-owned socket kept open for socket_filter attachments.
@@ -178,6 +180,7 @@ impl std::fmt::Debug for ActiveProbe {
             .field("id", &self.id)
             .field("probe_spec", &self.probe_spec)
             .field("attached_at", &self.attached_at)
+            .field("libbpf_maps", &self.libbpf_maps.len())
             .field(
                 "runtime",
                 &if self.aya_ebpf.is_some() {
@@ -227,8 +230,12 @@ impl std::fmt::Debug for ActiveProbe {
 }
 
 impl ActiveProbe {
-    fn ebpf_mut(&mut self) -> Option<&mut Ebpf> {
-        self.aya_ebpf.as_mut()
+    fn map_mut(&mut self, name: &str) -> Option<&mut AyaMap> {
+        if let Some(ebpf) = self.aya_ebpf.as_mut() {
+            return ebpf.map_mut(name);
+        }
+
+        self.libbpf_maps.get_mut(name)
     }
 }
 
