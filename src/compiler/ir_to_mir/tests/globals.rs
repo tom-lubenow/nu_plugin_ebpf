@@ -16172,6 +16172,94 @@ fn make_global_define_type_array_compact_length_program(
 }
 
 #[test]
+fn test_lower_global_define_type_u32_array_compact_empty_is_passthrough() {
+    let (hir, decl_names) = make_global_define_type_array_compact_length_program(
+        "array{u32:2}",
+        "ports",
+        10_974,
+        vec![b"empty".to_vec()],
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on numeric fixed arrays should preserve fixed-array metadata");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Copy { .. })),
+        "expected compact --empty on u32 fixed arrays to pass through the input pointer"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "compact --empty on numeric fixed arrays should not rebuild a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed u32 array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_bool_array_compact_empty_is_passthrough() {
+    let (hir, decl_names) = make_global_define_type_array_compact_length_program(
+        "array{bool:2}",
+        "flags",
+        10_976,
+        vec![b"empty".to_vec()],
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on bool fixed arrays should preserve fixed-array metadata");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Copy { .. })),
+        "expected compact --empty on bool fixed arrays to pass through the input pointer"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "compact --empty on bool fixed arrays should not rebuild a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed bool array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_string_array_compact_is_passthrough() {
     let (hir, decl_names) = make_global_define_type_array_compact_length_program(
         "array{string:8:2}",
