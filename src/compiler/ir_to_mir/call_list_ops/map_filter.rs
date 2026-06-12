@@ -249,7 +249,9 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn constant_bool_closure_result(closure_ir: &HirFunction) -> Option<bool> {
+    pub(in crate::compiler::ir_to_mir) fn constant_bool_closure_result(
+        closure_ir: &HirFunction,
+    ) -> Option<bool> {
         let [block] = closure_ir.blocks.as_slice() else {
             return None;
         };

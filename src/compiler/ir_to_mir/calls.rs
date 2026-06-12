@@ -5538,6 +5538,9 @@ impl<'a> HirToMirLowering<'a> {
                     let meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
                     if let Some(meta) = meta {
                         if let Some((_slot, max_len)) = meta.list_buffer {
+                            let input_known_len = Self::numeric_list_known_len(&meta);
+                            let input_min_len = meta.list_min_len.or(input_known_len);
+                            let constant_predicate = Self::constant_bool_closure_result(closure_ir);
                             let (out_slot, out_ty) =
                                 self.create_stack_numeric_list_result(dst_vreg, max_len);
 
@@ -5600,9 +5603,20 @@ impl<'a> HirToMirLowering<'a> {
                                 self.current_block = continuation_block;
                             }
 
+                            let known_len = match constant_predicate {
+                                Some(true) => input_known_len,
+                                Some(false) => Some(0),
+                                None => None,
+                            };
                             self.install_stack_numeric_list_result_metadata(
-                                src_dst, out_slot, out_ty, max_len, None,
+                                src_dst, out_slot, out_ty, max_len, known_len,
                             );
+                            if matches!(constant_predicate, Some(true))
+                                && known_len.is_none()
+                                && let Some(min_len) = input_min_len
+                            {
+                                self.get_or_create_metadata(src_dst).list_min_len = Some(min_len);
+                            }
                             return Ok(());
                         }
                         if let Some(input_reg) = input_reg

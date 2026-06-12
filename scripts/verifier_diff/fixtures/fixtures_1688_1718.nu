@@ -52,6 +52,19 @@ const VERIFIER_DIFF_FIXTURES_1688_1718 = [
         kernel: "accept"
     }
     {
+        name: "core-list-where-true-first"
+        category: "language-core"
+        tags: [aggregate list where closure first]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([10 20 30] | where {|x| true } | first) == 10'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-any"
         category: "language-core"
         tags: [aggregate list any closure]
