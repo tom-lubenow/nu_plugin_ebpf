@@ -3,6 +3,7 @@ mod parser_support;
 mod rust_support;
 mod source_support;
 
+use context_write_support::*;
 use nu_support::*;
 use parser_support::*;
 use rust_support::*;
@@ -12,7 +13,10 @@ mod context_field_metadata_tests;
 mod context_read_record_wrapper_scanner_tests;
 mod context_read_scanner_tests;
 mod context_read_user_function_scanner_tests;
+mod context_write_helper_scanner_tests;
+mod context_write_kfunc_scanner_tests;
 mod context_write_scanner_tests;
+mod context_write_support;
 mod iter_metadata_tests;
 mod map_metadata_tests;
 mod metadata_tests;
