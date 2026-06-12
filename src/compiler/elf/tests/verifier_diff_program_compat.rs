@@ -32,6 +32,7 @@ mod program_metadata_tests;
 mod program_reserved_map_scanner_tests;
 mod program_struct_ops_scanner_tests;
 mod program_surface_scanner_tests;
+mod runtime_kfunc_window_tests;
 mod runtime_tests;
 mod source_tests;
 mod tracepoint_payload_scanner_tests;
