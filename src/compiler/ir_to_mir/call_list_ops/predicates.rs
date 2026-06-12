@@ -310,7 +310,7 @@ impl<'a> HirToMirLowering<'a> {
             || matches!(ty, MirType::U64 | MirType::Bool)
     }
 
-    fn emit_typed_fixed_array_predicate_item(
+    pub(super) fn emit_typed_fixed_array_predicate_item(
         &mut self,
         cmd_name: &str,
         input_vreg: VReg,

@@ -5,8 +5,27 @@ impl<'a> HirToMirLowering<'a> {
         &mut self,
         cmd_name: &str,
         input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<Option<(VReg, MirType, usize)>, CompileError> {
+        self.typed_fixed_array_stack_list_input(
+            cmd_name,
+            input_reg,
+            input_vreg,
+            input_meta,
+            Self::typed_fixed_array_numeric_list_scalar_type,
+            Self::typed_fixed_array_numeric_list_scalar_type_description(),
+        )
+    }
+
+    fn typed_fixed_array_stack_list_input(
+        &mut self,
+        cmd_name: &str,
+        input_reg: RegId,
         mut input_vreg: VReg,
         input_meta: &RegMetadata,
+        supported_scalar_type: fn(&MirType) -> bool,
+        supported_scalar_type_description: &'static str,
     ) -> Result<Option<(VReg, MirType, usize)>, CompileError> {
         if input_meta.list_buffer.is_some() {
             return Ok(None);
@@ -33,11 +52,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(None);
         };
 
-        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+        if !supported_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} on typed fixed arrays currently supports {} in eBPF, got {:?}",
-                Self::typed_fixed_array_numeric_list_scalar_type_description(),
-                elem_ty
+                supported_scalar_type_description, elem_ty
             )));
         }
 
@@ -81,8 +99,14 @@ impl<'a> HirToMirLowering<'a> {
         closure_block_id: NuBlockId,
         closure_ir: &HirFunction,
     ) -> Result<bool, CompileError> {
-        let Some((input_vreg, elem_ty, array_len)) =
-            self.typed_fixed_array_numeric_list_input("where", input_reg, input_vreg, input_meta)?
+        let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_stack_list_input(
+            "where",
+            input_reg,
+            input_vreg,
+            input_meta,
+            Self::typed_fixed_array_where_scalar_type,
+            Self::typed_fixed_array_where_scalar_type_description(),
+        )?
         else {
             return Ok(false);
         };
@@ -104,8 +128,8 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 self.current_block = predicate_block;
 
-                let elem_vreg = self
-                    .emit_typed_fixed_array_numeric_list_item("where", input_vreg, &elem_ty, i)?;
+                let elem_vreg =
+                    self.emit_typed_fixed_array_where_item("where", input_vreg, &elem_ty, i)?;
                 let predicate =
                     self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
 
@@ -117,9 +141,14 @@ impl<'a> HirToMirLowering<'a> {
                 });
 
                 self.current_block = push_block;
+                let item_vreg = if matches!(elem_ty, MirType::Bool) {
+                    self.emit_typed_fixed_array_numeric_list_item("where", input_vreg, &elem_ty, i)?
+                } else {
+                    elem_vreg
+                };
                 self.emit(MirInst::ListPush {
                     list: dst_vreg,
-                    item: elem_vreg,
+                    item: item_vreg,
                 });
                 self.terminate(MirInst::Jump { target: next_block });
 
@@ -188,5 +217,27 @@ impl<'a> HirToMirLowering<'a> {
             Some(array_len),
         );
         Ok(true)
+    }
+
+    fn typed_fixed_array_where_scalar_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::Bool)
+    }
+
+    fn typed_fixed_array_where_scalar_type_description() -> &'static str {
+        "signed integer, bool, or <=32-bit unsigned integer scalar elements"
+    }
+
+    fn emit_typed_fixed_array_where_item(
+        &mut self,
+        cmd_name: &str,
+        input_vreg: VReg,
+        elem_ty: &MirType,
+        index: usize,
+    ) -> Result<VReg, CompileError> {
+        if matches!(elem_ty, MirType::Bool) {
+            self.emit_typed_fixed_array_predicate_item(cmd_name, input_vreg, elem_ty, index)
+        } else {
+            self.emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, elem_ty, index)
+        }
     }
 }
