@@ -111,6 +111,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
+        let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
         if array_len > 0 {
@@ -157,7 +158,14 @@ impl<'a> HirToMirLowering<'a> {
             self.current_block = continuation_block;
         }
 
-        self.install_stack_numeric_list_result_metadata(src_dst, out_slot, out_ty, array_len, None);
+        let known_len = match constant_predicate {
+            Some(true) => Some(array_len),
+            Some(false) => Some(0),
+            None => None,
+        };
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, array_len, known_len,
+        );
         Ok(true)
     }
 
@@ -239,5 +247,28 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             self.emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, elem_ty, index)
         }
+    }
+
+    fn constant_bool_closure_result(closure_ir: &HirFunction) -> Option<bool> {
+        let [block] = closure_ir.blocks.as_slice() else {
+            return None;
+        };
+        if block.id != closure_ir.entry {
+            return None;
+        }
+        let [
+            HirStmt::LoadLiteral {
+                dst,
+                lit: HirLiteral::Bool(value),
+            },
+        ] = block.stmts.as_slice()
+        else {
+            return None;
+        };
+        let src = match &block.terminator {
+            HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => src,
+            _ => return None,
+        };
+        if dst == src { Some(*value) } else { None }
     }
 }

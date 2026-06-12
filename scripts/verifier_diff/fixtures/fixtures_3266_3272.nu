@@ -126,6 +126,20 @@ export const VERIFIER_DIFF_FIXTURES_3266_3272 = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bool-where-true-first"
+        category: "globals"
+        tags: [globals arrays bool where closure first global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true false true] | global-define --type "array{bool:3}" flags'
+            '  (((global-get flags) | where {|x| true } | first) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-bool-uniq-length"
         category: "globals"
         tags: [globals arrays bool uniq length global-define initializer accept]
