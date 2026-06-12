@@ -23,7 +23,7 @@ use aya::util::online_cpus;
 use aya::{Btf, Ebpf, EbpfLoader};
 use thiserror::Error;
 
-use self::libbpf::{BpfNetfilterOpts, LibbpfProgramHandle, LibbpfStructOpsHandle};
+use self::libbpf::{BpfNetfilterOpts, BpfNetkitOpts, LibbpfProgramHandle, LibbpfStructOpsHandle};
 use crate::compiler::ir_to_mir::AnnotatedValueSemantics;
 use crate::compiler::{
     BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EbpfProgramSection, EventSchema,

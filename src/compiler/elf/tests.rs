@@ -4649,6 +4649,8 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         ProgramAttachKind::TpBtf,
         ProgramAttachKind::Tracepoint,
         ProgramAttachKind::RawTracepoint,
+        ProgramAttachKind::RawTracepointWritable,
+        ProgramAttachKind::FmodRet,
         ProgramAttachKind::Uprobe,
         ProgramAttachKind::Uretprobe,
         ProgramAttachKind::UprobeMulti,
@@ -4665,6 +4667,8 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         ProgramAttachKind::SockOps,
         ProgramAttachKind::Tc,
         ProgramAttachKind::Tcx,
+        ProgramAttachKind::Netkit,
+        ProgramAttachKind::Netfilter,
         ProgramAttachKind::CgroupSkb,
         ProgramAttachKind::CgroupSock,
         ProgramAttachKind::CgroupSysctl,
@@ -4685,21 +4689,10 @@ fn test_program_attach_kind_loader_live_support_metadata() {
 
     let unsupported_live_attach_cases = [
         (
-            ProgramAttachKind::RawTracepointWritable,
-            "writable raw-tracepoint",
-            "raw-tracepoint-writable",
-        ),
-        (
-            ProgramAttachKind::FmodRet,
-            "BPF_MODIFY_RETURN",
-            "fmod-ret-loader",
-        ),
-        (
             ProgramAttachKind::LsmCgroup,
             "cgroup-scoped LSM",
             "lsm-cgroup-link",
         ),
-        (ProgramAttachKind::Netkit, "netkit attach", "netkit-loader"),
         (
             ProgramAttachKind::TcAction,
             "tc_action attach",
@@ -4714,11 +4707,6 @@ fn test_program_attach_kind_loader_live_support_metadata() {
             ProgramAttachKind::FlowDissector,
             "flow-dissector attach",
             "flow-dissector-loader",
-        ),
-        (
-            ProgramAttachKind::Netfilter,
-            "netfilter attach",
-            "netfilter-link",
         ),
         (ProgramAttachKind::Lwt, "route LWT attach", "route-lwt-link"),
         (

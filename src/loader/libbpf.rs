@@ -48,6 +48,27 @@ impl BpfNetfilterOpts {
     }
 }
 
+#[repr(C)]
+pub struct BpfNetkitOpts {
+    sz: usize,
+    flags: u32,
+    relative_fd: u32,
+    relative_id: u32,
+    expected_revision: u64,
+}
+
+impl BpfNetkitOpts {
+    pub fn new() -> Self {
+        Self {
+            sz: mem::size_of::<Self>(),
+            flags: 0,
+            relative_fd: 0,
+            relative_id: 0,
+            expected_revision: 0,
+        }
+    }
+}
+
 type BpfObjectOpenMemFn =
     unsafe extern "C" fn(*const c_void, usize, *const c_void) -> *mut bpf_object;
 type BpfObjectLoadFn = unsafe extern "C" fn(*mut bpf_object) -> c_int;
@@ -65,6 +86,8 @@ type BpfProgramAttachRawTracepointFn =
 type BpfProgramAttachTraceFn = unsafe extern "C" fn(*const bpf_program) -> *mut bpf_link;
 type BpfProgramAttachNetfilterFn =
     unsafe extern "C" fn(*const bpf_program, *const BpfNetfilterOpts) -> *mut bpf_link;
+type BpfProgramAttachNetkitFn =
+    unsafe extern "C" fn(*const bpf_program, c_int, *const BpfNetkitOpts) -> *mut bpf_link;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -82,6 +105,7 @@ struct LibbpfApi {
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
     bpf_program_attach_trace: BpfProgramAttachTraceFn,
     bpf_program_attach_netfilter: Option<BpfProgramAttachNetfilterFn>,
+    bpf_program_attach_netkit: Option<BpfProgramAttachNetkitFn>,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -171,6 +195,10 @@ impl LibbpfApi {
                 bpf_program_attach_netfilter: Self::load_optional_symbol(
                     handle,
                     b"bpf_program__attach_netfilter\0",
+                ),
+                bpf_program_attach_netkit: Self::load_optional_symbol(
+                    handle,
+                    b"bpf_program__attach_netkit\0",
                 ),
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
@@ -592,6 +620,50 @@ impl LibbpfProgramHandle {
             close_libbpf_object(object);
             return Err(LoadError::Load(
                 "libbpf returned a null netfilter link".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
+
+    pub fn load_and_attach_netkit(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        ifindex: c_int,
+        opts: BpfNetkitOpts,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let attach_netkit = api.bpf_program_attach_netkit.ok_or_else(|| {
+            LoadError::Load(
+                "libbpf does not provide bpf_program__attach_netkit; netkit live attach requires libbpf 1.3 or newer".to_string(),
+            )
+        })?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+
+        let object = open_libbpf_object(&elf_bytes, "Failed to open netkit object with libbpf")?;
+        load_libbpf_object(object, "Failed to load netkit object")?;
+        let program = Self::loaded_program(object, &program_name, "netkit")?;
+
+        // SAFETY: `program` is loaded by libbpf and `opts` follows libbpf's netkit ABI.
+        let link = unsafe { attach_netkit(program, ifindex, &opts) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(
+                "Failed to attach netkit program",
+                attach_err,
+            ));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(
+                "libbpf returned a null netkit link".to_string(),
             ));
         }
 

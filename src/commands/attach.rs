@@ -67,8 +67,8 @@ Supported attach types:
   - iter (dry-run compile support; live attach is not implemented yet)
   - perf_event
   - socket_filter
-  - xdp, tc, tcx
-  - tc_action, netkit (dry-run compile support; live attach is not implemented yet)
+  - xdp, tc, tcx, netkit
+  - tc_action (dry-run compile support; live attach is not implemented yet)
   - cgroup_skb
   - cgroup_device
   - cgroup_sock

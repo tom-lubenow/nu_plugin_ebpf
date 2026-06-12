@@ -1,6 +1,7 @@
 use super::*;
 use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
+use std::ffi::CString;
 use std::io::BufRead as _;
 use std::process::Command;
 
@@ -166,6 +167,24 @@ fn netfilter_hook_value(hook: crate::program_spec::NetfilterHook) -> u32 {
         crate::program_spec::NetfilterHook::LocalOut => NF_INET_LOCAL_OUT,
         crate::program_spec::NetfilterHook::PostRouting => NF_INET_POST_ROUTING,
     }
+}
+
+fn network_interface_index(interface: &str, attach_kind: &str) -> Result<i32, LoadError> {
+    let interface_name = CString::new(interface)
+        .map_err(|_| LoadError::Load(format!("invalid network interface name '{interface}'")))?;
+    // SAFETY: `interface_name` is a valid NUL-terminated interface name.
+    let ifindex = unsafe { libc::if_nametoindex(interface_name.as_ptr()) };
+    if ifindex == 0 {
+        return Err(LoadError::Attach(format!(
+            "Failed to resolve {attach_kind} interface {interface}: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    i32::try_from(ifindex).map_err(|_| {
+        LoadError::Attach(format!(
+            "{attach_kind} interface {interface} index {ifindex} exceeds libbpf int range"
+        ))
+    })
 }
 
 pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
@@ -1050,6 +1069,12 @@ impl EbpfState {
                 unreachable!("netfilter attach kind must use netfilter program spec")
             });
             return self.attach_libbpf_netfilter_object(object, pin_group, program, target);
+        }
+        if matches!(program.prog_type.attach_kind(), ProgramAttachKind::Netkit) {
+            let target = spec
+                .netkit_target()
+                .unwrap_or_else(|| unreachable!("netkit attach kind must use netkit program spec"));
+            return self.attach_libbpf_netkit_object(object, pin_group, program, target);
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
@@ -2073,6 +2098,27 @@ impl EbpfState {
         let elf_bytes = object.to_elf()?;
         let handle =
             LibbpfProgramHandle::load_and_attach_netfilter(elf_bytes, &program.name, opts)?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_netkit_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &NetkitTarget,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "netkit libbpf loading does not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let ifindex = network_interface_index(&target.interface, "netkit")?;
+        let opts = BpfNetkitOpts::new();
+        let elf_bytes = object.to_elf()?;
+        let handle =
+            LibbpfProgramHandle::load_and_attach_netkit(elf_bytes, &program.name, ifindex, opts)?;
         self.insert_libbpf_program_active_probe(handle, program)
     }
 

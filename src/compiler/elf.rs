@@ -1633,7 +1633,6 @@ impl ProgramAttachKind {
     pub fn unsupported_live_attach_reason(self) -> Option<ProgramLiveAttachUnsupportedReason> {
         Some(match self {
             Self::LsmCgroup => ProgramLiveAttachUnsupportedReason::LsmCgroup,
-            Self::Netkit => ProgramLiveAttachUnsupportedReason::Netkit,
             Self::TcAction => ProgramLiveAttachUnsupportedReason::TcAction,
             Self::SkReuseport => ProgramLiveAttachUnsupportedReason::SkReuseport,
             Self::FlowDissector => ProgramLiveAttachUnsupportedReason::FlowDissector,

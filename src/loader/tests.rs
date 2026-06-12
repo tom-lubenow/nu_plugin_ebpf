@@ -1845,12 +1845,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "libbpf-backed load/link path plus map/event integration",
         ),
         (
-            EbpfProgramType::Netkit,
-            "lo:primary",
-            "netkit",
-            "libbpf-backed load/link path plus map/event integration",
-        ),
-        (
             EbpfProgramType::LsmCgroup,
             "socket_bind",
             "lsm_cgroup",
