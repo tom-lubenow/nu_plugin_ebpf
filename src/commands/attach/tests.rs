@@ -10351,6 +10351,24 @@ fn test_validate_struct_ops_attach_safety_allows_lower_risk_families() {
 }
 
 #[test]
+fn test_struct_ops_object_body_routing_excludes_callback_specs() {
+    let object = ProgramSpec::parse("struct_ops:sched_ext_ops").expect("object spec should parse");
+    let callback = ProgramSpec::parse("struct_ops:sched_ext_ops.select_cpu")
+        .expect("callback spec should parse");
+
+    assert_eq!(
+        callback.struct_ops_value_type_name(),
+        Some("sched_ext_ops"),
+        "callback specs still carry the struct_ops value type"
+    );
+    assert!(super::expects_struct_ops_object_body(&object));
+    assert!(
+        !super::expects_struct_ops_object_body(&callback),
+        "direct callback targets must use the closure body path, not the object record path"
+    );
+}
+
+#[test]
 fn test_validate_struct_ops_attach_target_rejects_callback_specs() {
     let spec = ProgramSpec::parse("struct_ops:sched_ext_ops.select_cpu")
         .expect("struct_ops callback spec should parse");

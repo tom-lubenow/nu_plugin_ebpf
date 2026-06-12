@@ -863,7 +863,7 @@ step 56 "sched_ext_ops dry-run name-only object" {
     $result
 }
 
-step 57 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
+step 57 "sched_ext_ops dry-run select_cpu object and callback target" {
     let code = ([
         'ebpf attach --dry-run "struct_ops:sched_ext_ops" {'
         '    name: "nu.demo_1"'
@@ -888,7 +888,14 @@ step 57 "sched_ext_ops dry-run select_cpu cpumask lifecycle" {
         fail $"expected sched_ext select_cpu dry-run to return binary, got ($result)"
     }
 
-    $result
+    let callback_code = 'ebpf attach --dry-run "struct_ops:sched_ext_ops.select_cpu" {|ctx| 0 } | describe'
+    let callback_result = (run-nu-with-plugin $plugin_bin $callback_code | str trim)
+
+    if $callback_result != "binary" {
+        fail $"expected sched_ext select_cpu callback dry-run to return binary, got ($callback_result)"
+    }
+
+    [$result $callback_result] | str join " "
 }
 
 step 58 "tcp_congestion_ops live attach and detach" {

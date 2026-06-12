@@ -11,6 +11,7 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 use crate::compiler::{EbpfObject, ProbeContext, StructOpsObjectSpec, StructOpsValueField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+use crate::program_spec::ProgramSpec;
 
 mod closure_params;
 mod compilation;
@@ -1386,6 +1387,11 @@ Requirements:
                 result: None,
             },
             Example {
+                example: "ebpf attach --dry-run 'struct_ops:sched_ext_ops.select_cpu' {|ctx| 0 }",
+                description: "Compile a standalone struct_ops callback section without live-loading it",
+                result: None,
+            },
+            Example {
                 example: "ebpf attach --dry-run 'kprobe:ksys_read' {|| helper-call 'bpf_get_current_pid_tgid' | count }",
                 description: "Dry-run a closure that calls a modeled BPF helper by name",
                 result: None,
@@ -1470,7 +1476,7 @@ fn run_attach(
             .with_help("Use format like 'kprobe:sys_clone' or 'tracepoint:syscalls/sys_enter_read'"),
     })?;
 
-    let object = if program_spec.struct_ops_value_type_name().is_some() {
+    let object = if expects_struct_ops_object_body(&program_spec) {
         let value_type_name = validate_struct_ops_attach_target(&program_spec, call.head)?;
         if stream {
             return Err(
@@ -1567,6 +1573,10 @@ fn run_attach(
             None,
         ))
     }
+}
+
+fn expects_struct_ops_object_body(program_spec: &ProgramSpec) -> bool {
+    matches!(program_spec, ProgramSpec::StructOps { .. })
 }
 
 #[cfg(test)]
