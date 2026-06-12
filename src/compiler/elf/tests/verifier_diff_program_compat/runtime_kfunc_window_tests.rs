@@ -130,6 +130,7 @@ let local_only = {
     ]
     local: "accept"
     kernel: "skip"
+    default_test_lane: "dry-run"
 }
 let derived = (
     [$bounded $unbounded $local_only]
@@ -170,6 +171,9 @@ fixture-matrix-rows-from-derived $derived "6.23.0"
     assert_eq!(int_field("kernel_accept_bounded"), 1);
     assert_eq!(int_field("kernel_accept_unbounded"), 1);
     assert_eq!(int_field("local_accept_kernel_skip"), 1);
+    assert_eq!(int_field("local_accept_kernel_skip_dry_run"), 1);
+    assert_eq!(int_field("local_accept_kernel_skip_host_gated"), 0);
+    assert_eq!(int_field("local_accept_kernel_skip_vm_only"), 0);
     assert_eq!(int_field("kernel_accept_compatible"), 1);
     assert_eq!(int_field("kernel_accept_incompatible"), 1);
     assert_eq!(int_field("kernel_accept_requires_newer"), 0);

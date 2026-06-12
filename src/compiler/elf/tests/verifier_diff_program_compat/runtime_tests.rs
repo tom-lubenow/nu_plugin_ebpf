@@ -79,4 +79,9 @@ fn test_verifier_diff_matrix_includes_aggregate_row() {
         verifier_diff.contains("local_accept_kernel_skip=($row.local_accept_kernel_skip)"),
         "human matrix output should expose local accepts that still skip kernel comparison"
     );
+    assert!(
+        verifier_diff
+            .contains("local_accept_kernel_skip_dry_run=($row.local_accept_kernel_skip_dry_run)"),
+        "human matrix output should split local-accept/kernel-skip gaps by default lane"
+    );
 }
