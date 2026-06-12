@@ -122,3 +122,51 @@ fn test_verifier_diff_program_kfunc_scanner_matches_rust_kfunc_keys() {
         mismatches.join(", ")
     );
 }
+
+#[test]
+fn test_verifier_diff_program_kfunc_scanner_matches_program_specific_rust_floors() {
+    let checks = [
+        ("socket_filter:udp4:127.0.0.1:31337", "bpf_dynptr_from_skb"),
+        ("tc:lo:ingress", "bpf_dynptr_from_skb"),
+        ("tcx:lo:ingress", "bpf_dynptr_from_skb"),
+        ("netkit:lo:primary", "bpf_dynptr_from_skb"),
+        ("netfilter:ipv4:pre_routing", "bpf_dynptr_from_skb"),
+        ("fentry:tcp_v4_rcv", "bpf_dynptr_from_skb"),
+        ("fentry.s:tcp_v4_rcv", "bpf_dynptr_from_skb"),
+        ("fexit:tcp_v4_rcv", "bpf_dynptr_from_skb"),
+        ("fexit.s:tcp_v4_rcv", "bpf_dynptr_from_skb"),
+        ("fmod_ret:bpf_modify_return_test", "bpf_dynptr_from_skb"),
+        ("fmod_ret.s:bpf_modify_return_test", "bpf_dynptr_from_skb"),
+        ("tp_btf:sys_enter", "bpf_dynptr_from_skb"),
+        ("sock_ops:/sys/fs/cgroup", "bpf_sock_ops_enable_tx_tstamp"),
+        (
+            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+            "bpf_sock_addr_set_sun_path",
+        ),
+    ]
+    .into_iter()
+    .map(|(target, kfunc)| (target.to_string(), kfunc.to_string()))
+    .collect::<Vec<_>>();
+
+    let Some(records) = verifier_diff_nu_program_kfunc_feature_records(&checks) else {
+        return;
+    };
+
+    for ((target, kfunc), record) in checks.iter().zip(records.iter()) {
+        let spec = ProgramSpec::parse(target).unwrap_or_else(|err| {
+            panic!("program-specific kfunc target {target} should parse: {err}")
+        });
+        let requirement = spec
+            .kfunc_compatibility_requirement_for_name(kfunc)
+            .unwrap_or_else(|| {
+                panic!(
+                    "program-specific kfunc target {target} should expose Rust metadata for {kfunc}"
+                )
+            });
+        assert_verifier_feature_record_matches_kfunc_requirement(
+            &format!("{target} {kfunc}"),
+            requirement,
+            record,
+        );
+    }
+}
