@@ -38,6 +38,25 @@ export const VERIFIER_DIFF_FIXTURES_3494_3501 = [
         kernel: "accept"
     }
     {
+        name: "map-get-array-bool-where-true-first"
+        category: "maps"
+        tags: [maps map-define map-get arrays bool where closure first accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define flags --kind array --value-type "array{bool:2}" --max-entries 1'
+            '  let entry = (0 | map-get flags --kind array)'
+            '  if $entry {'
+            '    (($entry | where {|x| true } | first) == 0)'
+            '  } else {'
+            '    false'
+            '  }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "map-get-array-u32-each-first"
         category: "maps"
         tags: [maps map-define map-get arrays u32 each closure first accept]
