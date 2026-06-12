@@ -141,6 +141,9 @@ impl<'a> HirToMirLowering<'a> {
         };
         let always_kept = Self::typed_fixed_array_compact_identity_always_kept_type(&elem_ty);
         if remove_empty && !always_kept {
+            if self.lower_compile_time_fixed_array_compact_empty(src_dst, input_meta)? {
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "compact --empty on typed fixed arrays is only a safe identity for numeric or bool elements in eBPF; variable-length filtering for fixed-array elements is not supported yet, got {:?}",
                 elem_ty
@@ -189,6 +192,34 @@ impl<'a> HirToMirLowering<'a> {
             src: MirValue::VReg(input_vreg),
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+        Ok(true)
+    }
+
+    fn lower_compile_time_fixed_array_compact_empty(
+        &mut self,
+        src_dst: RegId,
+        input_meta: &RegMetadata,
+    ) -> Result<bool, CompileError> {
+        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.as_ref() else {
+            return Ok(false);
+        };
+
+        // Fixed arrays cannot shrink at runtime, but known contents can be filtered before MIR.
+        let vals = vals
+            .iter()
+            .filter(|value| Self::compact_keeps_value(value, true))
+            .cloned()
+            .collect::<Vec<_>>();
+        if vals.is_empty() && !self.current_call_result_metadata_only {
+            return Err(CompileError::UnsupportedInstruction(
+                "compact --empty on a fixed array produced an empty compile-time list; use a metadata consumer such as length or keep at least one fixed-layout element so eBPF can infer an output layout"
+                    .into(),
+            ));
+        }
+        self.lower_compile_time_list_transform_result(
+            src_dst,
+            &nu_protocol::Value::list(vals, Span::unknown()),
+        )?;
         Ok(true)
     }
 

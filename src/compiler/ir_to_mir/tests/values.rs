@@ -11359,6 +11359,85 @@ fn test_lower_string_list_builder_compact_empty_join_constant_values() {
 }
 
 #[test]
+fn test_lower_constant_string_fixed_array_compact_empty_folds() {
+    let compact_decl = DeclId::new(10_991);
+    let length_decl = DeclId::new(10_992);
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::string("ab", Span::test_data()),
+                            Value::string("", Span::test_data()),
+                            Value::string("cd", Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: compact_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty should fold direct constant string fixed arrays");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected constant string fixed-array compact not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact --empty direct string fixed-array result should compile through codegen");
+}
+
+#[test]
 fn test_lower_record_list_builder_compact_column_uses_constant_length() {
     let compact_decl = DeclId::new(335);
     let length_decl = DeclId::new(336);

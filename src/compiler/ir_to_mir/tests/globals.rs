@@ -16319,7 +16319,7 @@ fn test_lower_global_define_type_string_array_compact_empty_rejects() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("compact --empty on fixed string arrays should remain unsupported");
+    .expect_err("compact --empty on mutable global fixed string arrays should remain unsupported");
 
     assert!(
         err.to_string().contains(
