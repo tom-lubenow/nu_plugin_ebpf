@@ -114,7 +114,7 @@ impl<'a> HirToMirLowering<'a> {
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
-        if array_len > 0 {
+        if array_len > 0 && !matches!(constant_predicate, Some(false)) {
             let continuation_block = self.func.alloc_block();
             for i in 0..array_len {
                 let predicate_block = self.func.alloc_block();

@@ -5544,7 +5544,7 @@ impl<'a> HirToMirLowering<'a> {
                             let (out_slot, out_ty) =
                                 self.create_stack_numeric_list_result(dst_vreg, max_len);
 
-                            if max_len > 0 {
+                            if max_len > 0 && !matches!(constant_predicate, Some(false)) {
                                 let len_vreg = self.func.alloc_vreg();
                                 self.emit(MirInst::ListLen {
                                     dst: len_vreg,

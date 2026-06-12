@@ -65,6 +65,19 @@ const VERIFIER_DIFF_FIXTURES_1688_1718 = [
         kernel: "accept"
     }
     {
+        name: "core-list-where-false-is-empty"
+        category: "language-core"
+        tags: [aggregate list where closure is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([10 20 30] | where {|x| false } | is-empty) == true'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-any"
         category: "language-core"
         tags: [aggregate list any closure]
