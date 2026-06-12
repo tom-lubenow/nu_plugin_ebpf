@@ -769,13 +769,14 @@ Context parameter syntax (recommended):
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. UNIX socket-address hooks (`connect_unix`,
     `sendmsg_unix`, `recvmsg_unix`, `getpeername_unix`, and
-    `getsockname_unix`) are compile/dry-run only and expose common socket
-    metadata such as `ctx.user_family`, `ctx.family`, `ctx.sock_type`,
-    `ctx.protocol`, and `ctx.sk`; UNIX path mutation is modeled as ordinary
-    `ctx.sun_path` assignment backed by `bpf_sock_addr_set_sun_path` instead of
-    reinterpreting IPv4/IPv6 tuple aliases as UNIX path fields. This initial slice still
-    exposes IPv6 addresses as fixed arrays of four u32 words rather than a
-    higher-level address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
+    `getsockname_unix`) live-attach through the libbpf cgroup attach path and
+    expose common socket metadata such as `ctx.user_family`, `ctx.family`,
+    `ctx.sock_type`, `ctx.protocol`, and `ctx.sk`; UNIX path mutation is
+    modeled as ordinary `ctx.sun_path` assignment backed by
+    `bpf_sock_addr_set_sun_path` instead of reinterpreting IPv4/IPv6 tuple
+    aliases as UNIX path fields. This initial slice still exposes IPv6
+    addresses as fixed arrays of four u32 words rather than a higher-level
+    address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
     `cgroup_sock`, `cgroup_sockopt`, `sock_ops`, `sk_lookup`, and `sk_msg`.
     Modeled socket helpers are available through the ordinary helper surface:
     `bpf_bind` on inet `connect4` / `connect6` hooks, and
@@ -825,10 +826,9 @@ Context parameter syntax (recommended):
     example `mut keys = $ctx.flow_keys; $keys.ipv6_dst.3 = 1` or
     `mut keys = ($ctx | get flow_keys); $keys.ipv6_dst.3 = 1`.
     Note: `flow_dissector:/proc/self/ns/net` emits a `flow_dissector`
-    section. Current Aya loader support is compile/dry-run only, so live
-    attach returns a clear unsupported error instead of attempting to load
-    the unsupported object section. Return aliases are `ok` / `parsed` for
-    `0`, `drop` for `2`, and `continue` / `fallback` for `129`.
+    section and live-attaches through the libbpf network-namespace attach
+    path. Return aliases are `ok` / `parsed` for `0`, `drop` for `2`, and
+    `continue` / `fallback` for `129`.
 
   netfilter fields:
     {|ctx| $ctx.state.hook } - Project the trusted nf_hook_state pointer
@@ -845,9 +845,8 @@ Context parameter syntax (recommended):
     `netfilter` section. Netfilter BPF-link specs accept `ipv4` / `ipv6`
     families and the hook names `pre_routing`, `local_in`, `forward`,
     `local_out`, and `post_routing`. `defrag` requires priority greater
-    than `-400` and Linux 6.6+. Current loader support is compile/dry-run only, so live
-    attach returns a clear unsupported error until BPF-link netfilter
-    attach is implemented.
+    than `-400` and Linux 6.6+. Live attach uses the libbpf BPF-link
+    netfilter attach path.
     Return aliases are `drop` / `deny` for `0`, `accept` / `allow` /
     `pass` / `ok` for `1`, `stolen` for `2`, `queue` for `3`, and
     `repeat` for `4`.
