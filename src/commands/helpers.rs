@@ -433,11 +433,13 @@ use, so non-hash maps do not need to repeat `--kind` at each use.
 Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner
-template is also emitted as a runtime map. Live loading is rejected before Aya
-because Aya does not materialize `inner_map_fd` from that metadata. Dry-run
-outer `map-get` / `map-contains` and guarded dynamic inner `map-get $inner`,
-`map-put $inner`, `map-delete $inner`, and `map-contains $inner` operations are
-modeled; outer maps intentionally do not accept `--value-type`.
+template is also emitted as a runtime map. Aya-backed live loading is rejected
+before Aya because Aya does not materialize `inner_map_fd` from that metadata;
+libbpf-backed attach paths can rely on libbpf's BTF inner-map handling when
+`--pin` map sharing is not requested. Dry-run outer `map-get` / `map-contains`
+and guarded dynamic inner `map-get $inner`, `map-put $inner`, `map-delete
+$inner`, and `map-contains $inner` operations are modeled; outer maps
+intentionally do not accept `--value-type`.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
