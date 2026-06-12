@@ -168,6 +168,40 @@ fn network_interface_index(interface: &str, attach_kind: &str) -> Result<i32, Lo
     })
 }
 
+fn pin_group_path(group: &str) -> String {
+    format!("/sys/fs/bpf/nushell/{group}")
+}
+
+fn create_pin_group_dir(group: &str) -> Result<String, LoadError> {
+    let pin_path = pin_group_path(group);
+    std::fs::create_dir_all(&pin_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            LoadError::PermissionDenied
+        } else {
+            LoadError::Load(format!("Failed to create pin directory {pin_path}: {e}"))
+        }
+    })?;
+    Ok(pin_path)
+}
+
+pub(super) fn libbpf_pin_compatible_object(object: &EbpfObject) -> EbpfObject {
+    let mut object = object.clone();
+    for map in &mut object.maps {
+        map.def.pinning = crate::compiler::BpfPinningType::ByName;
+    }
+    object
+}
+
+fn libbpf_elf_bytes(object: &EbpfObject, pin_group: Option<&str>) -> Result<Vec<u8>, LoadError> {
+    if pin_group.is_some() {
+        return libbpf_pin_compatible_object(object)
+            .to_elf()
+            .map_err(LoadError::from);
+    }
+
+    object.to_elf().map_err(LoadError::from)
+}
+
 pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
@@ -1099,18 +1133,7 @@ impl EbpfState {
 
         // Load with Aya using EbpfLoader for optional map pinning
         let mut ebpf = if let Some(group) = pin_group {
-            let pin_path = format!("/sys/fs/bpf/nushell/{}", group);
-            // Create the directory if it doesn't exist
-            std::fs::create_dir_all(&pin_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    LoadError::PermissionDenied
-                } else {
-                    LoadError::Load(format!(
-                        "Failed to create pin directory {}: {}",
-                        pin_path, e
-                    ))
-                }
-            })?;
+            let pin_path = create_pin_group_dir(group)?;
             // Use EbpfLoader with map pinning to enable map sharing between programs
             EbpfLoader::new().map_pin_path(&pin_path).load(&elf_bytes)
         } else {
@@ -2030,20 +2053,15 @@ impl EbpfState {
         pin_group: Option<&str>,
         program: &EbpfProgramSection,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "raw_tracepoint.w libbpf loading does not yet support pinned map sharing"
-                    .to_string(),
-            ));
-        }
-
-        let elf_bytes = object.to_elf()?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_raw_tracepoint(
             elf_bytes,
             &program.name,
             &program.target,
+            pin_root_path.as_deref(),
         )?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_fmod_ret_object(
@@ -2052,19 +2070,15 @@ impl EbpfState {
         pin_group: Option<&str>,
         program: &EbpfProgramSection,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "fmod_ret libbpf loading does not yet support pinned map sharing".to_string(),
-            ));
-        }
-
-        let elf_bytes = object.to_elf()?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_trace(
             elf_bytes,
             &program.name,
             program.prog_type.canonical_prefix(),
+            pin_root_path.as_deref(),
         )?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_netfilter_object(
@@ -2074,12 +2088,6 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &crate::program_spec::NetfilterTarget,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "netfilter libbpf loading does not yet support pinned map sharing".to_string(),
-            ));
-        }
-
         let flags = if target.defrag {
             BPF_F_NETFILTER_IP_DEFRAG
         } else {
@@ -2092,10 +2100,15 @@ impl EbpfState {
             flags,
         );
 
-        let elf_bytes = object.to_elf()?;
-        let handle =
-            LibbpfProgramHandle::load_and_attach_netfilter(elf_bytes, &program.name, opts)?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_netfilter(
+            elf_bytes,
+            &program.name,
+            opts,
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_netkit_object(
@@ -2105,18 +2118,18 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &NetkitTarget,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "netkit libbpf loading does not yet support pinned map sharing".to_string(),
-            ));
-        }
-
         let ifindex = network_interface_index(&target.interface, "netkit")?;
         let opts = BpfNetkitOpts::new();
-        let elf_bytes = object.to_elf()?;
-        let handle =
-            LibbpfProgramHandle::load_and_attach_netkit(elf_bytes, &program.name, ifindex, opts)?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_netkit(
+            elf_bytes,
+            &program.name,
+            ifindex,
+            opts,
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_flow_dissector_object(
@@ -2126,12 +2139,6 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &FlowDissectorTarget,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "flow_dissector libbpf loading does not yet support pinned map sharing".to_string(),
-            ));
-        }
-
         let netns = std::fs::File::open(&target.netns_path).map_err(|e| {
             if e.kind() == ErrorKind::PermissionDenied {
                 LoadError::PermissionDenied
@@ -2142,14 +2149,16 @@ impl EbpfState {
                 ))
             }
         })?;
-        let elf_bytes = object.to_elf()?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_netns(
             elf_bytes,
             &program.name,
             netns.as_raw_fd(),
             "flow_dissector",
+            pin_root_path.as_deref(),
         )?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_cgroup_sock_addr_unix_object(
@@ -2159,13 +2168,6 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &CgroupSockAddrTarget,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "cgroup_sock_addr UNIX libbpf loading does not yet support pinned map sharing"
-                    .to_string(),
-            ));
-        }
-
         let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
             if e.kind() == ErrorKind::PermissionDenied {
                 LoadError::PermissionDenied
@@ -2176,14 +2178,16 @@ impl EbpfState {
                 ))
             }
         })?;
-        let elf_bytes = object.to_elf()?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_cgroup(
             elf_bytes,
             &program.name,
             cgroup.as_raw_fd(),
             "cgroup_sock_addr UNIX",
+            pin_root_path.as_deref(),
         )?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn attach_libbpf_lsm_cgroup_object(
@@ -2193,12 +2197,6 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &LsmCgroupTarget,
     ) -> Result<u32, LoadError> {
-        if pin_group.is_some() {
-            return Err(LoadError::Load(
-                "lsm_cgroup libbpf loading does not yet support pinned map sharing".to_string(),
-            ));
-        }
-
         let cgroup_path = target.cgroup_path().ok_or_else(|| {
             LoadError::Attach(
                 "lsm_cgroup live attach requires a cgroup path target like lsm_cgroup:/sys/fs/cgroup:socket_bind"
@@ -2214,23 +2212,34 @@ impl EbpfState {
                 ))
             }
         })?;
-        let elf_bytes = object.to_elf()?;
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_cgroup(
             elf_bytes,
             &program.name,
             cgroup.as_raw_fd(),
             "lsm_cgroup",
+            pin_root_path.as_deref(),
         )?;
-        self.insert_libbpf_program_active_probe(handle, program)
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
     fn insert_libbpf_program_active_probe(
         &self,
         handle: LibbpfProgramHandle,
         program: &EbpfProgramSection,
+        pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
         let runtime_maps = setup_libbpf_runtime_maps(handle.export_maps()?)?;
         let id = self.next_probe_id();
+        let pin_group_owned = pin_group.map(|s| s.to_string());
+        if let Some(ref group) = pin_group_owned {
+            let mut refs = self
+                .pin_group_refs
+                .lock()
+                .map_err(|_| LoadError::LockPoisoned)?;
+            *refs.entry(group.clone()).or_insert(0) += 1;
+        }
 
         let active_probe = ActiveProbe {
             id,
@@ -2261,7 +2270,7 @@ impl EbpfState {
             generic_map_inner_templates: program.generic_map_inner_templates.clone(),
             generic_map_value_types: program.generic_map_value_types.clone(),
             generic_map_value_semantics: program.generic_map_value_semantics.clone(),
-            pin_group: None,
+            pin_group: pin_group_owned,
         };
 
         self.probes

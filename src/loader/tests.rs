@@ -4,13 +4,13 @@ use super::attach::{
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
     kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
     kernel_minimum_requirement_detail, kernel_object_compatibility_requirement_detail,
-    unsupported_live_map_in_map_error,
+    libbpf_pin_compatible_object, unsupported_live_map_in_map_error,
 };
 use super::*;
 use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
-    BpfHelper, BpfMapDef, CompiledFeatureCompatibilityRequirement,
+    BpfHelper, BpfMapDef, BpfPinningType, CompiledFeatureCompatibilityRequirement,
     ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField, EbpfMap,
     EbpfObject, EbpfProgram, EbpfProgramType, GlobalCompatibilityRequirement,
     KfuncCompatibilityRequirement, MapRef, MapValueCompatibilityRequirement, MirType,
@@ -1741,8 +1741,7 @@ fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
 }
 
 #[test]
-fn test_libbpf_backed_attach_reaches_pin_guard_before_aya_map_in_map_reject() {
-    let state = EbpfState::new();
+fn test_libbpf_pin_compatible_object_marks_all_maps_by_name() {
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
     let object = live_map_in_map_fixture_for_program(
         EbpfProgramType::RawTracepointWritable,
@@ -1751,18 +1750,26 @@ fn test_libbpf_backed_attach_reaches_pin_guard_before_aya_map_in_map_reject() {
         vec![],
     );
 
-    let err = state
-        .attach_with_pin(&object, Some("shared"))
-        .expect_err("libbpf-backed map-in-map should route before Aya-only rejection");
+    assert!(
+        object
+            .maps
+            .iter()
+            .all(|map| map.def.pinning == BpfPinningType::None)
+    );
+
+    let pinned = libbpf_pin_compatible_object(&object);
 
     assert!(
-        matches!(
-            err,
-            LoadError::Load(ref msg)
-                if msg.contains("raw_tracepoint.w libbpf loading does not yet support pinned map sharing")
-                    && !msg.contains("inner_map_fd")
-        ),
-        "unexpected libbpf-backed map-in-map dispatch error: {err:?}"
+        pinned
+            .maps
+            .iter()
+            .all(|map| map.def.pinning == BpfPinningType::ByName)
+    );
+    assert!(
+        object
+            .maps
+            .iter()
+            .all(|map| map.def.pinning == BpfPinningType::None)
     );
 }
 
@@ -2055,23 +2062,22 @@ fn test_attach_routes_cgroup_sock_addr_unix_to_libbpf_loader() {
     let state = EbpfState::new();
     let object = EbpfProgram::from_bytecode(
         EbpfProgramType::CgroupSockAddr,
-        "/sys/fs/cgroup:connect_unix",
+        "/definitely/missing/nu_plugin_ebpf_cgroup:connect_unix",
         "main",
         vec![],
     )
     .into_object();
 
     let err = state
-        .attach_with_pin(&object, Some("shared"))
+        .attach(&object)
         .expect_err("cgroup_sock_addr unix hooks should route to libbpf loader");
 
     assert!(
         matches!(
             err,
-            LoadError::Load(ref msg)
-                if msg.contains(
-                    "cgroup_sock_addr UNIX libbpf loading does not yet support pinned map sharing"
-                )
+            LoadError::Attach(ref msg)
+                if msg.contains("Failed to open cgroup_sock_addr cgroup path")
+                    && msg.contains("/definitely/missing/nu_plugin_ebpf_cgroup")
         ),
         "unexpected cgroup_sock_addr unix libbpf dispatch error: {err:?}"
     );
@@ -2082,7 +2088,7 @@ fn test_attach_routes_path_qualified_lsm_cgroup_to_libbpf_loader() {
     let state = EbpfState::new();
     let object = EbpfProgram::from_bytecode(
         EbpfProgramType::LsmCgroup,
-        "/sys/fs/cgroup:socket_bind",
+        "/definitely/missing/nu_plugin_ebpf_lsm_cgroup:socket_bind",
         "main",
         vec![],
     )
@@ -2093,20 +2099,19 @@ fn test_attach_routes_path_qualified_lsm_cgroup_to_libbpf_loader() {
         object.programs[0]
             .parsed_program_spec()
             .and_then(ProgramSpec::cgroup_path),
-        Some("/sys/fs/cgroup")
+        Some("/definitely/missing/nu_plugin_ebpf_lsm_cgroup")
     );
 
     let err = state
-        .attach_with_pin(&object, Some("shared"))
+        .attach(&object)
         .expect_err("path-qualified lsm_cgroup should route to libbpf loader");
 
     assert!(
         matches!(
             err,
-            LoadError::Load(ref msg)
-                if msg.contains(
-                    "lsm_cgroup libbpf loading does not yet support pinned map sharing"
-                )
+            LoadError::Attach(ref msg)
+                if msg.contains("Failed to open lsm_cgroup cgroup path")
+                    && msg.contains("/definitely/missing/nu_plugin_ebpf_lsm_cgroup")
         ),
         "unexpected lsm_cgroup libbpf dispatch error: {err:?}"
     );

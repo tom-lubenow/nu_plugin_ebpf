@@ -1051,9 +1051,8 @@ Flags:
                     }
 
                     Maps are automatically unpinned when all probes detach.
-                    Currently applies to Aya-backed live attach paths; libbpf-
-                    backed attach paths reject --pin until libbpf map reuse is
-                    integrated with this loader's pin lifecycle.
+                    Aya-backed and libbpf-backed live attach paths share the
+                    same /sys/fs/bpf/nushell/GROUP/ pin lifecycle.
 
 Limits:
   - eBPF stack: 512 bytes (complex closures may overflow)

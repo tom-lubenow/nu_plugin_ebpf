@@ -28,6 +28,15 @@ struct bpf_link {
 }
 
 #[repr(C)]
+struct BpfObjectOpenOpts {
+    sz: usize,
+    object_name: *const c_char,
+    relaxed_maps: u8,
+    _padding: [u8; 7],
+    pin_root_path: *const c_char,
+}
+
+#[repr(C)]
 pub struct BpfNetfilterOpts {
     sz: usize,
     pf: u32,
@@ -70,7 +79,7 @@ impl BpfNetkitOpts {
 }
 
 type BpfObjectOpenMemFn =
-    unsafe extern "C" fn(*const c_void, usize, *const c_void) -> *mut bpf_object;
+    unsafe extern "C" fn(*const c_void, usize, *const BpfObjectOpenOpts) -> *mut bpf_object;
 type BpfObjectLoadFn = unsafe extern "C" fn(*mut bpf_object) -> c_int;
 type BpfObjectCloseFn = unsafe extern "C" fn(*mut bpf_object);
 type BpfObjectNextMapFn = unsafe extern "C" fn(*const bpf_object, *const bpf_map) -> *mut bpf_map;
@@ -311,12 +320,35 @@ fn aya_map_from_map_data(map_name: &str, map_data: MapData) -> Result<AyaMap, Lo
     })
 }
 
-fn open_libbpf_object(elf_bytes: &[u8], context: &str) -> Result<*mut bpf_object, LoadError> {
+fn open_libbpf_object(
+    elf_bytes: &[u8],
+    context: &str,
+    pin_root_path: Option<&str>,
+) -> Result<*mut bpf_object, LoadError> {
     let api = libbpf_api()?;
+    let pin_root_path = pin_root_path
+        .map(|path| {
+            CString::new(path).map_err(|_| {
+                LoadError::Load(format!(
+                    "invalid libbpf pin root path '{path}': path contains a NUL byte"
+                ))
+            })
+        })
+        .transpose()?;
+    let open_opts = pin_root_path.as_ref().map(|path| BpfObjectOpenOpts {
+        sz: mem::size_of::<BpfObjectOpenOpts>(),
+        object_name: ptr::null(),
+        relaxed_maps: 0,
+        _padding: [0; 7],
+        pin_root_path: path.as_ptr(),
+    });
+    let open_opts_ptr = open_opts
+        .as_ref()
+        .map_or(ptr::null(), |opts| opts as *const BpfObjectOpenOpts);
 
     // SAFETY: `elf_bytes` stays owned by the returned handle for the lifetime of `object`.
     let object = unsafe {
-        (api.bpf_object_open_mem)(elf_bytes.as_ptr().cast(), elf_bytes.len(), ptr::null())
+        (api.bpf_object_open_mem)(elf_bytes.as_ptr().cast(), elf_bytes.len(), open_opts_ptr)
     };
     let open_err = unsafe { (api.libbpf_get_error)(object.cast()) };
     if open_err != 0 {
@@ -439,8 +471,11 @@ impl LibbpfStructOpsHandle {
         let map_name = CString::new(map_name)
             .map_err(|_| LoadError::Load(format!("invalid struct_ops map name '{map_name}'")))?;
 
-        let object =
-            open_libbpf_object(&elf_bytes, "Failed to open struct_ops object with libbpf")?;
+        let object = open_libbpf_object(
+            &elf_bytes,
+            "Failed to open struct_ops object with libbpf",
+            None,
+        )?;
         load_libbpf_object(object, "Failed to load struct_ops object")?;
 
         // SAFETY: `object` is loaded and `map_name` is a valid C string.
@@ -519,6 +554,7 @@ impl LibbpfProgramHandle {
         elf_bytes: Vec<u8>,
         program_name: &str,
         tracepoint_name: &str,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let program_name = CString::new(program_name).map_err(|_| {
@@ -531,6 +567,7 @@ impl LibbpfProgramHandle {
         let object = open_libbpf_object(
             &elf_bytes,
             "Failed to open raw_tracepoint.w object with libbpf",
+            pin_root_path,
         )?;
         load_libbpf_object(object, "Failed to load raw_tracepoint.w object")?;
 
@@ -565,6 +602,7 @@ impl LibbpfProgramHandle {
         elf_bytes: Vec<u8>,
         program_name: &str,
         program_label: &str,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let program_name = CString::new(program_name).map_err(|_| {
@@ -574,7 +612,7 @@ impl LibbpfProgramHandle {
         let load_context = format!("Failed to load {program_label} object");
         let attach_context = format!("Failed to attach {program_label} program");
 
-        let object = open_libbpf_object(&elf_bytes, &open_context)?;
+        let object = open_libbpf_object(&elf_bytes, &open_context, pin_root_path)?;
         load_libbpf_object(object, &load_context)?;
         let program = Self::loaded_program(object, &program_name, program_label)?;
 
@@ -604,6 +642,7 @@ impl LibbpfProgramHandle {
         program_name: &str,
         cgroup_fd: c_int,
         program_label: &str,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let attach_cgroup = api.bpf_program_attach_cgroup.ok_or_else(|| {
@@ -618,7 +657,7 @@ impl LibbpfProgramHandle {
         let load_context = format!("Failed to load {program_label} object");
         let attach_context = format!("Failed to attach {program_label} program");
 
-        let object = open_libbpf_object(&elf_bytes, &open_context)?;
+        let object = open_libbpf_object(&elf_bytes, &open_context, pin_root_path)?;
         load_libbpf_object(object, &load_context)?;
         let program = Self::loaded_program(object, &program_name, program_label)?;
 
@@ -647,6 +686,7 @@ impl LibbpfProgramHandle {
         elf_bytes: Vec<u8>,
         program_name: &str,
         opts: BpfNetfilterOpts,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let attach_netfilter = api.bpf_program_attach_netfilter.ok_or_else(|| {
@@ -658,7 +698,11 @@ impl LibbpfProgramHandle {
             LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
         })?;
 
-        let object = open_libbpf_object(&elf_bytes, "Failed to open netfilter object with libbpf")?;
+        let object = open_libbpf_object(
+            &elf_bytes,
+            "Failed to open netfilter object with libbpf",
+            pin_root_path,
+        )?;
         load_libbpf_object(object, "Failed to load netfilter object")?;
         let program = Self::loaded_program(object, &program_name, "netfilter")?;
 
@@ -691,6 +735,7 @@ impl LibbpfProgramHandle {
         program_name: &str,
         ifindex: c_int,
         opts: BpfNetkitOpts,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let attach_netkit = api.bpf_program_attach_netkit.ok_or_else(|| {
@@ -702,7 +747,11 @@ impl LibbpfProgramHandle {
             LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
         })?;
 
-        let object = open_libbpf_object(&elf_bytes, "Failed to open netkit object with libbpf")?;
+        let object = open_libbpf_object(
+            &elf_bytes,
+            "Failed to open netkit object with libbpf",
+            pin_root_path,
+        )?;
         load_libbpf_object(object, "Failed to load netkit object")?;
         let program = Self::loaded_program(object, &program_name, "netkit")?;
 
@@ -735,6 +784,7 @@ impl LibbpfProgramHandle {
         program_name: &str,
         netns_fd: c_int,
         program_label: &str,
+        pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
         let attach_netns = api.bpf_program_attach_netns.ok_or_else(|| {
@@ -749,7 +799,7 @@ impl LibbpfProgramHandle {
         let load_context = format!("Failed to load {program_label} object");
         let attach_context = format!("Failed to attach {program_label} program");
 
-        let object = open_libbpf_object(&elf_bytes, &open_context)?;
+        let object = open_libbpf_object(&elf_bytes, &open_context, pin_root_path)?;
         load_libbpf_object(object, &load_context)?;
         let program = Self::loaded_program(object, &program_name, program_label)?;
 

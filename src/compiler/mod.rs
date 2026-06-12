@@ -60,7 +60,7 @@ pub(crate) use ctx_field_schema::{
 };
 pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 pub use elf::{
-    BpfFieldType, BpfMapDef, BssGlobal, CompiledFeatureCompatibilityRequirement,
+    BpfFieldType, BpfMapDef, BpfPinningType, BssGlobal, CompiledFeatureCompatibilityRequirement,
     CompiledStructOpsCallback, CounterKeySchema, CounterKeySchemaField, DataGlobal, EbpfMap,
     EbpfObject, EbpfObjectKind, EbpfProgram, EbpfProgramSection, EbpfProgramType, EventSchema,
     GlobalCompatibilityRequirement, KernelTargetValidationKind, ObjectDataRelocation,
