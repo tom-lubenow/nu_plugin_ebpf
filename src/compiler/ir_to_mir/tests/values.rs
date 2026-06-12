@@ -9231,6 +9231,17 @@ fn test_lower_where_on_numeric_list_filters_with_runtime_length_guard() {
         )),
         "expected where to guard capacity slots against the runtime length"
     );
+    let branch_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .filter(|block| matches!(block.terminator, MirInst::Branch { .. }))
+        .count();
+    assert_eq!(
+        branch_count, 3,
+        "expected constant-true where to emit only runtime length guards"
+    );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("where followed by get should compile through codegen");
 }
@@ -9325,13 +9336,27 @@ fn test_lower_where_true_on_numeric_list_preserves_non_empty_for_first() {
     )
     .expect("constant-true where should preserve non-empty proof for first");
 
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    let branch_count = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .filter(|block| matches!(block.terminator, MirInst::Branch { .. }))
+        .count();
+    assert_eq!(
+        branch_count, 3,
+        "expected constant-true where feeding first to emit only runtime length guards"
+    );
     assert!(
-        result
-            .program
-            .main
-            .blocks
+        instructions
             .iter()
-            .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(inst, MirInst::ListGet { .. })),
         "expected first after constant-true where to lower to a bounded list get"
     );

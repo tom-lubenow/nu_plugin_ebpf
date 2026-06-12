@@ -5582,6 +5582,16 @@ impl<'a> HirToMirLowering<'a> {
                                     });
                                     self.vreg_type_hints.insert(elem_vreg, MirType::I64);
 
+                                    if matches!(constant_predicate, Some(true)) {
+                                        self.emit(MirInst::ListPush {
+                                            list: dst_vreg,
+                                            item: elem_vreg,
+                                        });
+                                        self.terminate(MirInst::Jump { target: next_block });
+                                        self.current_block = next_block;
+                                        continue;
+                                    }
+
                                     let predicate = self
                                         .inline_closure_with_in(block_id, closure_ir, elem_vreg)?;
                                     let push_block = self.func.alloc_block();

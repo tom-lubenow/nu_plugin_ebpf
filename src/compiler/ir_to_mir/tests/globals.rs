@@ -16639,13 +16639,25 @@ fn test_lower_global_define_type_bool_array_where_true_preserves_non_empty_for_f
     )
     .expect("constant-true where on a non-empty typed bool array should prove first is safe");
 
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
     assert!(
         result
             .program
             .main
             .blocks
             .iter()
-            .flat_map(|block| block.instructions.iter())
+            .all(|block| !matches!(block.terminator, MirInst::Branch { .. })),
+        "expected constant-true fixed-array where to avoid predicate branches"
+    );
+    assert!(
+        instructions
+            .iter()
             .any(|inst| matches!(inst, MirInst::ListGet { .. })),
         "expected first after constant-true where to lower to a bounded list get"
     );

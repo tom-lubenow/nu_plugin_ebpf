@@ -129,6 +129,19 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 self.current_block = predicate_block;
 
+                if matches!(constant_predicate, Some(true)) {
+                    let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                        "where", input_vreg, &elem_ty, i,
+                    )?;
+                    self.emit(MirInst::ListPush {
+                        list: dst_vreg,
+                        item: item_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+                    self.current_block = next_block;
+                    continue;
+                }
+
                 let elem_vreg =
                     self.emit_typed_fixed_array_where_item("where", input_vreg, &elem_ty, i)?;
                 let predicate =
