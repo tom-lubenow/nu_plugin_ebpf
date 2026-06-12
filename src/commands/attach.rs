@@ -1051,6 +1051,9 @@ Flags:
                     }
 
                     Maps are automatically unpinned when all probes detach.
+                    Currently applies to Aya-backed live attach paths; libbpf-
+                    backed attach paths reject --pin until libbpf map reuse is
+                    integrated with this loader's pin lifecycle.
 
 Limits:
   - eBPF stack: 512 bytes (complex closures may overflow)
