@@ -291,10 +291,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_uniq_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "uniq on typed fixed arrays currently supports {} in eBPF, got {:?}",
-                Self::typed_fixed_array_numeric_list_scalar_type_description(),
+                Self::typed_fixed_array_uniq_scalar_type_description(),
                 elem_ty
             )));
         }
@@ -418,5 +418,13 @@ impl<'a> HirToMirLowering<'a> {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);
         }
         Ok(true)
+    }
+
+    fn typed_fixed_array_uniq_scalar_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::Bool)
+    }
+
+    fn typed_fixed_array_uniq_scalar_type_description() -> &'static str {
+        "signed integer, bool, or <=32-bit unsigned integer scalar elements"
     }
 }
