@@ -323,10 +323,9 @@ Context parameter syntax (recommended):
     `tcx:IFACE:ingress|egress` emits `tcx/ingress` or `tcx/egress`,
     reuses the TC skb context surface, and live-attaches through a TCX
     BPF link on kernels that support TCX.
-    `netkit:IFACE:primary|peer` is compile/dry-run only for now. It emits
-    `netkit/primary` or `netkit/peer`, reuses the SCHED_CLS skb context
-    surface and TCX-style return aliases, and rejects live attach until the
-    loader has an explicit Netkit attach path.
+    `netkit:IFACE:primary|peer` emits `netkit/primary` or `netkit/peer`,
+    reuses the SCHED_CLS skb context surface and TCX-style return aliases,
+    and live-attaches through the libbpf Netkit attach path.
     `freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
     emits a `freplace/FUNCTION` extension section for replacing a global
     function in another loaded BPF program. It is compile/dry-run only;
@@ -1325,8 +1324,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix' {|ctx| $ctx.family | count; 'allow' }",
-                description: "Compile a cgroup UNIX socket-address hook",
+                example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix' {|ctx| $ctx.family | count; 'allow' }",
+                description: "Count cgroup UNIX socket-address connects",
                 result: None,
             },
             Example {

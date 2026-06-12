@@ -32,26 +32,6 @@ fn unsupported_live_attach_error(
     ))
 }
 
-fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> LoadError {
-    let spec = ProgramSpec::CgroupSockAddr {
-        target: target.clone(),
-    };
-    let requirements =
-        live_attach_compatibility_requirements_detail(&spec, &spec.compatibility_requirements());
-    let policy = spec.live_attach_policy();
-    let reason = policy
-        .note
-        .unwrap_or(crate::program_spec::CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED);
-    let external_alpha_status = live_attach_external_alpha_status_detail(&spec);
-    LoadError::Attach(format!(
-        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; {}{}{}; use --dry-run to compile",
-        target.attach_type_name(),
-        reason,
-        external_alpha_status,
-        requirements
-    ))
-}
-
 fn unsupported_struct_ops_program_object_error(value_type_name: &str) -> LoadError {
     LoadError::Attach(format!(
         "struct_ops value-type target 'struct_ops:{value_type_name}' describes a struct_ops object, not a standalone program section; attach the enclosing struct_ops object instead"
@@ -1036,11 +1016,6 @@ impl EbpfState {
             return Err(unsupported_struct_ops_program_object_error(value_type_name));
         }
         if !spec.live_attach_policy().loader_supported {
-            if let ProgramSpec::CgroupSockAddr { target } = &spec {
-                if target.is_unix() {
-                    return Err(unsupported_cgroup_sock_addr_target_error(target));
-                }
-            }
             return Err(unsupported_live_attach_error(
                 &spec,
                 program.prog_type,
@@ -1085,6 +1060,13 @@ impl EbpfState {
                 unreachable!("flow_dissector attach kind must use flow_dissector program spec")
             });
             return self.attach_libbpf_flow_dissector_object(object, pin_group, program, target);
+        }
+        if let ProgramSpec::CgroupSockAddr { target } = &spec {
+            if target.is_unix() {
+                return self.attach_libbpf_cgroup_sock_addr_unix_object(
+                    object, pin_group, program, target,
+                );
+            }
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
@@ -2161,6 +2143,40 @@ impl EbpfState {
             &program.name,
             netns.as_raw_fd(),
             "flow_dissector",
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_cgroup_sock_addr_unix_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &CgroupSockAddrTarget,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "cgroup_sock_addr UNIX libbpf loading does not yet support pinned map sharing"
+                    .to_string(),
+            ));
+        }
+
+        let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+            if e.kind() == ErrorKind::PermissionDenied {
+                LoadError::PermissionDenied
+            } else {
+                LoadError::Attach(format!(
+                    "Failed to open cgroup_sock_addr cgroup path {}: {e}",
+                    target.cgroup_path
+                ))
+            }
+        })?;
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfProgramHandle::load_and_attach_cgroup(
+            elf_bytes,
+            &program.name,
+            cgroup.as_raw_fd(),
+            "cgroup_sock_addr UNIX",
         )?;
         self.insert_libbpf_program_active_probe(handle, program)
     }

@@ -88,7 +88,7 @@ as a proof that live attach will succeed on every host.
 | First live tracing test | `live-supported` | `kprobe:sys_read` |
 | Tracepoint payload work | `live-supported` or `host-gated` | `tracepoint:syscalls/sys_enter_openat` |
 | Packet or cgroup experiments | `host-gated` | `xdp:lo`, `tcx:lo:ingress`, `cgroup_skb:/sys/fs/cgroup:egress` |
-| Advanced modeled sections | `dry-run-only` | `netfilter:ipv4:pre_routing:priority=-100:defrag` |
+| Advanced modeled sections | `dry-run-only` | `lwt_xmit:demo-route` |
 | Behavior-changing kernel hooks | `vm-only` or `unsafe-opt-in` | `struct_ops:sched_ext_ops` |
 
 For a status-driven inventory, run:
@@ -117,7 +117,7 @@ Good first dry-run examples for richer surfaces:
 ```nushell
 ebpf attach --dry-run 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_flags | count }
 ebpf attach --dry-run 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
-ebpf attach --dry-run 'netfilter:ipv4:pre_routing:priority=-100:defrag' {|ctx| $ctx.hook | count; 'accept' }
+ebpf attach --dry-run 'lwt_xmit:demo-route' {|ctx| $ctx.packet_len | count; 'pass' }
 ```
 
 ## Current Risk Shape
@@ -129,11 +129,10 @@ they need real host resources. Kernel-BTF-backed targets are useful when
 the running kernel.
 
 Several advanced program families are intentionally compile/dry-run only until
-the loader has a safe attach path: writable raw tracepoints, `fmod_ret`,
-XDP devmap/cpumap secondary programs, `flow_dissector`, `netfilter`, `lwt_*`,
-`tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, cgroup UNIX socket-address
-hooks, `freplace`/extension, `syscall`, iterators that require a seq-file link,
-and direct `struct_ops:<value_type>.<callback>` callback targets.
+the loader has a safe attach path: XDP devmap/cpumap secondary programs,
+`lwt_*`, `tc_action`, `sk_reuseport`, `lsm_cgroup`, `freplace`/extension,
+`syscall`, iterators that require a seq-file link, and direct
+`struct_ops:<value_type>.<callback>` callback targets.
 
 `struct_ops` object registration is behavior-changing. Unclassified
 `struct_ops` families and high-risk families such as `sched_ext_ops`,

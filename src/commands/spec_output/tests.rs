@@ -1817,14 +1817,14 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
     .expect("spec output should be a record");
 
     assert!(
-        !record
+        record
             .get("live_attach_supported")
             .expect("live_attach_supported should be present")
             .as_bool()
             .expect("live_attach_supported should be a bool")
     );
     assert!(
-        !record
+        record
             .get("live_attach_default_allowed")
             .expect("live_attach_default_allowed should be present")
             .as_bool()
@@ -1843,7 +1843,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_status should be present")
             .as_str()
             .expect("live_attach_status should be a string"),
-        "unsupported"
+        "default-allowed"
     );
     assert!(
         record
@@ -1851,23 +1851,19 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_status_description should be present")
             .as_str()
             .expect("live_attach_status_description should be a string")
-            .contains("not implemented")
+            .contains("allowed by default")
     );
-    assert_eq!(
+    assert!(
         record
             .get("live_attach_unsupported_reason")
             .expect("live_attach_unsupported_reason should be present")
-            .as_str()
-            .expect("live_attach_unsupported_reason should be a string"),
-        "cgroup-sock-addr-unix-loader"
+            .is_nothing()
     );
     assert!(
         record
             .get("live_attach_unsupported_reason_description")
             .expect("live_attach_unsupported_reason_description should be present")
-            .as_str()
-            .expect("live_attach_unsupported_reason_description should be a string")
-            .contains("Cgroup UNIX socket-address hooks")
+            .is_nothing()
     );
     assert!(
         record
@@ -1887,7 +1883,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_note should be present")
             .as_str()
             .expect("live_attach_note should be a string"),
-        ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix.note()
+        ""
     );
     assert_eq!(
         record
@@ -1903,7 +1899,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_default_test_lane should be present")
             .as_str()
             .expect("live_attach_default_test_lane should be a string"),
-        "dry-run"
+        "host-gated"
     );
     assert!(
         record
@@ -1911,7 +1907,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_default_test_lane_description should be present")
             .as_str()
             .expect("live_attach_default_test_lane_description should be a string")
-            .contains("dry-run")
+            .contains("host")
     );
     assert_eq!(
         record
@@ -1919,7 +1915,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("external_alpha_status should be present")
             .as_str()
             .expect("external_alpha_status should be a string"),
-        "dry-run-only"
+        "host-gated"
     );
     assert!(
         record
@@ -1927,7 +1923,7 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("external_alpha_status_description should be present")
             .as_str()
             .expect("external_alpha_status_description should be a string")
-            .contains("compile/dry-run")
+            .contains("host resources")
     );
 
     let generic_struct_ops =

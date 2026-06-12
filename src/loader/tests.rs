@@ -1995,7 +1995,7 @@ fn test_attach_rejects_compile_only_programs_with_spec_requirements() {
 }
 
 #[test]
-fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
+fn test_attach_routes_cgroup_sock_addr_unix_to_libbpf_loader() {
     let state = EbpfState::new();
     let object = EbpfProgram::from_bytecode(
         EbpfProgramType::CgroupSockAddr,
@@ -2006,43 +2006,19 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
     .into_object();
 
     let err = state
-        .attach(&object)
-        .expect_err("cgroup_sock_addr unix hooks should reject live attach before ELF emission");
-
-    let expected_requirements = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
-        .expect("cgroup_sock_addr unix spec should parse")
-        .compatibility_requirements();
+        .attach_with_pin(&object, Some("shared"))
+        .expect_err("cgroup_sock_addr unix hooks should route to libbpf loader");
 
     assert!(
         matches!(
             err,
-            LoadError::Attach(ref msg)
-                if msg.contains("live attach for cgroup_sock_addr connect_unix hooks is not supported by this loader yet")
-                    && msg.contains("does not expose BPF_CGROUP_UNIX_* hooks")
-                    && msg.contains("external alpha status: dry-run-only")
-                    && msg.contains("live attach default test lane: dry-run")
-                    && msg.contains("use --dry-run to compile")
+            LoadError::Load(ref msg)
+                if msg.contains(
+                    "cgroup_sock_addr UNIX libbpf loading does not yet support pinned map sharing"
+                )
         ),
-        "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
+        "unexpected cgroup_sock_addr unix libbpf dispatch error: {err:?}"
     );
-    if let LoadError::Attach(msg) = &err {
-        assert!(
-            !msg.contains("default test lane: host-gated"),
-            "cgroup_sock_addr unix live-attach error should use the live-attach lane, not the feature-only lane: {msg}"
-        );
-        for requirement in expected_requirements {
-            assert!(
-                msg.contains(requirement.description()),
-                "cgroup_sock_addr unix live-attach error should mention compatibility requirement {requirement:?}: {msg}"
-            );
-            if let Some(minimum_kernel) = requirement.minimum_kernel() {
-                assert!(
-                    msg.contains(&format!("kernel>={minimum_kernel}")),
-                    "cgroup_sock_addr unix live-attach error should mention minimum kernel for {requirement:?}: {msg}"
-                );
-            }
-        }
-    }
 }
 
 #[test]

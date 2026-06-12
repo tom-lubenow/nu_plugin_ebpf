@@ -452,7 +452,6 @@ pub enum ProgramLiveAttachUnsupportedReason {
     Syscall,
     Iter,
     XdpMapProgram,
-    CgroupSockAddrUnix,
     StructOpsCallback,
 }
 
@@ -472,7 +471,6 @@ impl ProgramLiveAttachUnsupportedReason {
             Self::Syscall => "syscall-no-hook",
             Self::Iter => "iterator-link",
             Self::XdpMapProgram => "xdp-map-program",
-            Self::CgroupSockAddrUnix => "cgroup-sock-addr-unix-loader",
             Self::StructOpsCallback => "struct-ops-callback-target",
         }
     }
@@ -498,9 +496,6 @@ impl ProgramLiveAttachUnsupportedReason {
             }
             Self::Iter => "BPF iterators need iterator link/seq-file attach support.",
             Self::XdpMapProgram => "XDP map programs are attached through map entries.",
-            Self::CgroupSockAddrUnix => {
-                "Cgroup UNIX socket-address hooks need BPF_CGROUP_UNIX_* attach support."
-            }
             Self::StructOpsCallback => {
                 "struct_ops callbacks are attached by registering the enclosing struct_ops object."
             }
@@ -546,7 +541,6 @@ impl ProgramLiveAttachUnsupportedReason {
                 "BPF iterator attach requires iterator link/seq-file setup plus map/event integration; the current Aya object loader does not model iter sections"
             }
             Self::XdpMapProgram => XDP_MAP_LIVE_ATTACH_UNSUPPORTED,
-            Self::CgroupSockAddrUnix => CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED,
             Self::StructOpsCallback => STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
         }
     }
@@ -562,8 +556,6 @@ pub struct ProgramLiveAttachPolicy {
     pub note: Option<&'static str>,
 }
 
-pub(crate) const CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED: &str =
-    "the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks";
 pub(crate) const STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED: &str =
     "struct_ops callbacks are emitted through a struct_ops object and are not directly attachable";
 pub(crate) const XDP_MAP_LIVE_ATTACH_UNSUPPORTED: &str = "XDP devmap/cpumap programs are loaded through map entries, and this loader does not model that attach path yet";
@@ -3433,13 +3425,6 @@ impl ProgramSpec {
                 );
             }
         }
-        if let ProgramSpec::CgroupSockAddr { target } = self {
-            if target.is_unix() {
-                return ProgramLiveAttachPolicy::unsupported(
-                    ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix,
-                );
-            }
-        }
         if matches!(self, ProgramSpec::StructOpsCallback { .. }) {
             return ProgramLiveAttachPolicy::unsupported(
                 ProgramLiveAttachUnsupportedReason::StructOpsCallback,
@@ -4788,22 +4773,16 @@ mod tests {
             ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
                 .expect("cgroup_sock_addr unix spec should parse");
         let cgroup_unix_policy = cgroup_sock_addr_unix.live_attach_policy();
-        assert!(!cgroup_unix_policy.loader_supported);
-        assert!(!cgroup_unix_policy.default_allowed);
+        assert!(cgroup_unix_policy.loader_supported);
+        assert!(cgroup_unix_policy.default_allowed);
         assert!(!cgroup_unix_policy.requires_opt_in);
         assert_eq!(
             cgroup_unix_policy.status(),
-            ProgramLiveAttachStatus::Unsupported
+            ProgramLiveAttachStatus::DefaultAllowed
         );
-        assert_eq!(
-            cgroup_unix_policy.unsupported_reason,
-            Some(ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix)
-        );
+        assert_eq!(cgroup_unix_policy.unsupported_reason, None);
         assert_eq!(cgroup_unix_policy.opt_in_reason, None);
-        assert_eq!(
-            cgroup_unix_policy.note,
-            Some(ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix.note())
-        );
+        assert_eq!(cgroup_unix_policy.note, None);
 
         let xdp_devmap = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
         let xdp_devmap_policy = xdp_devmap.live_attach_policy();
@@ -5070,7 +5049,6 @@ mod tests {
         }
         for reason in [
             ProgramLiveAttachUnsupportedReason::XdpMapProgram,
-            ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix,
             ProgramLiveAttachUnsupportedReason::StructOpsCallback,
         ] {
             assert!(
