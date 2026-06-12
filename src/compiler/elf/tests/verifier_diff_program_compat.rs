@@ -31,3 +31,4 @@ mod program_struct_ops_scanner_tests;
 mod program_surface_scanner_tests;
 mod runtime_tests;
 mod source_tests;
+mod tracepoint_payload_scanner_tests;
