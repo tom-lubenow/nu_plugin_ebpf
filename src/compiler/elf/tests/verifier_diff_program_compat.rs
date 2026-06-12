@@ -18,6 +18,7 @@ mod context_write_kfunc_scanner_tests;
 mod context_write_scanner_tests;
 mod context_write_support;
 mod iter_metadata_tests;
+mod kfunc_metadata_tests;
 mod map_metadata_tests;
 mod metadata_tests;
 mod program_feature_scanner_tests;
