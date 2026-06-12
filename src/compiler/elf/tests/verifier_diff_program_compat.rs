@@ -10,6 +10,7 @@ use rust_support::*;
 use source_support::*;
 
 mod context_field_metadata_tests;
+mod context_field_target_metadata_tests;
 mod context_read_record_wrapper_scanner_tests;
 mod context_read_scanner_tests;
 mod context_read_user_function_alias_scanner_tests;
