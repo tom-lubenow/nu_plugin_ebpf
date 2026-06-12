@@ -18,8 +18,8 @@ use crate::compiler::{
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
-    CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, ProgramSpec,
-    UprobeMultiTarget, XdpAttachMode, XdpTarget, XdpTargetKind,
+    CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, LsmCgroupTarget,
+    ProgramSpec, UprobeMultiTarget, XdpAttachMode, XdpTarget, XdpTargetKind,
 };
 use std::collections::HashMap;
 
@@ -919,11 +919,32 @@ fn test_parse_program_spec_lsm_cgroup_is_structured() {
     assert_eq!(
         spec,
         ProgramSpec::LsmCgroup {
-            hook: "socket_bind".to_string(),
+            target: LsmCgroupTarget {
+                hook: "socket_bind".to_string(),
+                cgroup_path: None,
+            },
         }
     );
     assert_eq!(spec.section_name(), "lsm_cgroup/socket_bind");
     assert_eq!(spec.to_string(), "lsm_cgroup:socket_bind");
+}
+
+#[test]
+fn test_parse_program_spec_lsm_cgroup_live_target_keeps_cgroup_path() {
+    let spec = parse_program_spec("lsm_cgroup:/sys/fs/cgroup:socket_bind").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::LsmCgroup {
+            target: LsmCgroupTarget {
+                hook: "socket_bind".to_string(),
+                cgroup_path: Some("/sys/fs/cgroup".to_string()),
+            },
+        }
+    );
+    assert_eq!(spec.target_string(), "/sys/fs/cgroup:socket_bind");
+    assert_eq!(spec.section_name(), "lsm_cgroup/socket_bind");
+    assert_eq!(spec.cgroup_path(), Some("/sys/fs/cgroup"));
+    assert!(spec.live_attach_policy().loader_supported);
 }
 
 #[test]
@@ -1896,7 +1917,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             EbpfProgramType::Iter,
             "task",
             "iter",
-            "iterator link/seq-file setup plus map/event integration",
+            "owned seq-file reader for --stream output",
         ),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
@@ -2018,6 +2039,41 @@ fn test_attach_routes_cgroup_sock_addr_unix_to_libbpf_loader() {
                 )
         ),
         "unexpected cgroup_sock_addr unix libbpf dispatch error: {err:?}"
+    );
+}
+
+#[test]
+fn test_attach_routes_path_qualified_lsm_cgroup_to_libbpf_loader() {
+    let state = EbpfState::new();
+    let object = EbpfProgram::from_bytecode(
+        EbpfProgramType::LsmCgroup,
+        "/sys/fs/cgroup:socket_bind",
+        "main",
+        vec![],
+    )
+    .into_object();
+
+    assert_eq!(object.programs[0].target, "socket_bind");
+    assert_eq!(
+        object.programs[0]
+            .parsed_program_spec()
+            .and_then(ProgramSpec::cgroup_path),
+        Some("/sys/fs/cgroup")
+    );
+
+    let err = state
+        .attach_with_pin(&object, Some("shared"))
+        .expect_err("path-qualified lsm_cgroup should route to libbpf loader");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains(
+                    "lsm_cgroup libbpf loading does not yet support pinned map sharing"
+                )
+        ),
+        "unexpected lsm_cgroup libbpf dispatch error: {err:?}"
     );
 }
 

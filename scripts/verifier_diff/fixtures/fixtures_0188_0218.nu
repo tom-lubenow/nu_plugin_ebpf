@@ -235,6 +235,21 @@ const VERIFIER_DIFF_FIXTURES_0188_0218 = [
         kernel: "accept"
     }
     {
+        name: "lsm-cgroup-live-target-named-arg-context"
+        category: "tracing"
+        tags: [lsm-cgroup context named-arg cgroup-path source metadata]
+        requires: [kernel-btf]
+        target: "lsm_cgroup:/sys/fs/cgroup:socket_bind"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.address.sa_family + $ctx.arg.addrlen) | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "syscall-helper-context"
         category: "tracing"
         tags: [syscall helper-call]

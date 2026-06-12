@@ -23,6 +23,9 @@ fn canonical_target_for_parsed_program_spec(
     program_spec: Option<&ProgramSpec>,
 ) -> String {
     if let Some(program_spec) = program_spec {
+        if let ProgramSpec::LsmCgroup { target } = program_spec {
+            return target.hook.clone();
+        }
         if program_spec.struct_ops_callback_name().is_some() {
             return program_spec.target_string();
         }

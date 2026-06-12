@@ -19,7 +19,7 @@ use crate::compiler::{
 use crate::kernel_btf::{
     TracepointContext, TracepointContextSource, TrampolineValueKind, TypeInfo,
 };
-use crate::program_spec::ProgramAttachShape;
+use crate::program_spec::{ProgramAttachShape, ProgramSpec};
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -661,15 +661,21 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
-        ProgramAttachShape::LsmCgroup { sleepable_hook } => Value::record(
-            record! {
-                "kind" => Value::string("lsm-cgroup", span),
-                "hook" => Value::string(spec.target_string(), span),
-                "sleepable" => Value::bool(false, span),
-                "sleepable_hook" => Value::bool(sleepable_hook, span),
-            },
-            span,
-        ),
+        ProgramAttachShape::LsmCgroup { sleepable_hook } => {
+            let hook = match spec {
+                ProgramSpec::LsmCgroup { target } => target.hook.clone(),
+                _ => spec.target_string(),
+            };
+            Value::record(
+                record! {
+                    "kind" => Value::string("lsm-cgroup", span),
+                    "hook" => Value::string(hook, span),
+                    "sleepable" => Value::bool(false, span),
+                    "sleepable_hook" => Value::bool(sleepable_hook, span),
+                },
+                span,
+            )
+        }
         ProgramAttachShape::Tc { ingress } => Value::record(
             record! {
                 "kind" => Value::string("tc", span),

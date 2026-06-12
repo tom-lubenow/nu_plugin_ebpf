@@ -1061,6 +1061,11 @@ impl EbpfState {
             });
             return self.attach_libbpf_flow_dissector_object(object, pin_group, program, target);
         }
+        if let ProgramSpec::LsmCgroup { target } = &spec {
+            if target.cgroup_path.is_some() {
+                return self.attach_libbpf_lsm_cgroup_object(object, pin_group, program, target);
+            }
+        }
         if let ProgramSpec::CgroupSockAddr { target } = &spec {
             if target.is_unix() {
                 return self.attach_libbpf_cgroup_sock_addr_unix_object(
@@ -2177,6 +2182,44 @@ impl EbpfState {
             &program.name,
             cgroup.as_raw_fd(),
             "cgroup_sock_addr UNIX",
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program)
+    }
+
+    fn attach_libbpf_lsm_cgroup_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &LsmCgroupTarget,
+    ) -> Result<u32, LoadError> {
+        if pin_group.is_some() {
+            return Err(LoadError::Load(
+                "lsm_cgroup libbpf loading does not yet support pinned map sharing".to_string(),
+            ));
+        }
+
+        let cgroup_path = target.cgroup_path().ok_or_else(|| {
+            LoadError::Attach(
+                "lsm_cgroup live attach requires a cgroup path target like lsm_cgroup:/sys/fs/cgroup:socket_bind"
+                    .to_string(),
+            )
+        })?;
+        let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
+            if e.kind() == ErrorKind::PermissionDenied {
+                LoadError::PermissionDenied
+            } else {
+                LoadError::Attach(format!(
+                    "Failed to open lsm_cgroup cgroup path {cgroup_path}: {e}"
+                ))
+            }
+        })?;
+        let elf_bytes = object.to_elf()?;
+        let handle = LibbpfProgramHandle::load_and_attach_cgroup(
+            elf_bytes,
+            &program.name,
+            cgroup.as_raw_fd(),
+            "lsm_cgroup",
         )?;
         self.insert_libbpf_program_active_probe(handle, program)
     }

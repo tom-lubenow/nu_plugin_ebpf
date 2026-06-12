@@ -61,7 +61,7 @@ Supported attach types:
   - uprobe / uprobe.s, uretprobe / uretprobe.s
   - uprobe.multi / uprobe.multi.s, uretprobe.multi / uretprobe.multi.s
   - lsm
-  - lsm_cgroup (dry-run compile support; live attach is not implemented yet)
+  - lsm_cgroup:/path:hook (hook-only lsm_cgroup:hook remains dry-run compile support)
   - freplace / extension (dry-run compile support; live attach is not implemented yet)
   - syscall (dry-run compile support; live attach is not implemented yet)
   - iter (dry-run compile support; live attach is not implemented yet)
@@ -407,9 +407,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.arg.file }   - Get a named BTF-typed LSM hook argument
     {|ctx| $ctx.arg.file.f_flags } - Project through named BTF-backed LSM hook arguments
     Note: LSM support uses `lsm:<hook_name>` targets such as
-    `lsm:file_open`. Cgroup LSM sections use `lsm_cgroup:<hook_name>` and
-    currently compile in dry-run mode only. Live LSM loading requires a
-    kernel with BPF LSM enabled;
+    `lsm:file_open`. Cgroup LSM sections use `lsm_cgroup:<hook_name>` for
+    hook-only dry-run compilation or `lsm_cgroup:/sys/fs/cgroup:<hook_name>`
+    for live cgroup-scoped attachment. Live LSM loading requires a kernel with
+    BPF LSM enabled;
     `--dry-run` is the safest way to validate object construction and BTF
     argument access on a development machine.
 

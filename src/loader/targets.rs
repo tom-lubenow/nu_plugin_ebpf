@@ -209,7 +209,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
         ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
             validate_kprobe_multi_pattern(pattern)
         }
-        ProgramSpec::Lsm { hook, .. } | ProgramSpec::LsmCgroup { hook } => {
+        ProgramSpec::Lsm { hook, .. } => {
             if hook.is_empty() {
                 return Err(LoadError::Load(
                     "LSM hook target cannot be empty".to_string(),
@@ -219,6 +219,18 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 KernelTargetValidationKind::LsmHook,
                 spec.program_type().canonical_prefix(),
                 hook,
+            )
+        }
+        ProgramSpec::LsmCgroup { target } => {
+            if target.hook.is_empty() {
+                return Err(LoadError::Load(
+                    "LSM hook target cannot be empty".to_string(),
+                ));
+            }
+            validate_trampoline_target(
+                KernelTargetValidationKind::LsmHook,
+                spec.program_type().canonical_prefix(),
+                &target.hook,
             )
         }
         ProgramSpec::TpBtf { name } => {
@@ -376,7 +388,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `fexit:function_name`
 /// - `fmod_ret:function_name`
 /// - `lsm:hook_name`
-/// - `lsm_cgroup:hook_name`
+/// - `lsm_cgroup:hook_name` or `lsm_cgroup:/path/to/cgroup:hook_name`
 /// - `freplace:function_name` (or `extension:function_name`)
 /// - `syscall:label`
 /// - `iter:target`

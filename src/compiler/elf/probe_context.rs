@@ -260,7 +260,10 @@ impl ProbeContext {
     }
 
     pub fn from_program_spec(program_spec: ProgramSpec) -> Self {
-        let target = program_spec.target_string();
+        let target = match &program_spec {
+            ProgramSpec::LsmCgroup { target } => target.hook.clone(),
+            _ => program_spec.target_string(),
+        };
         Self::from_program_spec_parts(program_spec, target)
     }
 
@@ -271,7 +274,9 @@ impl ProbeContext {
             return Self::from_program_spec(program_spec);
         }
         if let Ok(program_spec) = ProgramSpec::from_program_type_target(probe_type, &target) {
-            if program_spec.struct_ops_callback_name().is_some() {
+            if program_spec.struct_ops_callback_name().is_some()
+                || matches!(program_spec, ProgramSpec::LsmCgroup { .. })
+            {
                 return Self::from_program_spec(program_spec);
             }
             return Self::from_program_spec_parts(program_spec, target);

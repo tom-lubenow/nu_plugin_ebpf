@@ -494,7 +494,9 @@ impl ProgramLiveAttachUnsupportedReason {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::LsmCgroup => "Cgroup LSM requires cgroup-aware BPF link setup.",
+            Self::LsmCgroup => {
+                "Hook-only cgroup LSM targets require cgroup-aware BPF link setup for live attach."
+            }
             Self::TcAction => "tc_action needs an explicit loader attach implementation.",
             Self::SkReuseport => "sk_reuseport needs an explicit loader attach implementation.",
             Self::Lwt => "Route LWT programs need route/link attach support.",
@@ -515,7 +517,7 @@ impl ProgramLiveAttachUnsupportedReason {
     pub fn note(self) -> &'static str {
         match self {
             Self::LsmCgroup => {
-                "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
+                "cgroup-scoped LSM attach requires cgroup-aware BPF link setup; use lsm_cgroup:/sys/fs/cgroup:<hook> for live attach or lsm_cgroup:<hook> for dry-run compilation"
             }
             Self::TcAction => {
                 "tc_action attach requires a libbpf-backed load/link path plus map/event integration; the current Aya loader surface does not expose a tc_action attach wrapper"
@@ -533,7 +535,7 @@ impl ProgramLiveAttachUnsupportedReason {
                 "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
             }
             Self::Iter => {
-                "BPF iterator attach requires iterator link/seq-file setup plus map/event integration; the current Aya object loader does not model iter sections"
+                "BPF iterator attach requires iterator link creation plus an owned seq-file reader for --stream output; the current loader has no iterator reader integration"
             }
             Self::XdpMapProgram => XDP_MAP_LIVE_ATTACH_UNSUPPORTED,
             Self::StructOpsCallback => STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
@@ -1193,6 +1195,65 @@ impl PartialEq for CgroupSkbTarget {
 }
 
 impl Eq for CgroupSkbTarget {}
+
+/// Parsed cgroup-scoped LSM target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LsmCgroupTarget {
+    /// LSM hook name used for the BPF section and kernel target validation.
+    pub hook: String,
+    /// Optional filesystem path to the cgroup directory for live attach.
+    pub cgroup_path: Option<String>,
+}
+
+impl LsmCgroupTarget {
+    /// Parse either `hook_name` for compile/dry-run coverage or
+    /// `/path/to/cgroup:hook_name` for live cgroup-scoped attachment.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if let Some((cgroup_path, hook)) = target.rsplit_once(':') {
+            if cgroup_path.is_empty() {
+                return Err(ProgramSpecParseError::new(
+                    "lsm_cgroup cgroup path cannot be empty",
+                ));
+            }
+            if hook.is_empty() {
+                return Err(ProgramSpecParseError::new(
+                    "lsm_cgroup hook target cannot be empty",
+                ));
+            }
+            return Ok(Self {
+                hook: hook.to_string(),
+                cgroup_path: Some(cgroup_path.to_string()),
+            });
+        }
+
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "lsm_cgroup hook target cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            hook: target.to_string(),
+            cgroup_path: None,
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        if let Some(cgroup_path) = &self.cgroup_path {
+            format!("{cgroup_path}:{}", self.hook)
+        } else {
+            self.hook.clone()
+        }
+    }
+
+    pub fn section_name(&self) -> String {
+        format!("lsm_cgroup/{}", self.hook)
+    }
+
+    pub fn cgroup_path(&self) -> Option<&str> {
+        self.cgroup_path.as_deref()
+    }
+}
 
 /// Parsed cgroup_sock target information.
 #[derive(Debug, Clone)]
@@ -2492,7 +2553,7 @@ pub enum ProgramSpec {
         sleepable: bool,
     },
     LsmCgroup {
-        hook: String,
+        target: LsmCgroupTarget,
     },
     Extension {
         target: ExtensionTarget,
@@ -3004,7 +3065,7 @@ impl ProgramSpec {
                 sleepable,
             }),
             EbpfProgramType::LsmCgroup => Ok(ProgramSpec::LsmCgroup {
-                hook: target.to_string(),
+                target: LsmCgroupTarget::parse(target)?,
             }),
             EbpfProgramType::Extension => Ok(ProgramSpec::Extension {
                 target: ExtensionTarget::parse(target)?,
@@ -3413,6 +3474,19 @@ impl ProgramSpec {
     }
 
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
+        if let ProgramSpec::LsmCgroup { target } = self {
+            if target.cgroup_path.is_some() {
+                return ProgramLiveAttachPolicy {
+                    loader_supported: true,
+                    default_allowed: true,
+                    requires_opt_in: false,
+                    unsupported_reason: None,
+                    opt_in_reason: None,
+                    note: None,
+                };
+            }
+        }
+
         if let ProgramSpec::Xdp { target } = self {
             if !target.is_interface() {
                 return ProgramLiveAttachPolicy::unsupported(
@@ -3452,7 +3526,7 @@ impl ProgramSpec {
             }
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
-            ProgramSpec::LsmCgroup { hook } => hook.clone(),
+            ProgramSpec::LsmCgroup { target } => target.target_string(),
             ProgramSpec::Extension { target } => target.target_string(),
             ProgramSpec::Syscall { target } => target.target_string(),
             ProgramSpec::Iter { target } => target.target_string(),
@@ -3632,6 +3706,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSysctl { target } => Some(&target.cgroup_path),
             ProgramSpec::CgroupSockopt { target } => Some(&target.cgroup_path),
             ProgramSpec::CgroupSockAddr { target } => Some(&target.cgroup_path),
+            ProgramSpec::LsmCgroup { target } => target.cgroup_path(),
             _ => None,
         }
     }
@@ -3716,6 +3791,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSysctl { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockopt { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
+            ProgramSpec::LsmCgroup { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
             ProgramSpec::Xdp { target } => target.section_name().to_string(),
             ProgramSpec::Tcx { target } => format!("tcx/{}", target.attach_type_name()),
@@ -3821,8 +3897,8 @@ impl ProgramSpec {
                 sleepable: *sleepable,
                 sleepable_hook: lsm_hook_is_sleepable(hook),
             },
-            ProgramSpec::LsmCgroup { hook } => ProgramAttachShape::LsmCgroup {
-                sleepable_hook: lsm_hook_is_sleepable(hook),
+            ProgramSpec::LsmCgroup { target } => ProgramAttachShape::LsmCgroup {
+                sleepable_hook: lsm_hook_is_sleepable(&target.hook),
             },
             ProgramSpec::LircMode2 { .. } => ProgramAttachShape::LircMode2,
             ProgramSpec::StructOps { value_type_name } => ProgramAttachShape::StructOps {
@@ -4653,6 +4729,7 @@ mod tests {
                 "netfilter:ipv4:pre_routing:defrag",
                 "lwt_seg6local:demo-route",
                 "sk_reuseport:migrate",
+                "lsm_cgroup:/sys/fs/cgroup:socket_bind",
                 "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
                 "struct_ops:sched_ext_ops",
                 "struct_ops:hid_bpf_ops",
@@ -5096,6 +5173,8 @@ mod tests {
             .expect("sleepable fmod_ret spec should parse");
         let lsm_cgroup =
             ProgramSpec::parse("lsm_cgroup:socket_bind").expect("lsm_cgroup spec should parse");
+        let live_lsm_cgroup = ProgramSpec::parse("lsm_cgroup:/sys/fs/cgroup:socket_bind")
+            .expect("path-qualified lsm_cgroup spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
         let uprobe =
@@ -5188,6 +5267,20 @@ mod tests {
         assert_eq!(lsm_cgroup.target_string(), "socket_bind");
         assert_eq!(lsm_cgroup.section_name(), "lsm_cgroup/socket_bind");
         assert_eq!(lsm_cgroup.to_string(), "lsm_cgroup:socket_bind");
+        assert_eq!(lsm_cgroup.cgroup_path(), None);
+        assert!(!lsm_cgroup.live_attach_policy().loader_supported);
+        assert_eq!(live_lsm_cgroup.program_type(), EbpfProgramType::LsmCgroup);
+        assert_eq!(
+            live_lsm_cgroup.target_string(),
+            "/sys/fs/cgroup:socket_bind"
+        );
+        assert_eq!(live_lsm_cgroup.section_name(), "lsm_cgroup/socket_bind");
+        assert_eq!(
+            live_lsm_cgroup.to_string(),
+            "lsm_cgroup:/sys/fs/cgroup:socket_bind"
+        );
+        assert_eq!(live_lsm_cgroup.cgroup_path(), Some("/sys/fs/cgroup"));
+        assert!(live_lsm_cgroup.live_attach_policy().loader_supported);
         assert_eq!(tracepoint.struct_ops_value_type_name(), None);
         assert_eq!(struct_ops.tracepoint_parts(), None);
         assert_eq!(
