@@ -178,7 +178,7 @@ pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<L
             };
             let inner_detail = map_in_map_inner_template_detail(object, &map_ref);
             LoadError::Load(format!(
-                "live loading map-in-map runtime map '{}' ({}) is not supported by this loader yet{}; Aya's map creation path does not materialize inner_map_fd from BTF values metadata; use --dry-run to compile",
+                "Aya-backed live loading of map-in-map runtime map '{}' ({}) is not supported by this loader yet{}; Aya's map creation path does not materialize inner_map_fd from BTF values metadata; use --dry-run to compile",
                 map.name, kind, inner_detail
             ))
         })

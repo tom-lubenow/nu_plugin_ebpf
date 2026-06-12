@@ -1708,7 +1708,7 @@ fn test_attach_rejects_live_map_in_map_before_aya_load() {
         matches!(
             err,
             LoadError::Load(ref msg)
-                if msg.contains("live loading map-in-map runtime map 'outer'")
+                if msg.contains("Aya-backed live loading of map-in-map runtime map 'outer'")
                     && msg.contains("declared inner template is 'inner' (hash)")
                     && msg.contains("Aya's map creation path")
                     && msg.contains("inner_map_fd")
@@ -1731,7 +1731,7 @@ fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
         matches!(
             err,
             LoadError::Load(ref msg)
-                if msg.contains("live loading map-in-map runtime map 'outer'")
+                if msg.contains("Aya-backed live loading of map-in-map runtime map 'outer'")
                     && msg.contains("no compiled inner-template metadata was found")
                     && msg.contains("inner_map_fd")
                     && msg.contains("--dry-run")
@@ -1781,7 +1781,7 @@ fn test_live_map_in_map_diagnostic_reports_ambiguous_inner_template_metadata() {
         matches!(
             err,
             LoadError::Load(ref msg)
-                if msg.contains("live loading map-in-map runtime map 'outer'")
+                if msg.contains("Aya-backed live loading of map-in-map runtime map 'outer'")
                     && msg.contains("compiled inner-template metadata is ambiguous")
                     && msg.contains("'inner' (hash)")
                     && msg.contains("'other' (array)")
