@@ -16538,6 +16538,80 @@ fn test_lower_split_words_on_known_string_list_feeds_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_string_list_split_options_feed_metadata_only_str_join() {
+    for (case_offset, split_name, input, flags, min_word_length, expected_prefix) in [
+        (
+            0,
+            "split chars",
+            vec!["a🇯🇵", "b"],
+            vec![b"grapheme-clusters".to_vec()],
+            None,
+            "[a\n🇯🇵]:[b]",
+        ),
+        (
+            10,
+            "split words",
+            vec!["a éé ee", "bb ccc"],
+            vec![b"grapheme-clusters".to_vec()],
+            Some(2),
+            "[éé\nee]:[bb\nccc]",
+        ),
+    ] {
+        let split_decl = DeclId::new(81220 + case_offset);
+        let join_decl = DeclId::new(81221 + case_offset);
+        let starts_with_decl = DeclId::new(81222 + case_offset);
+        let hir = make_split_string_list_join_then_starts_with_program(
+            split_decl,
+            join_decl,
+            starts_with_decl,
+            &input,
+            flags,
+            min_word_length,
+            ":",
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (split_decl, split_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{split_name} string-list options should feed metadata-only str join: {err}")
+        });
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected_prefix}\0").as_bytes())
+                )),
+            "expected {split_name} option-bearing string-list output to feed str join with {expected_prefix}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{split_name} string-list option str join should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_split_words_on_known_string_list_feeds_metadata_only_length() {
     let split_decl = DeclId::new(7934);
     let length_decl = DeclId::new(7935);
