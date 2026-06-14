@@ -104,6 +104,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-sqrt-list-fill"
+        category: "language-core"
+        tags: [aggregate list math sqrt float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [4 2.25 9] | math sqrt | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "02.0,01.5,03.0"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-exp-folded"
         category: "language-core"
         tags: [scalar aggregate list math exp float fill str join]
