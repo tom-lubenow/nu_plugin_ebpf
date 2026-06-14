@@ -195,6 +195,19 @@ const VERIFIER_DIFF_FIXTURES_1813_1843_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-rotate-default"
+        category: "language-core"
+        tags: [aggregate list bits rol ror default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([127 128 -129 256] | bits rol 1 | math sum) == 510) and (([1 256 -129 4294967296] | bits ror 1 | math sum) == 2147483839)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-rotate-default-runtime"
         category: "language-core"
         tags: [scalar bits rol default runtime]
