@@ -67,6 +67,21 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_B = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-split-options-get-metadata"
+        category: "language-core"
+        tags: [string list split chars words grapheme min get join metadata]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let chars = (["a🇯🇵" "cd"] | split chars --grapheme-clusters | get 0 | str join "-")'
+            '  let words = (["aa bbb" "c éé ee"] | split words --min-word-length 2 --grapheme-clusters | get 1 | str join "-")'
+            '  ($chars | str starts-with "a-🇯🇵") and ($words | str starts-with "éé-ee")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-row-join"
         category: "language-core"
         tags: [string split row join]
