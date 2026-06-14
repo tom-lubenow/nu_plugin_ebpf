@@ -182,6 +182,19 @@ const VERIFIER_DIFF_FIXTURES_1782_1812_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-not-runtime-masked-default"
+        category: "language-core"
+        tags: [aggregate list bits "not" runtime number-bytes default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([(random int)] | bits not --number-bytes 1 | length) == 1) and (([(random int)] | bits not | length) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-default-runtime"
         category: "language-core"
         tags: [scalar bits "not" default runtime]
