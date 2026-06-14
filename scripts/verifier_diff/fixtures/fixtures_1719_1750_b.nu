@@ -182,6 +182,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-exp-ln-log-list-describe"
+        category: "language-core"
+        tags: [aggregate list math exp ln log float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0 1] | math exp | describe | str starts-with "list<float>") and ([1 2] | math ln | describe | str starts-with "list<float>")) and ([16 8] | math log 2 | describe | str starts-with "list<float>")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-trig-folded"
         category: "language-core"
         tags: [scalar aggregate list math sin cos tan float fill str join]
