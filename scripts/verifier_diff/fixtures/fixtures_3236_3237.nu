@@ -27,4 +27,18 @@ export const VERIFIER_DIFF_FIXTURES_3236_3237 = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "global-define-type-array-string-each-length"
+        category: "globals"
+        tags: [globals arrays string each closure str length global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ["aa" "bbb"] | global-define --type "array{string:8:2}" names'
+            '  (((global-get names) | each {|x| $x | str length } | get 1) == 3)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]

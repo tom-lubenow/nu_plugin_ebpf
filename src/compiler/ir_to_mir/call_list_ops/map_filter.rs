@@ -174,6 +174,8 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
+        let (input_vreg, _base_runtime_ty) =
+            self.preserve_typed_fixed_array_input("where", input_reg, input_vreg, dst_vreg)?;
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
@@ -271,6 +273,8 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
+        let (input_vreg, base_runtime_ty) =
+            self.preserve_typed_fixed_array_input("each", input_reg, input_vreg, dst_vreg)?;
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
         if array_len > 0 {
@@ -289,7 +293,11 @@ impl<'a> HirToMirLowering<'a> {
                 self.current_block = transform_block;
 
                 let (elem_vreg, elem_meta) = self.emit_typed_fixed_array_each_item(
-                    input_reg, input_vreg, input_meta, &elem_ty, i,
+                    input_vreg,
+                    input_meta,
+                    &base_runtime_ty,
+                    &elem_ty,
+                    i,
                 )?;
                 let transformed = self.inline_closure_with_in_metadata(
                     closure_block_id,
@@ -318,6 +326,34 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn preserve_typed_fixed_array_input(
+        &mut self,
+        cmd_name: &str,
+        input_reg: RegId,
+        input_vreg: VReg,
+        dst_vreg: VReg,
+    ) -> Result<(VReg, MirType), CompileError> {
+        let base_runtime_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires typed fixed-array input in eBPF"
+                ))
+            })?;
+        if input_vreg != dst_vreg {
+            return Ok((input_vreg, base_runtime_ty));
+        }
+
+        let preserved_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: preserved_vreg,
+            src: MirValue::VReg(input_vreg),
+        });
+        self.vreg_type_hints
+            .insert(preserved_vreg, base_runtime_ty.clone());
+        Ok((preserved_vreg, base_runtime_ty))
+    }
+
     fn typed_fixed_array_each_input_type(ty: &MirType) -> bool {
         Self::typed_fixed_array_numeric_list_scalar_type(ty)
             || matches!(
@@ -332,9 +368,9 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_typed_fixed_array_each_item(
         &mut self,
-        input_reg: RegId,
         input_vreg: VReg,
         input_meta: &RegMetadata,
+        base_runtime_ty: &MirType,
         elem_ty: &MirType,
         index: usize,
     ) -> Result<(VReg, Option<RegMetadata>), CompileError> {
@@ -353,19 +389,12 @@ impl<'a> HirToMirLowering<'a> {
         let item_reg = RegId::new(SYNTHETIC_EACH_ITEM_REG);
         let old_reg_mapping = self.reg_map.remove(&item_reg.get());
         let old_meta = self.reg_metadata.remove(&item_reg.get());
-        let base_runtime_ty = self
-            .typed_value_runtime_type(input_reg, input_vreg)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "each requires typed fixed-array input in eBPF".into(),
-                )
-            })?;
         let projected_semantics = Self::typed_fixed_array_element_semantics(input_meta)?;
         let root_ctx_field = input_meta.root_ctx_field.clone();
         self.lower_dynamic_typed_numeric_get(
             item_reg,
             input_vreg,
-            &base_runtime_ty,
+            base_runtime_ty,
             MirValue::Const(i64::try_from(index).map_err(|_| {
                 CompileError::UnsupportedInstruction(format!(
                     "each fixed-array index {index} does not fit in i64"
