@@ -28,6 +28,20 @@ export const VERIFIER_DIFF_FIXTURES_3236_3237 = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-u32-each-initialized-first"
+        category: "globals"
+        tags: [globals arrays u32 each closure first global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [3 4] | global-define --type "array{u32:2}" ports'
+            '  (((global-get ports) | each {|x| $x + 1 } | first) == 4)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-string-each-length"
         category: "globals"
         tags: [globals arrays string each closure str length global-define initializer accept]
