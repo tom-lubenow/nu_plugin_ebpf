@@ -134,6 +134,19 @@ const VERIFIER_DIFF_FIXTURES_1782_1812_A = [
         kernel: "accept"
     }
     {
+        name: "core-math-round-precision-list-fill"
+        category: "language-core"
+        tags: [aggregate list math round precision float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [3.1415 -2.675] | math round -p 2 | fill --alignment right --character "0" --width 5 | str join "," | str starts-with "03.14,-2.68"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-integer-identity-runtime"
         category: "language-core"
         tags: [scalar math ceil floor round runtime]
