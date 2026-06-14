@@ -39,6 +39,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-float-sum-product-describe"
+        category: "language-core"
+        tags: [aggregate list math sum product float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1.5 2] | math sum | describe | str starts-with "float") and ([1.5 2] | math product | describe | str starts-with "float")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-avg-fill"
         category: "language-core"
         tags: [aggregate list math avg float fill]
