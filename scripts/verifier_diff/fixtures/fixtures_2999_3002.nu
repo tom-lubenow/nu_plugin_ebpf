@@ -26,6 +26,20 @@ const VERIFIER_DIFF_FIXTURES_2999_3002 = [
         kernel: "accept"
     }
     {
+        name: "core-list-sort-string-ignore-case"
+        category: "language-core"
+        tags: [list sort string ignore-case natural accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let ignore_ok = (["B" "a" "A"] | sort --ignore-case | str join "-" | str starts-with "a-A-B")'
+            '  $ignore_ok and (["a10" "a2" "A1"] | sort --natural --ignore-case | str join "-" | str starts-with "A1-a2-a10")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-sort-values-record"
         category: "language-core"
         tags: [list sort values accept]
