@@ -288,11 +288,15 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 self.current_block = transform_block;
 
-                let elem_vreg = self.emit_typed_fixed_array_each_item(
+                let (elem_vreg, elem_meta) = self.emit_typed_fixed_array_each_item(
                     input_reg, input_vreg, input_meta, &elem_ty, i,
                 )?;
-                let transformed =
-                    self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
+                let transformed = self.inline_closure_with_in_metadata(
+                    closure_block_id,
+                    closure_ir,
+                    elem_vreg,
+                    elem_meta,
+                )?;
                 self.emit(MirInst::ListPush {
                     list: dst_vreg,
                     item: transformed,
@@ -333,13 +337,16 @@ impl<'a> HirToMirLowering<'a> {
         input_meta: &RegMetadata,
         elem_ty: &MirType,
         index: usize,
-    ) -> Result<VReg, CompileError> {
+    ) -> Result<(VReg, Option<RegMetadata>), CompileError> {
         if Self::typed_fixed_array_numeric_list_scalar_type(elem_ty) {
             return self
-                .emit_typed_fixed_array_numeric_list_item("each", input_vreg, elem_ty, index);
+                .emit_typed_fixed_array_numeric_list_item("each", input_vreg, elem_ty, index)
+                .map(|vreg| (vreg, None));
         }
         if matches!(elem_ty, MirType::Bool) {
-            return self.emit_typed_fixed_array_predicate_item("each", input_vreg, elem_ty, index);
+            return self
+                .emit_typed_fixed_array_predicate_item("each", input_vreg, elem_ty, index)
+                .map(|vreg| (vreg, None));
         }
 
         const SYNTHETIC_EACH_ITEM_REG: u32 = u32::MAX - 1;
@@ -353,10 +360,7 @@ impl<'a> HirToMirLowering<'a> {
                     "each requires typed fixed-array input in eBPF".into(),
                 )
             })?;
-        let projected_semantics = match &input_meta.annotated_semantics {
-            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => Some(elem.as_ref().clone()),
-            _ => None,
-        };
+        let projected_semantics = Self::typed_fixed_array_element_semantics(input_meta)?;
         let root_ctx_field = input_meta.root_ctx_field.clone();
         self.lower_dynamic_typed_numeric_get(
             item_reg,
@@ -374,6 +378,7 @@ impl<'a> HirToMirLowering<'a> {
             self.get_or_create_metadata(item_reg).annotated_semantics = Some(semantics);
         }
         let item_vreg = self.get_vreg(item_reg);
+        let item_meta = self.get_metadata(item_reg).cloned();
         if let Some(old_reg_mapping) = old_reg_mapping {
             self.reg_map.insert(item_reg.get(), old_reg_mapping);
         } else {
@@ -384,7 +389,24 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             self.reg_metadata.remove(&item_reg.get());
         }
-        Ok(item_vreg)
+        Ok((item_vreg, item_meta))
+    }
+
+    fn typed_fixed_array_element_semantics(
+        input_meta: &RegMetadata,
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        if let Some(AnnotatedValueSemantics::FixedArray { elem, .. }) =
+            input_meta.annotated_semantics.as_ref()
+        {
+            return Ok(Some(elem.as_ref().clone()));
+        }
+        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.as_ref() else {
+            return Ok(None);
+        };
+        match Self::fixed_array_value_semantics(vals)? {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => Ok(Some(*elem)),
+            _ => Ok(None),
+        }
     }
 
     fn typed_fixed_array_where_scalar_type(ty: &MirType) -> bool {

@@ -929,6 +929,16 @@ impl<'a> HirToMirLowering<'a> {
         hir: &HirFunction,
         in_vreg: VReg,
     ) -> Result<VReg, CompileError> {
+        self.inline_closure_with_in_metadata(block_id, hir, in_vreg, None)
+    }
+
+    pub(super) fn inline_closure_with_in_metadata(
+        &mut self,
+        block_id: NuBlockId,
+        hir: &HirFunction,
+        in_vreg: VReg,
+        in_meta: Option<RegMetadata>,
+    ) -> Result<VReg, CompileError> {
         // Collect all variable IDs that are loaded in this closure
         // These could be $in, closure parameters, or captured variables
         // Map all of them to the input value since this is a single-value transform
@@ -946,17 +956,30 @@ impl<'a> HirToMirLowering<'a> {
         // Save old mappings to restore later
         use nu_protocol::IN_VARIABLE_ID;
         let old_in_mapping = self.var_mappings.get(&IN_VARIABLE_ID).copied();
+        let old_in_metadata = self.var_mapping_metadata.get(&IN_VARIABLE_ID).cloned();
 
         // Map $in variable to in_vreg
         self.var_mappings.insert(IN_VARIABLE_ID, in_vreg);
+        if let Some(meta) = in_meta.clone() {
+            self.var_mapping_metadata.insert(IN_VARIABLE_ID, meta);
+        } else {
+            self.var_mapping_metadata.remove(&IN_VARIABLE_ID);
+        }
 
         // Map all loaded variables to in_vreg (they all represent the row/input)
         let mut param_var_ids: Vec<VarId> = Vec::new();
+        let mut old_param_metadata: Vec<(VarId, Option<RegMetadata>)> = Vec::new();
         for var_id in loaded_var_ids {
             // Don't override existing mappings (like captures from outer scope)
             if !self.var_mappings.contains_key(&var_id) && self.captured_value(var_id).is_none() {
                 param_var_ids.push(var_id);
+                old_param_metadata.push((var_id, self.var_mapping_metadata.get(&var_id).cloned()));
                 self.var_mappings.insert(var_id, in_vreg);
+                if let Some(meta) = in_meta.clone() {
+                    self.var_mapping_metadata.insert(var_id, meta);
+                } else {
+                    self.var_mapping_metadata.remove(&var_id);
+                }
             }
         }
 
@@ -1046,10 +1069,22 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             self.var_mappings.remove(&IN_VARIABLE_ID);
         }
+        if let Some(old) = old_in_metadata {
+            self.var_mapping_metadata.insert(IN_VARIABLE_ID, old);
+        } else {
+            self.var_mapping_metadata.remove(&IN_VARIABLE_ID);
+        }
 
         // Remove parameter mappings
         for var_id in param_var_ids {
             self.var_mappings.remove(&var_id);
+        }
+        for (var_id, old_meta) in old_param_metadata {
+            if let Some(old_meta) = old_meta {
+                self.var_mapping_metadata.insert(var_id, old_meta);
+            } else {
+                self.var_mapping_metadata.remove(&var_id);
+            }
         }
 
         self.current_block = continuation_block;
@@ -1155,7 +1190,12 @@ impl<'a> HirToMirLowering<'a> {
                 dst: dst_vreg,
                 src: MirValue::VReg(param_vreg),
             });
-            if let Some(mut meta) = self.var_metadata.get(&var_id).cloned() {
+            if let Some(mut meta) = self
+                .var_metadata
+                .get(&var_id)
+                .cloned()
+                .or_else(|| self.var_mapping_metadata.get(&var_id).cloned())
+            {
                 meta.source_var.get_or_insert(var_id);
                 self.reg_metadata.insert(dst.get(), meta);
             } else {

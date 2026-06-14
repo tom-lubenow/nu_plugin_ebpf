@@ -433,6 +433,8 @@ pub struct HirToMirLowering<'a> {
     parser_info_args: Vec<(String, Box<nu_protocol::ast::Expression>)>,
     /// Variable mappings for inlined functions (VarId -> VReg)
     var_mappings: HashMap<VarId, VReg>,
+    /// Metadata for synthetic variable mappings while inlining closures.
+    var_mapping_metadata: HashMap<VarId, RegMetadata>,
     /// Preserved metadata for variables that have been stored.
     var_metadata: HashMap<VarId, RegMetadata>,
     /// Needs ringbuf map
@@ -644,6 +646,7 @@ impl<'a> HirToMirLowering<'a> {
             named_args: HashMap::new(),
             parser_info_args: Vec::new(),
             var_mappings: HashMap::new(),
+            var_mapping_metadata: HashMap::new(),
             var_metadata: HashMap::new(),
             needs_ringbuf: false,
             needs_counter_map: false,
