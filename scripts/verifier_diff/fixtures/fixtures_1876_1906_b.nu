@@ -91,6 +91,19 @@ const VERIFIER_DIFF_FIXTURES_1876_1906_B = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-remove-unequal-describe"
+        category: "language-core"
+        tags: [binary list bytes remove unequal describe]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes remove 0x[ff] | describe | str starts-with "list<binary>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-bytes-replace-collect"
         category: "language-core"
         tags: [binary list bytes replace collect starts-with]
@@ -176,6 +189,19 @@ const VERIFIER_DIFF_FIXTURES_1876_1906_B = [
         program: [
             '{|ctx|'
             '  [0x[10] 0x[10]] | bytes replace 0x[10] 0x[] | first | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-replace-unequal-describe"
+        category: "language-core"
+        tags: [binary list bytes replace unequal describe]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[10 aa] 0x[10 bb cc]] | bytes replace 0x[10] 0x[] | describe | str starts-with "list<binary>"'
             '}'
         ]
         local: "accept"
