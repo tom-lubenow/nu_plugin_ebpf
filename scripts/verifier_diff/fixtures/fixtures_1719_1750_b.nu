@@ -156,6 +156,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-exp-ln-log-list-fill"
+        category: "language-core"
+        tags: [aggregate list math exp ln log float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0 1] | math exp | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "01.0,2.718") and ([1 2] | math ln | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "00.0,0.693")) and ([16 8 4] | math log 2 | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "04.0,03.0,02.0")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-trig-folded"
         category: "language-core"
         tags: [scalar aggregate list math sin cos tan float fill str join]
