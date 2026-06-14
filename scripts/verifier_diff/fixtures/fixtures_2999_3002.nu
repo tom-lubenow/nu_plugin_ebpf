@@ -13,6 +13,19 @@ const VERIFIER_DIFF_FIXTURES_2999_3002 = [
         kernel: "accept"
     }
     {
+        name: "core-list-sort-natural-string"
+        category: "language-core"
+        tags: [list sort natural string accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["item10" "item2" "item1"] | sort --natural | str join "-" | str starts-with "item1-item2-item10"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-sort-values-record"
         category: "language-core"
         tags: [list sort values accept]
