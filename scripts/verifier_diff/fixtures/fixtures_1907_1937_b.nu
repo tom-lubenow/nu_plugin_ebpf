@@ -156,6 +156,19 @@ const VERIFIER_DIFF_FIXTURES_1907_1937_B = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-split-unequal-describe"
+        category: "language-core"
+        tags: [binary bytes split unequal describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[61 20 62 62] | bytes split 0x[20] | describe | str starts-with "list<binary>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-split-unequal-get"
         category: "language-core"
         tags: [binary bytes split unequal get starts-with]
