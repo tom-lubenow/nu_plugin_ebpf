@@ -211,9 +211,9 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_predicate_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_predicate_input_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed arrays currently supports integer or bool scalar elements in eBPF, got {:?}",
+                "{cmd_name} on typed fixed arrays currently supports integer, bool, fixed-array, or record elements in eBPF, got {:?}",
                 elem_ty
             )));
         }
@@ -247,6 +247,7 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
+        let scalar_predicate_item = Self::typed_fixed_array_predicate_scalar_type(&elem_ty);
         let initial_value = if cmd_name == "all" { 1 } else { 0 };
         let short_circuit_value = if cmd_name == "all" { 0 } else { 1 };
 
@@ -265,11 +266,29 @@ impl<'a> HirToMirLowering<'a> {
                     target: predicate_block,
                 });
                 self.current_block = predicate_block;
-                let elem_vreg =
-                    self.emit_typed_fixed_array_predicate_item(cmd_name, input_vreg, &elem_ty, i)?;
+                let (elem_vreg, elem_meta) = if scalar_predicate_item {
+                    (
+                        self.emit_typed_fixed_array_predicate_item(
+                            cmd_name, input_vreg, &elem_ty, i,
+                        )?,
+                        None,
+                    )
+                } else {
+                    self.emit_typed_fixed_array_each_item(
+                        input_vreg,
+                        input_meta,
+                        &base_runtime_ty,
+                        &elem_ty,
+                        i,
+                    )?
+                };
 
-                let predicate =
-                    self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
+                let predicate = self.inline_closure_with_in_metadata(
+                    closure_block_id,
+                    closure_ir,
+                    elem_vreg,
+                    elem_meta,
+                )?;
                 let short_circuit_block = self.func.alloc_block();
                 let (if_true, if_false) = if cmd_name == "all" {
                     (next_block, short_circuit_block)
@@ -318,6 +337,11 @@ impl<'a> HirToMirLowering<'a> {
     fn typed_fixed_array_predicate_scalar_type(ty: &MirType) -> bool {
         Self::typed_fixed_array_numeric_list_scalar_type(ty)
             || matches!(ty, MirType::U64 | MirType::Bool)
+    }
+
+    fn typed_fixed_array_predicate_input_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_predicate_scalar_type(ty)
+            || matches!(ty, MirType::Array { .. } | MirType::Struct { .. })
     }
 
     pub(super) fn emit_typed_fixed_array_predicate_item(

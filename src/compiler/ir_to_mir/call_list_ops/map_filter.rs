@@ -395,7 +395,7 @@ impl<'a> HirToMirLowering<'a> {
         "signed integer, bool, <=32-bit unsigned integer scalar, fixed-array, or record elements"
     }
 
-    fn emit_typed_fixed_array_each_item(
+    pub(super) fn emit_typed_fixed_array_each_item(
         &mut self,
         input_vreg: VReg,
         input_meta: &RegMetadata,
