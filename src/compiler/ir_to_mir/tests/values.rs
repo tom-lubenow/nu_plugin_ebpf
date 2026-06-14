@@ -10732,6 +10732,72 @@ fn make_record_transpose_get_field_then_starts_with_program(
     hir
 }
 
+fn make_record_transpose_describe_length_program(
+    transpose_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let record = test_record(vec![
+        ("pid", Value::int(7, Span::test_data())),
+        ("cpu", Value::int(2, Span::test_data())),
+    ]);
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("key", Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(3),
+            val: Box::new(Value::string("value", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: transpose_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2), RegId::new(3)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_empty_predicate_program(
     decl_id: DeclId,
     command_name: &str,
@@ -51045,6 +51111,39 @@ fn test_lower_transpose_on_constant_record_materializes_rows() {
     assert_returned_scalar_i64_or_const(&result, 2);
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record transpose followed by row/value get should compile through codegen");
+}
+
+#[test]
+fn test_lower_transpose_on_constant_record_feeds_metadata_describe() {
+    let transpose_decl = DeclId::new(81850);
+    let describe_decl = DeclId::new(81851);
+    let length_decl = DeclId::new(81852);
+    let hir =
+        make_record_transpose_describe_length_program(transpose_decl, describe_decl, length_decl);
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"table<key: string, value: int>",
+        "record transpose describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "record transpose describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record transpose describe should compile");
 }
 
 #[test]
