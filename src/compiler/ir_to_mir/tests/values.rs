@@ -51409,53 +51409,70 @@ fn make_record_transpose_as_record_describe_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
     flags: Vec<Vec<u8>>,
+    output_names: Vec<&str>,
 ) -> HirProgram {
     let record = test_record(vec![
         ("pid", Value::int(7, Span::test_data())),
         ("cpu", Value::int(2, Span::test_data())),
     ]);
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::record(record, Span::test_data())),
+    }];
+    let mut next_reg = 2u32;
+    let mut positional = Vec::new();
+    for name in output_names {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        positional.push(reg);
+        stmts.push(HirStmt::LoadValue {
+            dst: reg,
+            val: Box::new(Value::string(name, Span::test_data())),
+        });
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: transpose_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            flags,
+            ..HirCallArgs::default()
+        },
+    });
+    let describe_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
     HirProgram::new(
         HirFunction {
             blocks: vec![HirBlock {
                 id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadValue {
-                        dst: RegId::new(0),
-                        val: Box::new(Value::record(record, Span::test_data())),
-                    },
-                    HirStmt::Call {
-                        decl_id: transpose_decl,
-                        src_dst: RegId::new(1),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(0)),
-                            flags,
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: describe_decl,
-                        src_dst: RegId::new(2),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(1)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: length_decl,
-                        src_dst: RegId::new(3),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(2)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(3) },
+                stmts,
+                terminator: HirTerminator::Return { src: length_reg },
             }],
             entry: HirBlockId(0),
             spans: Vec::new(),
             ast: Vec::new(),
             comments: Vec::new(),
-            register_count: 4,
+            register_count: next_reg,
             file_count: 0,
         },
         HashMap::new(),
@@ -51503,6 +51520,7 @@ fn test_lower_transpose_as_record_on_constant_record_feeds_metadata_describe() {
         describe_decl,
         length_decl,
         vec![b"as-record".to_vec()],
+        vec![],
     );
     let decl_names = HashMap::from([
         (transpose_decl, "transpose".to_string()),
@@ -51528,6 +51546,47 @@ fn test_lower_transpose_as_record_on_constant_record_feeds_metadata_describe() {
     assert_no_runtime_list_operations(&result.program, "record transpose as-record describe");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record transpose --as-record describe should compile");
+}
+
+#[test]
+fn test_lower_transpose_as_record_custom_names_on_constant_record_feeds_metadata_describe() {
+    let transpose_decl = DeclId::new(81876);
+    let describe_decl = DeclId::new(81877);
+    let length_decl = DeclId::new(81878);
+    let hir = make_record_transpose_as_record_describe_length_program(
+        transpose_decl,
+        describe_decl,
+        length_decl,
+        vec![b"as-record".to_vec()],
+        vec!["key", "value"],
+    );
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --as-record with custom names should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"record<key: list<string>, value: list<int>>",
+        "record transpose as-record custom names describe",
+    );
+    assert_no_runtime_list_operations(
+        &result.program,
+        "record transpose as-record custom names describe",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record transpose --as-record custom names describe should compile");
 }
 
 #[test]
@@ -51574,6 +51633,7 @@ fn test_lower_transpose_as_record_ignore_titles_on_constant_record_feeds_metadat
         describe_decl,
         length_decl,
         vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+        vec![],
     );
     let decl_names = HashMap::from([
         (transpose_decl, "transpose".to_string()),
@@ -51602,6 +51662,50 @@ fn test_lower_transpose_as_record_ignore_titles_on_constant_record_feeds_metadat
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record transpose --as-record --ignore-titles describe should compile");
+}
+
+#[test]
+fn test_lower_transpose_as_record_ignore_titles_custom_name_on_constant_record_feeds_metadata_describe()
+ {
+    let transpose_decl = DeclId::new(81879);
+    let describe_decl = DeclId::new(81880);
+    let length_decl = DeclId::new(81881);
+    let hir = make_record_transpose_as_record_describe_length_program(
+        transpose_decl,
+        describe_decl,
+        length_decl,
+        vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+        vec!["val"],
+    );
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect(
+        "transpose --as-record --ignore-titles with custom name should feed metadata-only describe",
+    );
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"record<val: list<int>>",
+        "record transpose as-record ignore-titles custom name describe",
+    );
+    assert_no_runtime_list_operations(
+        &result.program,
+        "record transpose as-record ignore-titles custom name describe",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record transpose --as-record --ignore-titles custom name describe should compile");
 }
 
 #[test]
