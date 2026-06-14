@@ -171,7 +171,15 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_find_scalar_type(&elem_ty) {
+        let u64_shape_only_find = matches!(elem_ty, MirType::U64);
+        if u64_shape_only_find && !self.current_call_result_list_shape_metadata_only {
+            return Err(CompileError::UnsupportedInstruction(
+                "find on typed fixed arrays with u64 elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF"
+                    .into(),
+            ));
+        }
+
+        if !u64_shape_only_find && !Self::typed_fixed_array_find_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "find on typed fixed arrays currently supports {} in eBPF, got {:?}",
                 Self::typed_fixed_array_find_scalar_type_description(),
@@ -257,12 +265,21 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.current_block = compare_block;
 
-            let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
-                "find",
-                input_vreg,
-                &elem_ty,
-                source_index,
-            )?;
+            let item_vreg = if u64_shape_only_find {
+                self.emit_typed_fixed_array_predicate_item(
+                    "find",
+                    input_vreg,
+                    &elem_ty,
+                    source_index,
+                )?
+            } else {
+                self.emit_typed_fixed_array_numeric_list_item(
+                    "find",
+                    input_vreg,
+                    &elem_ty,
+                    source_index,
+                )?
+            };
 
             let found_vreg = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
@@ -280,9 +297,14 @@ impl<'a> HirToMirLowering<'a> {
             });
 
             self.current_block = push_block;
+            let push_vreg = if u64_shape_only_find {
+                self.emit_typed_fixed_array_shape_marker()
+            } else {
+                item_vreg
+            };
             self.emit(MirInst::ListPush {
                 list: result_vreg,
-                item: item_vreg,
+                item: push_vreg,
             });
             self.terminate(MirInst::Jump { target: next_block });
             self.current_block = next_block;

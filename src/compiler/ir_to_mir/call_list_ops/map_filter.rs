@@ -504,7 +504,7 @@ impl<'a> HirToMirLowering<'a> {
         "signed integer, bool, unsigned integer scalar, fixed-array, or record elements"
     }
 
-    fn emit_typed_fixed_array_shape_marker(&mut self) -> VReg {
+    pub(super) fn emit_typed_fixed_array_shape_marker(&mut self) -> VReg {
         let marker = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
             dst: marker,
