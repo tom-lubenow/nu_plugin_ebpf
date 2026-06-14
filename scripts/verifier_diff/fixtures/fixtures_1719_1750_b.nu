@@ -338,6 +338,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-stats-complementary-fill"
+        category: "language-core"
+        tags: [aggregate list math variance stddev sample float fill]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1 2 3 4 5] | math variance --sample | fill --alignment right --character "0" --width 4 | str starts-with "02.5") and ([1 2 3 4 5] | math stddev | fill --alignment right --character "0" --width 4 | str starts-with "1.414")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]
