@@ -195,6 +195,19 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-split-list-regex-string-group-join"
+        category: "language-core"
+        tags: [list split-list regex string join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "b" "x1" "c" "d" "x22" "e" "f"] | split list --regex "x\\d+" | get 1 | str join "-" | str starts-with "c-d"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-split-list-heterogeneous-materialized-reject"
         category: "language-core"
         tags: [aggregate list split-list reject]
