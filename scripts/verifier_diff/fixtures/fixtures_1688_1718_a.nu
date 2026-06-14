@@ -65,6 +65,19 @@ const VERIFIER_DIFF_FIXTURES_1688_1718_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-each-nested-list-get"
+        category: "language-core"
+        tags: [aggregate list nested each closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([[1 2] [3 4]] | each {|x| $x.1 } | get 1) == 4)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-where"
         category: "language-core"
         tags: [aggregate list where closure]
