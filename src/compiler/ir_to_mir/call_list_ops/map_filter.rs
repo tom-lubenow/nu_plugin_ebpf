@@ -167,15 +167,22 @@ impl<'a> HirToMirLowering<'a> {
             input_reg,
             input_vreg,
             input_meta,
-            Self::typed_fixed_array_where_scalar_type,
-            Self::typed_fixed_array_where_scalar_type_description(),
+            Self::typed_fixed_array_where_input_type,
+            Self::typed_fixed_array_where_input_type_description(),
         )?
         else {
             return Ok(false);
         };
 
-        let (input_vreg, _base_runtime_ty) =
+        let (input_vreg, base_runtime_ty) =
             self.preserve_typed_fixed_array_input("where", input_reg, input_vreg, dst_vreg)?;
+        let scalar_where_item = Self::typed_fixed_array_where_scalar_type(&elem_ty);
+        if !scalar_where_item && !self.current_call_result_list_shape_metadata_only {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "where on typed fixed arrays with fixed-array or record elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF, got {:?}",
+                elem_ty
+            )));
+        }
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
@@ -195,9 +202,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.current_block = predicate_block;
 
                 if matches!(constant_predicate, Some(true)) {
-                    let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
-                        "where", input_vreg, &elem_ty, i,
-                    )?;
+                    let item_vreg = if scalar_where_item {
+                        self.emit_typed_fixed_array_numeric_list_item(
+                            "where", input_vreg, &elem_ty, i,
+                        )?
+                    } else {
+                        self.emit_typed_fixed_array_shape_marker()
+                    };
                     self.emit(MirInst::ListPush {
                         list: dst_vreg,
                         item: item_vreg,
@@ -207,10 +218,26 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
 
-                let elem_vreg =
-                    self.emit_typed_fixed_array_where_item("where", input_vreg, &elem_ty, i)?;
-                let predicate =
-                    self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
+                let (elem_vreg, elem_meta) = if scalar_where_item {
+                    (
+                        self.emit_typed_fixed_array_where_item("where", input_vreg, &elem_ty, i)?,
+                        None,
+                    )
+                } else {
+                    self.emit_typed_fixed_array_each_item(
+                        input_vreg,
+                        input_meta,
+                        &base_runtime_ty,
+                        &elem_ty,
+                        i,
+                    )?
+                };
+                let predicate = self.inline_closure_with_in_metadata(
+                    closure_block_id,
+                    closure_ir,
+                    elem_vreg,
+                    elem_meta,
+                )?;
 
                 let push_block = self.func.alloc_block();
                 self.terminate(MirInst::Branch {
@@ -220,7 +247,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
 
                 self.current_block = push_block;
-                let item_vreg = if matches!(elem_ty, MirType::Bool) {
+                let item_vreg = if !scalar_where_item {
+                    self.emit_typed_fixed_array_shape_marker()
+                } else if matches!(elem_ty, MirType::Bool) {
                     self.emit_typed_fixed_array_numeric_list_item("where", input_vreg, &elem_ty, i)?
                 } else {
                     elem_vreg
@@ -442,8 +471,23 @@ impl<'a> HirToMirLowering<'a> {
         Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::Bool)
     }
 
-    fn typed_fixed_array_where_scalar_type_description() -> &'static str {
-        "signed integer, bool, or <=32-bit unsigned integer scalar elements"
+    fn typed_fixed_array_where_input_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_where_scalar_type(ty)
+            || matches!(ty, MirType::Array { .. } | MirType::Struct { .. })
+    }
+
+    fn typed_fixed_array_where_input_type_description() -> &'static str {
+        "signed integer, bool, <=32-bit unsigned integer scalar, fixed-array, or record elements"
+    }
+
+    fn emit_typed_fixed_array_shape_marker(&mut self) -> VReg {
+        let marker = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: marker,
+            src: MirValue::Const(1),
+        });
+        self.vreg_type_hints.insert(marker, MirType::I64);
+        marker
     }
 
     fn emit_typed_fixed_array_where_item(
