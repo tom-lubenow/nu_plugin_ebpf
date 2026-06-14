@@ -70,6 +70,34 @@ const VERIFIER_DIFF_FIXTURES_2629_2639 = [
         error_contains: "bits shl unsigned --number-bytes 8 runtime u32 input supports shift counts from 0 through 31 in eBPF; got 32"
     }
     {
+        name: "core-bits-shl-signed-rejects-unbounded-runtime-count"
+        category: "language-core"
+        tags: [bits shl diagnostics reject runtime-count]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits shl --signed --number-bytes 8 (random int 0..64)'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "runtime shift counts require a proven range from 0 through 63 in eBPF"
+    }
+    {
+        name: "core-bits-shl-unsigned-u16-rejects-unsafe-runtime-count"
+        category: "language-core"
+        tags: [bits shl diagnostics reject runtime-count]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int 0..65535) | bits shl --number-bytes 8 48'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits shl unsigned --number-bytes 8 runtime u16 input supports shift counts from 0 through 47 in eBPF; got 48"
+    }
+    {
         name: "core-bits-rol-unsigned-u32-rejects-unsafe-runtime-count"
         category: "language-core"
         tags: [bits rol diagnostics reject]
