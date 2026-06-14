@@ -351,6 +351,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-stats-describe"
+        category: "language-core"
+        tags: [aggregate list math variance stddev float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1 2 3 4 5] | math variance | describe | str starts-with "float") and ([1 2 3 4 5] | math stddev | describe | str starts-with "float")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]
