@@ -183,6 +183,19 @@ const VERIFIER_DIFF_FIXTURES_1844_1875_A = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-index-of-all-get-join"
+        category: "language-core"
+        tags: [binary list bytes index-of all get join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02] 0x[03 02]] | bytes index-of --all 0x[02] | get 0 | str join "-" | str starts-with "1"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-index-of-all-end-join"
         category: "language-core"
         tags: [binary bytes index-of all end join]
