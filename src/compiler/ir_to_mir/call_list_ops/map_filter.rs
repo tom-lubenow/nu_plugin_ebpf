@@ -186,7 +186,7 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(true);
             }
             return Err(CompileError::UnsupportedInstruction(format!(
-                "where on typed fixed arrays with fixed-array or record elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF, got {:?}",
+                "where on typed fixed arrays with u64, fixed-array, or record elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF, got {:?}",
                 elem_ty
             )));
         }
@@ -494,11 +494,14 @@ impl<'a> HirToMirLowering<'a> {
 
     fn typed_fixed_array_where_input_type(ty: &MirType) -> bool {
         Self::typed_fixed_array_where_scalar_type(ty)
-            || matches!(ty, MirType::Array { .. } | MirType::Struct { .. })
+            || matches!(
+                ty,
+                MirType::U64 | MirType::Array { .. } | MirType::Struct { .. }
+            )
     }
 
     fn typed_fixed_array_where_input_type_description() -> &'static str {
-        "signed integer, bool, <=32-bit unsigned integer scalar, fixed-array, or record elements"
+        "signed integer, bool, unsigned integer scalar, fixed-array, or record elements"
     }
 
     fn emit_typed_fixed_array_shape_marker(&mut self) -> VReg {
