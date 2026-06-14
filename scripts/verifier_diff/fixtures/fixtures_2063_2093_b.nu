@@ -483,6 +483,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-nested-record-list-field-get"
+        category: "language-core"
+        tags: [aggregate record list nested get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (({ entries: [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] } | get entries | get 1 | get cpu) == 3)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]
