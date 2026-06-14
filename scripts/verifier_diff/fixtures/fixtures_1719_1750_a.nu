@@ -28,6 +28,26 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_A = [
         kernel: "accept"
     }
     {
+        name: "core-seq-float-split-list-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate list seq float split-list describe get first last is-empty is-not-empty str join metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let desc_ok = (seq 1.0 0.5 3.0 | split list 2.0 | describe | str starts-with "list<list<float>>")'
+            '  let not_empty_ok = (seq 1.0 0.5 3.0 | split list 2.0 | is-not-empty)'
+            '  let empty_check_ok = not (seq 1.0 0.5 3.0 | split list 2.0 | is-empty)'
+            '  let group_join_ok = (seq 1.0 0.5 3.0 | split list 2.0 | get 1 | str join "-" | str starts-with "2.5-3.0")'
+            '  let group_desc_ok = (seq 1.0 0.5 3.0 | split list 2.0 | get 1 | describe | str starts-with "list<float>")'
+            '  let first_desc_ok = (seq 1.0 0.5 3.0 | split list 2.0 | first | describe | str starts-with "list<float>")'
+            '  let last_desc_ok = (seq 1.0 0.5 3.0 | split list 2.0 | last | describe | str starts-with "list<float>")'
+            '  $desc_ok and ($not_empty_ok and ($empty_check_ok and ($group_join_ok and ($group_desc_ok and ($first_desc_ok and $last_desc_ok)))))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-char-join"
         category: "language-core"
         tags: [aggregate list seq char str join]
