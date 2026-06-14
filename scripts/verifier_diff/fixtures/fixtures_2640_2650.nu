@@ -112,6 +112,20 @@ const VERIFIER_DIFF_FIXTURES_2640_2650 = [
         error_contains: "bits shl unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input in eBPF"
     }
     {
+        name: "core-bits-shl-default-rejects-runtime-list"
+        category: "language-core"
+        tags: [bits shl diagnostics reject runtime list default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [(random int)] | bits shl 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits shl default auto-width shifts require compile-time known integer input in eBPF"
+    }
+    {
         name: "core-bits-rol-unsigned-u64-rejects-runtime-list"
         category: "language-core"
         tags: [bits rol diagnostics reject runtime list]
@@ -124,6 +138,20 @@ const VERIFIER_DIFF_FIXTURES_2640_2650 = [
         local: "reject"
         kernel: "skip"
         error_contains: "bits rol unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF"
+    }
+    {
+        name: "core-bits-rol-default-rejects-runtime-list"
+        category: "language-core"
+        tags: [bits rol diagnostics reject runtime list default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [(random int)] | bits rol 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits rol default auto-width rotates require compile-time known integer input in eBPF"
     }
     {
         name: "core-bits-and-rejects-large-numeric-list-output"
