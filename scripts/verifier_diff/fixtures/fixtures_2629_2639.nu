@@ -112,6 +112,34 @@ const VERIFIER_DIFF_FIXTURES_2629_2639 = [
         error_contains: "bits rol unsigned --number-bytes 8 runtime u32 input supports rotate counts from 0 through 31, or 64, in eBPF; got 32"
     }
     {
+        name: "core-bits-rol-signed-rejects-unbounded-runtime-count"
+        category: "language-core"
+        tags: [bits rol diagnostics reject runtime-count]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits rol --signed --number-bytes 8 (random int 0..65)'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "runtime rotate counts require a proven range from 0 through 64 in eBPF"
+    }
+    {
+        name: "core-bits-ror-unsigned-u16-rejects-unsafe-runtime-count"
+        category: "language-core"
+        tags: [bits ror diagnostics reject runtime-count]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int 0..65535) | bits ror --number-bytes 8 16'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits ror unsigned --number-bytes 8 runtime u16 input supports rotate counts 0, or from 17 through 64, in eBPF; got 16"
+    }
+    {
         name: "core-bits-ror-rejects-dynamic-rotate-count"
         category: "language-core"
         tags: [bits ror diagnostics reject]
