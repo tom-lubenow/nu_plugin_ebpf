@@ -78,6 +78,19 @@ const VERIFIER_DIFF_FIXTURES_1782_1812_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-binary-describe-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits xor describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bits xor 0x[ff] --endian big | describe | str starts-with "list<binary>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed"
         category: "language-core"
         tags: [scalar bits "not" signed]
