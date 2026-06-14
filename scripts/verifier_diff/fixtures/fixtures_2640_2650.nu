@@ -140,6 +140,20 @@ const VERIFIER_DIFF_FIXTURES_2640_2650 = [
         error_contains: "bits rol unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF"
     }
     {
+        name: "core-bits-ror-unsigned-u64-rejects-runtime-list"
+        category: "language-core"
+        tags: [bits ror diagnostics reject runtime list]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [(random int)] | bits ror --number-bytes 8 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits ror unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF"
+    }
+    {
         name: "core-bits-rol-default-rejects-runtime-list"
         category: "language-core"
         tags: [bits rol diagnostics reject runtime list default]
