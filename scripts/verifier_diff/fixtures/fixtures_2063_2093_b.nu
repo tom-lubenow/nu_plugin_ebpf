@@ -61,6 +61,25 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-mixed-count-transform-metadata"
+        category: "language-core"
+        tags: [aggregate record values list mixed take first skip drop last describe length metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = { pid: 7 comm: "nu" ok: true }'
+            '  let take_desc_ok = ($rec | values | take 2 | describe | str starts-with "list<oneof<int, string>>")'
+            '  let first_len_ok = (($rec | values | first 2 | length) == 2)'
+            '  let skip_desc_ok = ($rec | values | skip 2 | describe | str starts-with "list<bool>")'
+            '  let drop_desc_ok = ($rec | values | drop 2 | describe | str starts-with "list<int>")'
+            '  let last_desc_ok = ($rec | values | last 2 | describe | str starts-with "list<oneof<string, bool>>")'
+            '  $take_desc_ok and ($first_len_ok and ($skip_desc_ok and ($drop_desc_ok and $last_desc_ok)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-split-list"
         category: "language-core"
         tags: [aggregate record values list mixed split-list length]
