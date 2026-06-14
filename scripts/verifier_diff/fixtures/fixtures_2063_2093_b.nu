@@ -85,6 +85,23 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-split-list-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate record columns list split-list describe get first is-not-empty metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let split = ({ pid: 7 cpu: 2 ok: true } | columns | split list cpu)'
+            '  let desc_ok = ($split | describe | str starts-with "list<list<string>>")'
+            '  let group_desc_ok = ($split | get 1 | describe | str starts-with "list<string>")'
+            '  let first_desc_ok = ($split | first | describe | str starts-with "list<string>")'
+            '  $desc_ok and ($group_desc_ok and ($first_desc_ok and ($split | is-not-empty)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-empty-length"
         category: "language-core"
         tags: [aggregate record columns list empty]
