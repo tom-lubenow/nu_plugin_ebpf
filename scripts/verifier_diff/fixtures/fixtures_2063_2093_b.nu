@@ -509,6 +509,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-list-each-binary-field-length"
+        category: "language-core"
+        tags: [aggregate record list binary bytes each get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([{ payload: 0x[01 02] } { payload: 0x[03 04] }] | each {|row| $row.payload | bytes length } | get 1) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-binary-field-length"
         category: "language-core"
         tags: [aggregate record binary get bytes length]
