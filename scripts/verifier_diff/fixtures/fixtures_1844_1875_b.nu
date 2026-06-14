@@ -117,6 +117,19 @@ const VERIFIER_DIFF_FIXTURES_1844_1875_B = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-reverse-unequal-describe"
+        category: "language-core"
+        tags: [binary list bytes reverse unequal describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes reverse | describe | str starts-with "list<binary>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-bytes-reverse-empty-first-length"
         category: "language-core"
         tags: [binary list bytes reverse empty first length]
