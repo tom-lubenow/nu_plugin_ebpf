@@ -52,6 +52,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-avg-describe"
+        category: "language-core"
+        tags: [aggregate list math avg float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 2 3] | math avg | describe | str starts-with "float"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-avg-filesize-duration"
         category: "language-core"
         tags: [aggregate list math avg filesize duration constant]
