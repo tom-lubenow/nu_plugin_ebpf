@@ -431,6 +431,32 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-list-nested-list-field-get"
+        category: "language-core"
+        tags: [aggregate record list nested get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([{ samples: [1 2] } { samples: [3 4] }] | get 1 | get samples | get 0) == 3'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-list-string-field-get"
+        category: "language-core"
+        tags: [aggregate record list string get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([{ name: "aa" } { name: "bbb" }] | get 1 | get name | str length) == 3)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]
