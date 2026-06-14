@@ -155,6 +155,26 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-transform-describe-metadata"
+        category: "language-core"
+        tags: [aggregate record columns list string skip drop take last append prepend describe str join metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = { pid: 7 cpu: 2 ok: true }'
+            '  let skip_join_ok = ($rec | columns | skip | str join "," | str starts-with "cpu,ok")'
+            '  let drop_join_ok = ($rec | columns | drop | str join "," | str starts-with "pid,cpu")'
+            '  let take_desc_ok = ($rec | columns | take 2 | describe | str starts-with "list<string>")'
+            '  let last_desc_ok = ($rec | columns | last 2 | describe | str starts-with "list<string>")'
+            '  let append_join_ok = ($rec | columns | append "irq" | str join "," | str starts-with "pid,cpu,ok,irq")'
+            '  let prepend_join_ok = ($rec | columns | prepend "irq" | str join "," | str starts-with "irq,pid,cpu,ok")'
+            '  $skip_join_ok and ($drop_join_ok and ($take_desc_ok and ($last_desc_ok and ($append_join_ok and $prepend_join_ok))))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-split-list-metadata-consumers"
         category: "language-core"
         tags: [aggregate record columns list split-list describe get first is-not-empty metadata-only]
