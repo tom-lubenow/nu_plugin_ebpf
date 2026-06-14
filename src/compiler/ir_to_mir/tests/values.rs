@@ -10172,6 +10172,77 @@ fn make_record_columns_transform_describe_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_columns_split_list_describe_length_program(
+    columns_decl: DeclId,
+    split_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: columns_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("cpu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_columns_scalar_starts_with_program(
     columns_decl: DeclId,
     scalar_decl: DeclId,
@@ -50015,6 +50086,45 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
                 panic!("record columns {transform_name} describe should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_columns_split_list_feeds_metadata_describe() {
+    let columns_decl = DeclId::new(81720);
+    let split_decl = DeclId::new(81721);
+    let describe_decl = DeclId::new(81722);
+    let length_decl = DeclId::new(81723);
+    let hir = make_record_columns_split_list_describe_length_program(
+        columns_decl,
+        split_decl,
+        describe_decl,
+        length_decl,
+    );
+    let decl_names = HashMap::from([
+        (columns_decl, "columns".to_string()),
+        (split_decl, "split list".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("columns split list should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<list<string>>",
+        "record columns split list describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "record columns split list describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record columns split list describe should compile");
 }
 
 #[test]
