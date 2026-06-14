@@ -91,6 +91,19 @@ const VERIFIER_DIFF_FIXTURES_1782_1812_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-binary-metadata-predicates"
+        category: "language-core"
+        tags: [aggregate list binary bits and xor length predicates metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((([0x[] 0x[]] | bits and 0x[ff] | length) == 2) and ([0x[] 0x[]] | bits and 0x[ff] | is-not-empty)) and ([0x[01] 0x[02 03]] | bits xor 0x[ff] --endian big | is-not-empty)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed"
         category: "language-core"
         tags: [scalar bits "not" signed]
