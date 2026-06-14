@@ -126,6 +126,20 @@ const VERIFIER_DIFF_FIXTURES_2737_2746 = [
         error_contains: "bits and binary list output requires non-empty equal-length binary items in eBPF"
     }
     {
+        name: "core-bits-and-rejects-empty-binary-list-output"
+        category: "language-core"
+        tags: [bits and binary list diagnostics reject output empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | bits and 0x[ff]'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits and binary list output requires non-empty equal-length binary items in eBPF"
+    }
+    {
         name: "core-bits-shl-rejects-unequal-binary-list-output"
         category: "language-core"
         tags: [bits shl binary list diagnostics reject output]
