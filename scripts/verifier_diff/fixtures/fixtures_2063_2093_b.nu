@@ -203,6 +203,24 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-sort-find-describe-metadata"
+        category: "language-core"
+        tags: [aggregate record columns list string sort reverse find first describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = { pid: 7 cpu: 2 ok: true }'
+            '  let sort_desc_ok = ($rec | columns | sort | describe | str starts-with "list<string>")'
+            '  let reverse_desc_ok = ($rec | columns | reverse | describe | str starts-with "list<string>")'
+            '  let find_desc_ok = ($rec | columns | find cpu | describe | str starts-with "list<string>")'
+            '  let first_desc_ok = ($rec | columns | first 2 | describe | str starts-with "list<string>")'
+            '  $sort_desc_ok and ($reverse_desc_ok and ($find_desc_ok and $first_desc_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-split-list-metadata-consumers"
         category: "language-core"
         tags: [aggregate record columns list split-list describe get first is-not-empty metadata-only]
