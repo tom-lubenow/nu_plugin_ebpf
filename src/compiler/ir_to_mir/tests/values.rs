@@ -51408,6 +51408,7 @@ fn make_record_transpose_as_record_describe_length_program(
     transpose_decl: DeclId,
     describe_decl: DeclId,
     length_decl: DeclId,
+    flags: Vec<Vec<u8>>,
 ) -> HirProgram {
     let record = test_record(vec![
         ("pid", Value::int(7, Span::test_data())),
@@ -51427,7 +51428,7 @@ fn make_record_transpose_as_record_describe_length_program(
                         src_dst: RegId::new(1),
                         args: HirCallArgs {
                             pipeline_input: Some(RegId::new(0)),
-                            flags: vec![b"as-record".to_vec()],
+                            flags,
                             ..HirCallArgs::default()
                         },
                     },
@@ -51501,6 +51502,7 @@ fn test_lower_transpose_as_record_on_constant_record_feeds_metadata_describe() {
         transpose_decl,
         describe_decl,
         length_decl,
+        vec![b"as-record".to_vec()],
     );
     let decl_names = HashMap::from([
         (transpose_decl, "transpose".to_string()),
@@ -51560,6 +51562,46 @@ fn test_lower_transpose_as_record_ignore_titles_on_constant_record_feeds_length(
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "transpose --as-record --ignore-titles followed by length should compile through codegen",
     );
+}
+
+#[test]
+fn test_lower_transpose_as_record_ignore_titles_on_constant_record_feeds_metadata_describe() {
+    let transpose_decl = DeclId::new(81873);
+    let describe_decl = DeclId::new(81874);
+    let length_decl = DeclId::new(81875);
+    let hir = make_record_transpose_as_record_describe_length_program(
+        transpose_decl,
+        describe_decl,
+        length_decl,
+        vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --as-record --ignore-titles should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"record<column0: list<int>>",
+        "record transpose as-record ignore-titles describe",
+    );
+    assert_no_runtime_list_operations(
+        &result.program,
+        "record transpose as-record ignore-titles describe",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record transpose --as-record --ignore-titles describe should compile");
 }
 
 #[test]
