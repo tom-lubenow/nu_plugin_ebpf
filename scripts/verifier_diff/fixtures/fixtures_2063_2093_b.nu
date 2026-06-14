@@ -470,6 +470,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-list-each-nested-list-field-get"
+        category: "language-core"
+        tags: [aggregate record list nested each get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([{ samples: [1 2] } { samples: [3 4] }] | each {|row| $row.samples.1 } | get 1) == 4)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-list-string-field-get"
         category: "language-core"
         tags: [aggregate record list string get]
