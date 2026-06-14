@@ -26,6 +26,19 @@ const VERIFIER_DIFF_FIXTURES_2999_3002 = [
         kernel: "accept"
     }
     {
+        name: "core-list-sort-values-insert-built-record"
+        category: "language-core"
+        tags: [list sort values record insert accept metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  {} | insert pid 7 | insert cpu 2 | sort --values | values | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-split-list-rejects-invalid-split-mode"
         category: "language-core"
         tags: [list split diagnostics reject mode]
