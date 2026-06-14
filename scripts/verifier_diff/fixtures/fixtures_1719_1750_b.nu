@@ -286,6 +286,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-trig-family-scalar-describe"
+        category: "language-core"
+        tags: [scalar math sin sinh arcsin float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((0 | math sin | describe | str starts-with "float") and (0 | math sinh | describe | str starts-with "float")) and (0 | math arcsin | describe | str starts-with "float")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-degrees-folded"
         category: "language-core"
         tags: [scalar aggregate list math degrees inverse sin cos tan float fill str join]
