@@ -282,11 +282,8 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) =
+            Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
@@ -300,7 +297,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -317,14 +314,11 @@ impl<'a> HirToMirLowering<'a> {
                 "uniq requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            "uniq",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "uniq on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            input_meta,
+        )?;
 
         let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
@@ -426,5 +420,107 @@ impl<'a> HirToMirLowering<'a> {
 
     fn typed_fixed_array_uniq_scalar_type_description() -> &'static str {
         "signed integer, bool, or <=32-bit unsigned integer scalar elements"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn uniq_accepts_trusted_kernel_fixed_array() {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 2,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let input_reg = RegId::new(1);
+        let input_vreg = lowering.get_vreg(input_reg);
+        lowering.vreg_type_hints.insert(input_vreg, ptr_ty.clone());
+        let input_meta = RegMetadata {
+            field_type: Some(ptr_ty),
+            trusted_btf: true,
+            ..Default::default()
+        };
+
+        let src_dst = RegId::new(2);
+        let dst_vreg = lowering.get_vreg(src_dst);
+        assert!(
+            lowering
+                .lower_typed_fixed_array_uniq(
+                    src_dst,
+                    dst_vreg,
+                    false,
+                    input_reg,
+                    input_vreg,
+                    &input_meta,
+                )
+                .expect("trusted kernel fixed-array uniq should lower")
+        );
+
+        let load_count = lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| {
+                matches!(
+                    inst,
+                    MirInst::Load {
+                        ptr,
+                        ty: MirType::U32,
+                        ..
+                    } if *ptr == input_vreg
+                )
+            })
+            .count();
+        assert!(load_count >= 2, "expected fixed-array element loads");
+        assert!(
+            lowering
+                .reg_metadata
+                .get(&src_dst.get())
+                .and_then(|meta| meta.list_buffer)
+                .is_some()
+        );
+        assert_eq!(
+            lowering.vreg_type_hints.get(&dst_vreg),
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: 3,
+                }),
+                address_space: AddressSpace::Stack,
+            })
+        );
     }
 }

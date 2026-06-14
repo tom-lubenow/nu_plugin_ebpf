@@ -1,4 +1,8 @@
 use super::*;
+
+type MutableGlobalInitRepr = (MirType, Vec<u8>, Option<usize>, Option<usize>);
+type MutableGlobalInitReprResult = Result<Option<MutableGlobalInitRepr>, CompileError>;
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn mutable_numeric_list_global_repr(
         values: &[Value],
@@ -38,9 +42,7 @@ impl<'a> HirToMirLowering<'a> {
         }?;
 
         let content_len = bytes.len().min(MAX_STRING_SIZE.saturating_sub(1));
-        let aligned_len = align_to_eight(content_len.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let aligned_len = align_to_eight(content_len.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let mut data = vec![0u8; 8 + aligned_len];
         data[..8].copy_from_slice(&(content_len as u64).to_le_bytes());
         data[8..8 + content_len].copy_from_slice(&bytes[..content_len]);
@@ -72,9 +74,7 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    pub(super) fn mutable_capture_global_repr(
-        value: &Value,
-    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+    pub(super) fn mutable_capture_global_repr(value: &Value) -> MutableGlobalInitReprResult {
         let repr = match value {
             Value::Bool { val, .. } => Some((MirType::Bool, vec![u8::from(*val)], None, None)),
             Value::Int { val, .. } => Some((MirType::I64, val.to_le_bytes().to_vec(), None, None)),
@@ -166,7 +166,7 @@ impl<'a> HirToMirLowering<'a> {
 
     fn typed_mutable_global_zero_repr(
         declared_type: &nu_protocol::Type,
-    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+    ) -> MutableGlobalInitReprResult {
         match declared_type {
             nu_protocol::Type::Bool => Ok(Some((MirType::Bool, vec![0], None, None))),
             nu_protocol::Type::Duration
@@ -259,7 +259,7 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn typed_mutable_global_repr(
         declared_type: &nu_protocol::Type,
         value: &Value,
-    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+    ) -> MutableGlobalInitReprResult {
         Self::typed_mutable_global_repr_with_path(declared_type, value, None)
     }
 
@@ -267,7 +267,7 @@ impl<'a> HirToMirLowering<'a> {
         declared_type: &nu_protocol::Type,
         value: &Value,
         path: Option<&str>,
-    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+    ) -> MutableGlobalInitReprResult {
         fn field_path(parent_path: Option<&str>, field_name: &str) -> String {
             match parent_path {
                 Some(parent) => format!("{parent}.{field_name}"),
@@ -534,16 +534,16 @@ impl<'a> HirToMirLowering<'a> {
                 let Value::Binary { val, .. } = value else {
                     return Ok(None);
                 };
-                return Ok(Some(AnnotatedValueSemantics::Binary { len: val.len() }));
+                Ok(Some(AnnotatedValueSemantics::Binary { len: val.len() }))
             }
             nu_protocol::Type::String | nu_protocol::Type::Glob => {
                 let Some((_ty, _data, slot_len)) = Self::mutable_string_global_repr(value) else {
                     return Ok(None);
                 };
-                return Ok(Some(AnnotatedValueSemantics::String {
+                Ok(Some(AnnotatedValueSemantics::String {
                     slot_len,
                     content_cap: slot_len.saturating_sub(1),
-                }));
+                }))
             }
             nu_protocol::Type::List(inner)
                 if matches!(
@@ -554,10 +554,10 @@ impl<'a> HirToMirLowering<'a> {
                 let Value::List { vals, .. } = value else {
                     return Ok(None);
                 };
-                return Ok(Some(AnnotatedValueSemantics::NumericList {
+                Ok(Some(AnnotatedValueSemantics::NumericList {
                     max_len: vals.len(),
                     known_len: Some(vals.len()),
-                }));
+                }))
             }
             nu_protocol::Type::List(inner)
                 if !matches!(
@@ -568,7 +568,7 @@ impl<'a> HirToMirLowering<'a> {
                 let Value::List { vals, .. } = value else {
                     return Ok(None);
                 };
-                return Self::annotated_mutable_fixed_array_semantics(inner.as_ref(), vals);
+                Self::annotated_mutable_fixed_array_semantics(inner.as_ref(), vals)
             }
             nu_protocol::Type::Record(fields) => {
                 let Value::Record { val, .. } = value else {

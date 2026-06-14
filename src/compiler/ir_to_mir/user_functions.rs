@@ -41,17 +41,13 @@ impl<'a> HirToMirLowering<'a> {
             | HirLiteral::RawString(bytes)
             | HirLiteral::Binary(bytes) => Some(MirType::Array {
                 elem: Box::new(MirType::U8),
-                len: align_to_eight(bytes.len().saturating_add(1))
-                    .min(MAX_STRING_SIZE)
-                    .max(16),
+                len: align_to_eight(bytes.len().saturating_add(1)).clamp(16, MAX_STRING_SIZE),
             }),
             HirLiteral::Filepath { val, .. }
             | HirLiteral::Directory { val, .. }
             | HirLiteral::GlobPattern { val, .. } => Some(MirType::Array {
                 elem: Box::new(MirType::U8),
-                len: align_to_eight(val.len().saturating_add(1))
-                    .min(MAX_STRING_SIZE)
-                    .max(16),
+                len: align_to_eight(val.len().saturating_add(1)).clamp(16, MAX_STRING_SIZE),
             }),
             HirLiteral::List { capacity } => Some(MirType::Array {
                 elem: Box::new(MirType::I64),
@@ -106,13 +102,13 @@ impl<'a> HirToMirLowering<'a> {
                     );
                     if let Some(ty) = hint_map
                         .and_then(|hints| hints.get(&dst.get()).cloned())
-                        .or_else(|| Self::inferred_literal_type(&lit))
+                        .or_else(|| Self::inferred_literal_type(lit))
                     {
                         reg_types.insert(*dst, ty);
                     }
                     match lit {
                         HirLiteral::String(bytes) | HirLiteral::RawString(bytes) => {
-                            if let Ok(string) = std::str::from_utf8(&bytes) {
+                            if let Ok(string) = std::str::from_utf8(bytes) {
                                 literal_strings.insert(*dst, string.to_string());
                             }
                             string_slots.insert(*dst);
@@ -122,7 +118,7 @@ impl<'a> HirToMirLowering<'a> {
                         HirLiteral::Filepath { val, .. }
                         | HirLiteral::Directory { val, .. }
                         | HirLiteral::GlobPattern { val, .. } => {
-                            if let Ok(string) = std::str::from_utf8(&val) {
+                            if let Ok(string) = std::str::from_utf8(val) {
                                 literal_strings.insert(*dst, string.to_string());
                             }
                             string_slots.insert(*dst);
@@ -158,8 +154,7 @@ impl<'a> HirToMirLowering<'a> {
                             MirType::Array {
                                 elem: Box::new(MirType::U8),
                                 len: align_to_eight(val.len().saturating_add(1))
-                                    .min(MAX_STRING_SIZE)
-                                    .max(16),
+                                    .clamp(16, MAX_STRING_SIZE),
                             },
                         );
                     }
@@ -209,25 +204,25 @@ impl<'a> HirToMirLowering<'a> {
                         &mut record_fields,
                         *dst,
                     );
-                    if let Some(string) = literal_strings.get(&src).cloned() {
+                    if let Some(string) = literal_strings.get(src).cloned() {
                         literal_strings.insert(*dst, string);
                     }
-                    if string_slots.contains(&src) {
+                    if string_slots.contains(src) {
                         string_slots.insert(*dst);
                     }
-                    if let Some(bound) = string_bounds.get(&src).copied() {
+                    if let Some(bound) = string_bounds.get(src).copied() {
                         string_bounds.insert(*dst, bound);
                     }
                     if let Some(ty) = hint_map
                         .and_then(|hints| hints.get(&dst.get()).cloned())
-                        .or_else(|| reg_types.get(&src).cloned())
+                        .or_else(|| reg_types.get(src).cloned())
                     {
                         reg_types.insert(*dst, ty);
                     }
-                    if let Some(capacity) = list_caps.get(&src).copied() {
+                    if let Some(capacity) = list_caps.get(src).copied() {
                         list_caps.insert(*dst, capacity);
                     }
-                    if let Some(fields) = record_fields.get(&src).cloned() {
+                    if let Some(fields) = record_fields.get(src).cloned() {
                         record_fields.insert(*dst, fields);
                     }
                 }
@@ -249,24 +244,24 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
                 HirStmt::RecordInsert { src_dst, key, val } => {
-                    let key_name = literal_strings.get(&key)?.clone();
+                    let key_name = literal_strings.get(key)?.clone();
                     let value_ty = hint_map
                         .and_then(|hints| hints.get(&val.get()).cloned())
-                        .or_else(|| reg_types.get(&val).cloned())
+                        .or_else(|| reg_types.get(val).cloned())
                         .or_else(|| {
                             record_fields
-                                .get(&val)
+                                .get(val)
                                 .map(|fields| Self::record_type_from_fields(fields))
                         })
                         .or_else(|| {
-                            list_caps.get(&val).map(|capacity| MirType::Array {
+                            list_caps.get(val).map(|capacity| MirType::Array {
                                 elem: Box::new(MirType::I64),
                                 len: capacity.saturating_add(1),
                             })
                         })
                         .map(|ty| self.stored_generic_map_value_type(&ty))
                         .map(|ty| {
-                            if string_slots.contains(&val) {
+                            if string_slots.contains(val) {
                                 Self::stored_record_field_type(&ty)
                             } else {
                                 ty
@@ -292,7 +287,7 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
                 HirStmt::ListPush { src_dst, .. } => {
-                    if let Some(capacity) = list_caps.get(&src_dst).copied() {
+                    if let Some(capacity) = list_caps.get(src_dst).copied() {
                         reg_types.insert(
                             *src_dst,
                             MirType::Array {
@@ -303,28 +298,27 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
                 HirStmt::StringAppend { src_dst, val } => {
-                    let Some(current_bound) = string_bounds.get(&src_dst).copied() else {
+                    let Some(current_bound) = string_bounds.get(src_dst).copied() else {
                         continue;
                     };
                     let append_bound = string_bounds
-                        .get(&val)
+                        .get(val)
                         .copied()
                         .or_else(|| {
                             literal_strings
-                                .get(&val)
+                                .get(val)
                                 .map(|string| string.len().min(MAX_STRING_SIZE.saturating_sub(1)))
                         })
                         .unwrap_or(MAX_INT_STRING_LEN);
                     let new_bound = current_bound.saturating_add(append_bound);
                     if new_bound.saturating_add(1) > MAX_STRING_SIZE {
-                        string_bounds.remove(&src_dst);
-                        string_slots.remove(&src_dst);
-                        reg_types.remove(&src_dst);
+                        string_bounds.remove(src_dst);
+                        string_slots.remove(src_dst);
+                        reg_types.remove(src_dst);
                         continue;
                     }
-                    let new_slot_len = align_to_eight(new_bound.saturating_add(1))
-                        .min(MAX_STRING_SIZE)
-                        .max(16);
+                    let new_slot_len =
+                        align_to_eight(new_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
                     string_bounds.insert(*src_dst, new_bound);
                     string_slots.insert(*src_dst);
                     reg_types.insert(
@@ -354,8 +348,7 @@ impl<'a> HirToMirLowering<'a> {
                 string_bounds.get(&return_src).copied().map(|bound| {
                     SubfunctionAggregateReturnAbi::String {
                         slot_len: align_to_eight(bound.saturating_add(1))
-                            .min(MAX_STRING_SIZE)
-                            .max(16),
+                            .clamp(16, MAX_STRING_SIZE),
                     }
                 })
             })
@@ -398,7 +391,7 @@ impl<'a> HirToMirLowering<'a> {
                     let Value::List { vals, .. } = &current else {
                         return None;
                     };
-                    current = vals.get(*val as usize)?.clone();
+                    current = vals.get(*val)?.clone();
                 }
             }
         }
@@ -749,10 +742,11 @@ impl<'a> HirToMirLowering<'a> {
 
         for block in &hir.blocks {
             for stmt in &block.stmts {
-                if let HirStmt::LoadVariable { var_id, .. } = stmt {
-                    if *var_id != IN_VARIABLE_ID && !stored.contains(var_id) {
-                        params.insert(*var_id);
-                    }
+                if let HirStmt::LoadVariable { var_id, .. } = stmt
+                    && *var_id != IN_VARIABLE_ID
+                    && !stored.contains(var_id)
+                {
+                    params.insert(*var_id);
                 }
             }
         }
@@ -776,11 +770,12 @@ impl<'a> HirToMirLowering<'a> {
 
         for block in &hir.blocks {
             for stmt in &block.stmts {
-                if let HirStmt::LoadVariable { var_id, .. } = stmt {
-                    if *var_id != IN_VARIABLE_ID && !stored.contains(var_id) {
-                        let id = var_id.get();
-                        min_var = Some(min_var.map_or(id, |cur| cur.min(id)));
-                    }
+                if let HirStmt::LoadVariable { var_id, .. } = stmt
+                    && *var_id != IN_VARIABLE_ID
+                    && !stored.contains(var_id)
+                {
+                    let id = var_id.get();
+                    min_var = Some(min_var.map_or(id, |cur| cur.min(id)));
                 }
             }
         }
@@ -814,10 +809,10 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn uses_in_variable(hir: &HirFunction) -> bool {
         for block in &hir.blocks {
             for stmt in &block.stmts {
-                if let HirStmt::LoadVariable { var_id, .. } = stmt {
-                    if *var_id == IN_VARIABLE_ID {
-                        return true;
-                    }
+                if let HirStmt::LoadVariable { var_id, .. } = stmt
+                    && *var_id == IN_VARIABLE_ID
+                {
+                    return true;
                 }
             }
         }
@@ -877,10 +872,10 @@ impl<'a> HirToMirLowering<'a> {
                 match stmt {
                     HirStmt::Collect { src_dst }
                     | HirStmt::Drain { src: src_dst }
-                    | HirStmt::DrainIfEnd { src: src_dst } => {
-                        if !defined.contains(src_dst) {
-                            return Some(*src_dst);
-                        }
+                    | HirStmt::DrainIfEnd { src: src_dst }
+                        if !defined.contains(src_dst) =>
+                    {
+                        return Some(*src_dst);
                     }
                     _ => {}
                 }
@@ -1124,27 +1119,26 @@ impl<'a> HirToMirLowering<'a> {
                 .collect();
             if return_tys.len() == return_srcs.len()
                 && let Some(first_return_ty) = return_tys.first().cloned()
+                && return_tys.iter().all(|ty| ty == &first_return_ty)
             {
-                if return_tys.iter().all(|ty| ty == &first_return_ty) {
-                    let has_list_builder = hir.blocks.iter().any(|block| {
-                        block.stmts.iter().any(|stmt| {
-                            matches!(
-                                stmt,
-                                HirStmt::ListPush { .. }
-                                    | HirStmt::LoadLiteral {
-                                        lit: HirLiteral::List { .. },
-                                        ..
-                                    }
-                            )
-                        })
-                    });
-                    if has_list_builder
-                        && let MirType::Array { elem, len } = first_return_ty
-                        && len > 0
-                        && matches!(elem.as_ref(), MirType::I64)
-                    {
-                        return Some(SubfunctionAggregateReturnAbi::List { max_len: len - 1 });
-                    }
+                let has_list_builder = hir.blocks.iter().any(|block| {
+                    block.stmts.iter().any(|stmt| {
+                        matches!(
+                            stmt,
+                            HirStmt::ListPush { .. }
+                                | HirStmt::LoadLiteral {
+                                    lit: HirLiteral::List { .. },
+                                    ..
+                                }
+                        )
+                    })
+                });
+                if has_list_builder
+                    && let MirType::Array { elem, len } = first_return_ty
+                    && len > 0
+                    && matches!(elem.as_ref(), MirType::I64)
+                {
+                    return Some(SubfunctionAggregateReturnAbi::List { max_len: len - 1 });
                 }
             }
         }

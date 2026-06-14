@@ -885,9 +885,7 @@ impl ParsedNamedGlobalType {
                 )));
             }
 
-            let slot_len = align_to_eight(content_cap.saturating_add(1))
-                .min(MAX_STRING_SIZE)
-                .max(16);
+            let slot_len = align_to_eight(content_cap.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
             return Ok(Self {
                 ty: MirType::Array {
                     elem: Box::new(MirType::U8),

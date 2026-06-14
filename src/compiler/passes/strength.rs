@@ -62,10 +62,7 @@ impl StrengthReduction {
         rhs: &MirValue,
     ) -> Option<MirInst> {
         // Check if both operands are the same VReg
-        let same_vreg = match (lhs, rhs) {
-            (MirValue::VReg(l), MirValue::VReg(r)) if l == r => true,
-            _ => false,
-        };
+        let same_vreg = matches!((lhs, rhs), (MirValue::VReg(l), MirValue::VReg(r)) if l == r);
 
         if !same_vreg {
             return None;

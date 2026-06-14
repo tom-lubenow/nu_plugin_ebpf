@@ -36,6 +36,81 @@ struct BitsRotateSpec {
     mode: BitsShiftMode,
 }
 
+struct TypedFixedArrayBitsBinary<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    input_reg: RegId,
+    input_vreg: VReg,
+    result_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    op: BinOpKind,
+    rhs_meta: Option<&'a RegMetadata>,
+    rhs_vreg: VReg,
+    rhs_const: Option<i64>,
+    max_bits_list_len: usize,
+}
+
+struct TypedFixedArrayBitsShift<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    input_reg: RegId,
+    input_vreg: VReg,
+    result_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    max_bits_list_len: usize,
+}
+
+struct TypedFixedArrayBitsRotate<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    input_reg: RegId,
+    input_vreg: VReg,
+    result_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    max_bits_list_len: usize,
+}
+
+struct TypedFixedArrayBitsNot<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    input_reg: RegId,
+    input_vreg: VReg,
+    result_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    mode: BitsNotMode,
+    max_bits_list_len: usize,
+}
+
+struct BitsShiftAutoRightNegativeCase {
+    dst: VReg,
+    src: MirValue,
+    shift_count: i64,
+    min_value: i64,
+    mask: i64,
+    sign_bit: i64,
+    continuation_block: BlockId,
+}
+
+struct BitsRotateAutoUnsignedCase<'a> {
+    cmd_name: &'a str,
+    dst: VReg,
+    src: MirValue,
+    rotate_count: i64,
+    max_value: i64,
+    bits: i64,
+    continuation_block: BlockId,
+}
+
+struct BitsBinaryRuntimeList<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    input_vreg: VReg,
+    result_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    op: BinOpKind,
+    rhs_value: MirValue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BitsShiftRuntimeTransform {
     Spec(BitsShiftSpec),
@@ -157,10 +232,10 @@ impl<'a> HirToMirLowering<'a> {
                 "bits ror" => Some((out_bit + bit_len - rotate) % bit_len),
                 _ => unreachable!("validated bits shift/rotate command"),
             };
-            if let Some(src_bit) = src_bit {
-                if Self::bits_binary_get_bit(input, src_bit) {
-                    Self::bits_binary_set_bit(&mut output, out_bit);
-                }
+            if let Some(src_bit) = src_bit
+                && Self::bits_binary_get_bit(input, src_bit)
+            {
+                Self::bits_binary_set_bit(&mut output, out_bit);
             }
         }
         Ok(output)
@@ -350,11 +425,10 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn bits_integer_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
-        meta.literal_int
-            .or_else(|| match meta.constant_value.as_ref() {
-                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                _ => None,
-            })
+        meta.literal_int.or(match meta.constant_value.as_ref() {
+            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+            _ => None,
+        })
     }
 
     fn bits_binary_endian(&self, cmd_name: &str) -> Result<BitsBinaryEndian, CompileError> {
@@ -519,12 +593,12 @@ impl<'a> HirToMirLowering<'a> {
         let signed = self.bits_not_signed_flag(cmd_name)?;
         let number_bytes = self.bits_not_number_bytes_arg(cmd_name)?;
         if signed {
-            if let Some(number_bytes) = number_bytes {
-                if !matches!(number_bytes, 1 | 2 | 4 | 8) {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} --signed supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
-                    )));
-                }
+            if let Some(number_bytes) = number_bytes
+                && !matches!(number_bytes, 1 | 2 | 4 | 8)
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} --signed supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
+                )));
             }
             return Ok(BitsNotMode::Signed);
         }
@@ -555,12 +629,12 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         self.bits_not_signed_flag(cmd_name)?;
-        if let Some(number_bytes) = self.bits_not_number_bytes_arg(cmd_name)? {
-            if !matches!(number_bytes, 1 | 2 | 4 | 8) {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} binary input supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
-                )));
-            }
+        if let Some(number_bytes) = self.bits_not_number_bytes_arg(cmd_name)?
+            && !matches!(number_bytes, 1 | 2 | 4 | 8)
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} binary input supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
+            )));
         }
         Ok(())
     }
@@ -967,12 +1041,11 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             };
 
-            let mode = Self::bits_fixed_width_mode(number_bytes, signed).ok_or_else(|| {
+            Self::bits_fixed_width_mode(number_bytes, signed).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} integer mode supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
                 ))
-            })?;
-            mode
+            })?
         } else if signed {
             BitsShiftMode::SignedI64
         } else {
@@ -1056,6 +1129,116 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
         Ok(())
+    }
+
+    fn bounded_range_min_max(range: BoundedRange) -> Result<(i64, i64), CompileError> {
+        if range.step == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "range step cannot be zero".into(),
+            ));
+        }
+        let last = if range.inclusive {
+            range.end
+        } else {
+            range.end.checked_sub(range.step.signum()).ok_or_else(|| {
+                CompileError::UnsupportedInstruction("range bound overflow".into())
+            })?
+        };
+        Ok((range.start.min(last), range.start.max(last)))
+    }
+
+    fn bits_runtime_signed_i64_mode(&self, cmd_name: &str) -> Result<bool, CompileError> {
+        if !matches!(
+            self.named_flags.as_slice(),
+            [flag] if matches!(flag.as_str(), "signed" | "s")
+        ) {
+            return Ok(false);
+        }
+        if self.named_args.is_empty() {
+            return Ok(true);
+        }
+
+        let Some((_, number_bytes_reg)) = self
+            .named_args
+            .get("number-bytes")
+            .or_else(|| self.named_args.get("n"))
+            .copied()
+        else {
+            return Ok(false);
+        };
+        if self.named_args.len() != 1 {
+            return Ok(false);
+        }
+
+        let number_bytes_meta = self.get_metadata(number_bytes_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compile-time --number-bytes in eBPF"
+            ))
+        })?;
+        Ok(Self::bits_integer_value_from_metadata(number_bytes_meta) == Some(8))
+    }
+
+    fn bits_runtime_signed_i64_count(
+        &self,
+        cmd_name: &str,
+        count_name: &str,
+        max_count: i64,
+    ) -> Result<Option<VReg>, CompileError> {
+        if !self.parser_info_args.is_empty()
+            || self.positional_args.len() != 1
+            || !self.bits_runtime_signed_i64_mode(cmd_name)?
+        {
+            return Ok(None);
+        }
+
+        let (count_vreg, count_reg) = self.positional_args[0];
+        let count_meta = self.get_metadata(count_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time or range-bounded runtime integer {count_name} count in eBPF"
+            ))
+        })?;
+        self.validate_bits_integer_operand(
+            cmd_name,
+            &format!("{count_name}-count argument"),
+            count_meta,
+            count_vreg,
+        )?;
+        if Self::bits_integer_value_from_metadata(count_meta).is_some() {
+            return Ok(None);
+        }
+
+        let Some(range) = count_meta.bounded_range else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} --signed runtime {count_name} counts require a proven range from 0 through {max_count} in eBPF"
+            )));
+        };
+        let (min, max) = Self::bounded_range_min_max(range)?;
+        if min < 0 || max > max_count {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} --signed runtime {count_name} counts require a proven range from 0 through {max_count} in eBPF; got {min}..={max}"
+            )));
+        }
+        Ok(Some(count_vreg))
+    }
+
+    fn bits_shift_runtime_signed_i64_count(
+        &self,
+        cmd_name: &str,
+    ) -> Result<Option<VReg>, CompileError> {
+        if !matches!(cmd_name, "bits shl" | "bits shr") {
+            return Ok(None);
+        }
+        self.bits_runtime_signed_i64_count(cmd_name, "shift", 63)
+    }
+
+    fn bits_rotate_runtime_signed_i64_count(
+        &self,
+        cmd_name: &str,
+    ) -> Result<Option<VReg>, CompileError> {
+        if !matches!(cmd_name, "bits rol" | "bits ror") {
+            return Ok(None);
+        }
+        self.bits_runtime_signed_i64_count(cmd_name, "rotate", 64)
     }
 
     fn bits_shift_runtime_auto_left_count(
@@ -1151,12 +1334,11 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires compile-time --number-bytes in eBPF"
                 )));
             };
-            let mode = Self::bits_fixed_width_mode(number_bytes, signed).ok_or_else(|| {
+            Self::bits_fixed_width_mode(number_bytes, signed).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} integer mode supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
                 ))
-            })?;
-            mode
+            })?
         } else if signed {
             BitsShiftMode::SignedI64
         } else {
@@ -1341,15 +1523,15 @@ impl<'a> HirToMirLowering<'a> {
                 {
                     // A numeric constant list is also available as a stack-backed
                     // list, so runtime list lowering below can reuse the RHS vreg.
-                    return self.lower_bits_binary_runtime_list(
+                    return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
                         cmd_name,
                         src_dst,
                         input_vreg,
                         result_vreg,
                         input_meta,
                         op,
-                        MirValue::VReg(rhs_vreg),
-                    );
+                        rhs_value: MirValue::VReg(rhs_vreg),
+                    });
                 }
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} requires a compile-time integer target argument for compile-time known list input in eBPF"
@@ -1392,15 +1574,15 @@ impl<'a> HirToMirLowering<'a> {
                 rhs_meta.as_ref(),
                 rhs_vreg,
             )?;
-            return self.lower_bits_binary_runtime_list(
+            return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
                 cmd_name,
                 src_dst,
                 input_vreg,
                 result_vreg,
                 input_meta,
                 op,
-                rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
-            );
+                rhs_value: rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
+            });
         }
 
         if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta
@@ -1421,8 +1603,8 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(input_meta) = input_meta.as_ref() {
-            if self.lower_typed_fixed_array_bits_binary(
+        if let Some(input_meta) = input_meta.as_ref()
+            && self.lower_typed_fixed_array_bits_binary(TypedFixedArrayBitsBinary {
                 cmd_name,
                 src_dst,
                 input_reg,
@@ -1430,13 +1612,13 @@ impl<'a> HirToMirLowering<'a> {
                 result_vreg,
                 input_meta,
                 op,
-                rhs_meta.as_ref(),
+                rhs_meta: rhs_meta.as_ref(),
                 rhs_vreg,
                 rhs_const,
-                MAX_BITS_STACK_LIST_CAPACITY,
-            )? {
-                return Ok(());
-            }
+                max_bits_list_len: MAX_BITS_STACK_LIST_CAPACITY,
+            })?
+        {
+            return Ok(());
         }
 
         if rhs_binary_const.is_some() {
@@ -1496,18 +1678,22 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_bits_binary(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        input_reg: RegId,
-        input_vreg: VReg,
-        result_vreg: VReg,
-        input_meta: &RegMetadata,
-        op: BinOpKind,
-        rhs_meta: Option<&RegMetadata>,
-        rhs_vreg: VReg,
-        rhs_const: Option<i64>,
-        max_bits_list_len: usize,
+        bits: TypedFixedArrayBitsBinary<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBitsBinary {
+            cmd_name,
+            src_dst,
+            input_reg,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            op,
+            rhs_meta,
+            rhs_vreg,
+            rhs_const,
+            max_bits_list_len,
+        } = bits;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -1529,15 +1715,15 @@ impl<'a> HirToMirLowering<'a> {
             .materialize_typed_fixed_array_numeric_list(
                 cmd_name, input_vreg, &elem_ty, array_len,
             )?;
-        self.lower_bits_binary_runtime_list(
+        self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
             cmd_name,
             src_dst,
-            materialized_vreg,
+            input_vreg: materialized_vreg,
             result_vreg,
-            &materialized_meta,
+            input_meta: &materialized_meta,
             op,
-            rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
-        )?;
+            rhs_value: rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
+        })?;
         Ok(true)
     }
 
@@ -1678,15 +1864,15 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(input_meta) = input_meta.as_ref() {
-            if self.lower_typed_fixed_array_bits_shift(
+            if self.lower_typed_fixed_array_bits_shift(TypedFixedArrayBitsShift {
                 cmd_name,
                 src_dst,
                 input_reg,
                 input_vreg,
                 result_vreg,
                 input_meta,
-                MAX_BITS_STACK_LIST_CAPACITY,
-            )? {
+                max_bits_list_len: MAX_BITS_STACK_LIST_CAPACITY,
+            })? {
                 return Ok(());
             }
             if input_meta.list_buffer.is_some() {
@@ -1732,6 +1918,16 @@ impl<'a> HirToMirLowering<'a> {
                     dst: result_vreg,
                     src: lhs_value,
                 });
+            } else if let Some(shift_count_vreg) =
+                self.bits_shift_runtime_signed_i64_count(cmd_name)?
+            {
+                self.emit(MirInst::BinOp {
+                    dst: result_vreg,
+                    op: Self::bits_shift_op(cmd_name, BitsShiftMode::SignedI64),
+                    lhs: lhs_value,
+                    rhs: MirValue::VReg(shift_count_vreg),
+                });
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
             } else if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
                 self.emit_bits_shift_auto_right_value(result_vreg, lhs_value, count);
             } else {
@@ -1778,14 +1974,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_bits_shift(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        input_reg: RegId,
-        input_vreg: VReg,
-        result_vreg: VReg,
-        input_meta: &RegMetadata,
-        max_bits_list_len: usize,
+        bits: TypedFixedArrayBitsShift<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBitsShift {
+            cmd_name,
+            src_dst,
+            input_reg,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            max_bits_list_len,
+        } = bits;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -1918,35 +2118,38 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = negative_block;
-        let check_i16_block = self.emit_bits_shift_auto_right_negative_case(
-            dst,
-            src.clone(),
-            shift_count,
-            i8::MIN as i64,
-            0xff,
-            0x80,
-            continuation_block,
-        );
+        let check_i16_block =
+            self.emit_bits_shift_auto_right_negative_case(BitsShiftAutoRightNegativeCase {
+                dst,
+                src: src.clone(),
+                shift_count,
+                min_value: i8::MIN as i64,
+                mask: 0xff,
+                sign_bit: 0x80,
+                continuation_block,
+            });
         self.current_block = check_i16_block;
-        let check_i32_block = self.emit_bits_shift_auto_right_negative_case(
-            dst,
-            src.clone(),
-            shift_count,
-            i16::MIN as i64,
-            0xffff,
-            0x8000,
-            continuation_block,
-        );
+        let check_i32_block =
+            self.emit_bits_shift_auto_right_negative_case(BitsShiftAutoRightNegativeCase {
+                dst,
+                src: src.clone(),
+                shift_count,
+                min_value: i16::MIN as i64,
+                mask: 0xffff,
+                sign_bit: 0x8000,
+                continuation_block,
+            });
         self.current_block = check_i32_block;
-        let signed_i64_block = self.emit_bits_shift_auto_right_negative_case(
-            dst,
-            src.clone(),
-            shift_count,
-            i32::MIN as i64,
-            0xffff_ffff,
-            0x8000_0000,
-            continuation_block,
-        );
+        let signed_i64_block =
+            self.emit_bits_shift_auto_right_negative_case(BitsShiftAutoRightNegativeCase {
+                dst,
+                src: src.clone(),
+                shift_count,
+                min_value: i32::MIN as i64,
+                mask: 0xffff_ffff,
+                sign_bit: 0x8000_0000,
+                continuation_block,
+            });
         self.current_block = signed_i64_block;
         self.emit(MirInst::BinOp {
             dst,
@@ -2086,14 +2289,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_bits_shift_auto_right_negative_case(
         &mut self,
-        dst: VReg,
-        src: MirValue,
-        shift_count: i64,
-        min_value: i64,
-        mask: i64,
-        sign_bit: i64,
-        continuation_block: BlockId,
+        case: BitsShiftAutoRightNegativeCase,
     ) -> BlockId {
+        let BitsShiftAutoRightNegativeCase {
+            dst,
+            src,
+            shift_count,
+            min_value,
+            mask,
+            sign_bit,
+            continuation_block,
+        } = case;
+
         let shift_block = self.func.alloc_block();
         let next_block = self.func.alloc_block();
 
@@ -2534,15 +2741,15 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(input_meta) = input_meta.as_ref() {
-            if self.lower_typed_fixed_array_bits_rotate(
+            if self.lower_typed_fixed_array_bits_rotate(TypedFixedArrayBitsRotate {
                 cmd_name,
                 src_dst,
                 input_reg,
                 input_vreg,
                 result_vreg,
                 input_meta,
-                MAX_BITS_STACK_LIST_CAPACITY,
-            )? {
+                max_bits_list_len: MAX_BITS_STACK_LIST_CAPACITY,
+            })? {
                 return Ok(());
             }
             if input_meta.list_buffer.is_some() {
@@ -2589,6 +2796,15 @@ impl<'a> HirToMirLowering<'a> {
                     dst: result_vreg,
                     src: lhs_value,
                 });
+            } else if let Some(rotate_count_vreg) =
+                self.bits_rotate_runtime_signed_i64_count(cmd_name)?
+            {
+                self.emit_bits_rotate_signed_i64_runtime_count_value(
+                    cmd_name,
+                    result_vreg,
+                    lhs_value,
+                    rotate_count_vreg,
+                );
             } else if let Some(count) = runtime_auto_count
                 && (0..=8).contains(&count)
                 && self.bits_runtime_auto_unsigned_u32_or_narrower_input(
@@ -2647,14 +2863,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_bits_rotate(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        input_reg: RegId,
-        input_vreg: VReg,
-        result_vreg: VReg,
-        input_meta: &RegMetadata,
-        max_bits_list_len: usize,
+        bits: TypedFixedArrayBitsRotate<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBitsRotate {
+            cmd_name,
+            src_dst,
+            input_reg,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            max_bits_list_len,
+        } = bits;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -2896,25 +3116,27 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let continuation_block = self.func.alloc_block();
-        let check_u16_block = self.emit_bits_rotate_auto_unsigned_case(
-            cmd_name,
-            dst,
-            src.clone(),
-            rotate_count,
-            0xff,
-            8,
-            continuation_block,
-        );
+        let check_u16_block =
+            self.emit_bits_rotate_auto_unsigned_case(BitsRotateAutoUnsignedCase {
+                cmd_name,
+                dst,
+                src: src.clone(),
+                rotate_count,
+                max_value: 0xff,
+                bits: 8,
+                continuation_block,
+            });
         self.current_block = check_u16_block;
-        let rotate_u32_block = self.emit_bits_rotate_auto_unsigned_case(
-            cmd_name,
-            dst,
-            src.clone(),
-            rotate_count,
-            0xffff,
-            16,
-            continuation_block,
-        );
+        let rotate_u32_block =
+            self.emit_bits_rotate_auto_unsigned_case(BitsRotateAutoUnsignedCase {
+                cmd_name,
+                dst,
+                src: src.clone(),
+                rotate_count,
+                max_value: 0xffff,
+                bits: 16,
+                continuation_block,
+            });
         self.current_block = rotate_u32_block;
         self.emit_bits_rotate_fixed_unsigned_value(
             cmd_name,
@@ -2934,14 +3156,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_bits_rotate_auto_unsigned_case(
         &mut self,
-        cmd_name: &str,
-        dst: VReg,
-        src: MirValue,
-        rotate_count: i64,
-        max_value: i64,
-        bits: i64,
-        continuation_block: BlockId,
+        case: BitsRotateAutoUnsignedCase<'_>,
     ) -> BlockId {
+        let BitsRotateAutoUnsignedCase {
+            cmd_name,
+            dst,
+            src,
+            rotate_count,
+            max_value,
+            bits,
+            continuation_block,
+        } = case;
+
         let rotate_block = self.func.alloc_block();
         let next_block = self.func.alloc_block();
 
@@ -3046,6 +3272,116 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(lhs_vreg),
             rhs: MirValue::VReg(rhs_vreg),
         });
+    }
+
+    fn emit_bits_rotate_signed_i64_runtime_count_value(
+        &mut self,
+        cmd_name: &str,
+        dst: VReg,
+        src: MirValue,
+        rotate_count: VReg,
+    ) {
+        let identity_block = self.func.alloc_block();
+        let rotate_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+
+        let is_zero_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_zero_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(rotate_count),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(is_zero_vreg, MirType::Bool);
+
+        let is_full_width_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_full_width_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(rotate_count),
+            rhs: MirValue::Const(64),
+        });
+        self.vreg_type_hints
+            .insert(is_full_width_vreg, MirType::Bool);
+
+        let is_identity_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_identity_vreg,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(is_zero_vreg),
+            rhs: MirValue::VReg(is_full_width_vreg),
+        });
+        self.vreg_type_hints.insert(is_identity_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: is_identity_vreg,
+            if_true: identity_block,
+            if_false: rotate_block,
+        });
+
+        self.current_block = identity_block;
+        self.emit(MirInst::Copy {
+            dst,
+            src: src.clone(),
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = rotate_block;
+        let inverse_count_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: inverse_count_vreg,
+            op: BinOpKind::Sub,
+            lhs: MirValue::Const(64),
+            rhs: MirValue::VReg(rotate_count),
+        });
+        self.vreg_type_hints
+            .insert(inverse_count_vreg, MirType::I64);
+
+        let lhs_vreg = self.func.alloc_vreg();
+        let rhs_vreg = self.func.alloc_vreg();
+        let (lhs_op, lhs_count, rhs_op, rhs_count) = match cmd_name {
+            "bits rol" => (
+                BinOpKind::Shl,
+                rotate_count,
+                BinOpKind::Shr,
+                inverse_count_vreg,
+            ),
+            "bits ror" => (
+                BinOpKind::Shr,
+                rotate_count,
+                BinOpKind::Shl,
+                inverse_count_vreg,
+            ),
+            _ => unreachable!("validated bits rotate command"),
+        };
+
+        self.emit(MirInst::BinOp {
+            dst: lhs_vreg,
+            op: lhs_op,
+            lhs: src.clone(),
+            rhs: MirValue::VReg(lhs_count),
+        });
+        self.vreg_type_hints.insert(lhs_vreg, MirType::I64);
+        self.emit(MirInst::BinOp {
+            dst: rhs_vreg,
+            op: rhs_op,
+            lhs: src,
+            rhs: MirValue::VReg(rhs_count),
+        });
+        self.vreg_type_hints.insert(rhs_vreg, MirType::I64);
+        self.emit(MirInst::BinOp {
+            dst,
+            op: BinOpKind::Or,
+            lhs: MirValue::VReg(lhs_vreg),
+            rhs: MirValue::VReg(rhs_vreg),
+        });
+        self.vreg_type_hints.insert(dst, MirType::I64);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
     }
 
     fn emit_bits_rotate_fixed_unsigned_value(
@@ -3211,7 +3547,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mode = self.bits_not_mode(cmd_name)?;
         if let Some(input_meta) = input_meta.as_ref() {
-            if self.lower_typed_fixed_array_bits_not(
+            if self.lower_typed_fixed_array_bits_not(TypedFixedArrayBitsNot {
                 cmd_name,
                 src_dst,
                 input_reg,
@@ -3219,8 +3555,8 @@ impl<'a> HirToMirLowering<'a> {
                 result_vreg,
                 input_meta,
                 mode,
-                MAX_BITS_STACK_LIST_CAPACITY,
-            )? {
+                max_bits_list_len: MAX_BITS_STACK_LIST_CAPACITY,
+            })? {
                 return Ok(());
             }
             if input_meta.list_buffer.is_some() {
@@ -3273,15 +3609,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_bits_not(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        input_reg: RegId,
-        input_vreg: VReg,
-        result_vreg: VReg,
-        input_meta: &RegMetadata,
-        mode: BitsNotMode,
-        max_bits_list_len: usize,
+        bits: TypedFixedArrayBitsNot<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBitsNot {
+            cmd_name,
+            src_dst,
+            input_reg,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            mode,
+            max_bits_list_len,
+        } = bits;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -3515,14 +3855,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_bits_binary_runtime_list(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        input_vreg: VReg,
-        result_vreg: VReg,
-        input_meta: &RegMetadata,
-        op: BinOpKind,
-        rhs_value: MirValue,
+        list: BitsBinaryRuntimeList<'_>,
     ) -> Result<(), CompileError> {
+        let BitsBinaryRuntimeList {
+            cmd_name,
+            src_dst,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            op,
+            rhs_value,
+        } = list;
+
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed integer list in eBPF"
@@ -3636,7 +3980,7 @@ impl<'a> HirToMirLowering<'a> {
         let op = Self::bits_shift_op(cmd_name, spec.mode);
         let rhs_value = MirValue::Const(spec.count);
         if spec.mode == BitsShiftMode::SignedI64 {
-            return self.lower_bits_binary_runtime_list(
+            return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
                 cmd_name,
                 src_dst,
                 input_vreg,
@@ -3644,7 +3988,7 @@ impl<'a> HirToMirLowering<'a> {
                 input_meta,
                 op,
                 rhs_value,
-            );
+            });
         }
         self.lower_bits_shift_runtime_list(
             cmd_name,

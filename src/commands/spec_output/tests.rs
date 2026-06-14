@@ -2273,13 +2273,12 @@ fn test_spec_record_context_fields_include_array_load_transform_metadata() {
     let remote_ip6 = remote_ip6
         .as_record()
         .expect("ctx.remote_ip6 should be a record");
-    assert_eq!(
-        remote_ip6
+    assert!(
+        !remote_ip6
             .get("array_load_normalize_big_endian")
             .expect("array load normalize metadata should be present")
             .as_bool()
-            .expect("array load normalize metadata should be a bool"),
-        false
+            .expect("array load normalize metadata should be a bool")
     );
     assert_eq!(
         remote_ip6

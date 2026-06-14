@@ -11,6 +11,33 @@ mod predicates;
 mod sort;
 mod split;
 
+pub(in crate::compiler::ir_to_mir) use map_filter::{
+    TypedFixedArrayEachLowering, TypedFixedArrayWhereLowering,
+};
+
+struct TypedFixedArrayCountSlice<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    count: usize,
+}
+
+pub(in crate::compiler::ir_to_mir) struct TypedFixedArrayAppendOrPrepend<'a> {
+    pub(in crate::compiler::ir_to_mir) cmd_name: &'a str,
+    pub(in crate::compiler::ir_to_mir) src_dst: RegId,
+    pub(in crate::compiler::ir_to_mir) dst_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) src_dst_had_value: bool,
+    pub(in crate::compiler::ir_to_mir) input_reg: RegId,
+    pub(in crate::compiler::ir_to_mir) input_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) input_meta: &'a RegMetadata,
+    pub(in crate::compiler::ir_to_mir) item_reg: RegId,
+    pub(in crate::compiler::ir_to_mir) item_vreg: VReg,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn validate_optional_strict_list_flag(
         &self,
@@ -157,10 +184,24 @@ impl<'a> HirToMirLowering<'a> {
             Some(AnnotatedValueSemantics::NumericList { known_len, .. }) => *known_len,
             _ => None,
         }
-        .or_else(|| match &meta.constant_value {
+        .or(match &meta.constant_value {
             Some(nu_protocol::Value::List { vals, .. }) => Some(vals.len()),
             _ => None,
         })
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn typed_fixed_array_array_type(
+        ty: &MirType,
+    ) -> Option<(MirType, usize)> {
+        let array_ty = match ty {
+            MirType::Array { .. } => ty,
+            MirType::Ptr { pointee, .. } => pointee.as_ref(),
+            _ => return None,
+        };
+        let MirType::Array { elem, len } = array_ty else {
+            return None;
+        };
+        Some((elem.as_ref().clone(), *len))
     }
 
     fn typed_fixed_array_slice_bounds(
@@ -190,15 +231,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_count_slice(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        input_meta: &RegMetadata,
-        count: usize,
+        slice: TypedFixedArrayCountSlice<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayCountSlice {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            mut input_vreg,
+            input_meta,
+            count,
+        } = slice;
+
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
@@ -212,11 +257,7 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) = Self::typed_fixed_array_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
@@ -232,7 +273,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -249,6 +290,11 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array pointer input in eBPF"
             )));
         };
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            cmd_name,
+            address_space,
+            input_meta,
+        )?;
 
         let elem_size = elem_ty.size();
         let byte_offset = slice_start.checked_mul(elem_size).ok_or_else(|| {
@@ -345,17 +391,13 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) = Self::typed_fixed_array_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -372,14 +414,11 @@ impl<'a> HirToMirLowering<'a> {
                 "reverse requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            "reverse",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "reverse on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            input_meta,
+        )?;
 
         let out_ty = MirType::Array {
             elem: Box::new(elem_ty.clone()),
@@ -506,16 +545,20 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(super) fn lower_typed_fixed_array_append_or_prepend(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        input_meta: &RegMetadata,
-        item_reg: RegId,
-        item_vreg: VReg,
+        insert: TypedFixedArrayAppendOrPrepend<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayAppendOrPrepend {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            mut input_vreg,
+            input_meta,
+            item_reg,
+            item_vreg,
+        } = insert;
+
         if !matches!(cmd_name, "append" | "prepend") {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "unsupported typed fixed-array insert command '{cmd_name}'"
@@ -535,17 +578,13 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) = Self::typed_fixed_array_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -562,14 +601,11 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array pointer input in eBPF"
             )));
         };
-        if !matches!(
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            cmd_name,
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            input_meta,
+        )?;
 
         enum InsertItem {
             Scalar(MirValue),
@@ -620,14 +656,35 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
             let MirType::Ptr {
                 pointee,
-                address_space: AddressSpace::Stack | AddressSpace::Map,
+                address_space,
             } = item_ptr_ty
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} typed fixed-array aggregate item requires a stack/map aggregate pointer in eBPF, got {:?}",
+                    "{cmd_name} typed fixed-array aggregate item requires an aggregate pointer in eBPF, got {:?}",
                     item_ptr_ty
                 )));
             };
+            match address_space {
+                AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {}
+                AddressSpace::Kernel => {
+                    let item_meta = self.get_metadata(item_reg).cloned().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} typed fixed-array aggregate item requires trusted BTF provenance metadata for kernel pointer input in eBPF"
+                        ))
+                    })?;
+                    Self::validate_typed_fixed_array_stack_list_address_space(
+                        cmd_name,
+                        address_space,
+                        &item_meta,
+                    )?;
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} typed fixed-array aggregate item requires a stack, map, context, or trusted-kernel aggregate pointer in eBPF, got {:?}",
+                        address_space
+                    )));
+                }
+            }
             let item_ty = pointee.as_ref().clone();
             let copy_size =
                 Self::typed_fixed_array_aggregate_copy_size(&elem_ty, &item_ty).ok_or_else(
@@ -863,10 +920,14 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(result_vreg, MirType::I64);
         } else if let Some(mut base_runtime_ty) =
             self.typed_value_runtime_type(input_reg, input_vreg)
-            && let Some(array_len) =
-                Self::aggregate_call_value_type(&base_runtime_ty).and_then(|ty| match ty {
-                    MirType::Array { len, .. } => Some(*len),
+            && let Some((_elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
+                .and_then(|ty| match ty {
+                    MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
                     _ => None,
+                })
+                .or_else(|| {
+                    Self::typed_fixed_array_array_type(&base_runtime_ty)
+                        .filter(|(elem_ty, _)| Self::typed_fixed_array_append_scalar_type(elem_ty))
                 })
         {
             if array_len == 0 {
@@ -893,7 +954,7 @@ impl<'a> HirToMirLowering<'a> {
             };
 
             if !matches!(base_runtime_ty, MirType::Ptr { .. })
-                && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+                && Self::typed_fixed_array_array_type(&base_runtime_ty).is_some()
             {
                 input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
                 base_runtime_ty = self
@@ -903,6 +964,23 @@ impl<'a> HirToMirLowering<'a> {
                             "{cmd_name} requires typed fixed-array input in eBPF"
                         ))
                     })?;
+            }
+            if let MirType::Ptr { address_space, .. } = &base_runtime_ty
+                && !matches!(
+                    address_space,
+                    AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+                )
+            {
+                let input_meta = input_meta.as_ref().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires tracked typed fixed-array metadata in eBPF"
+                    ))
+                })?;
+                Self::validate_typed_fixed_array_stack_list_address_space(
+                    cmd_name,
+                    *address_space,
+                    input_meta,
+                )?;
             }
 
             let projected_constant =
@@ -965,6 +1043,9 @@ impl<'a> HirToMirLowering<'a> {
                 src: MirValue::VReg(input_vreg),
             });
             self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            if let Some(out_meta) = self.reg_metadata.get_mut(&src_dst.get()) {
+                out_meta.direct_projected_list_consumer = None;
+            }
         }
 
         Ok(())
@@ -1011,12 +1092,9 @@ impl<'a> HirToMirLowering<'a> {
             }
             "take" | "first" => {
                 if self.positional_args.len() != 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        format!(
-                            "{cmd_name} requires exactly one positional count argument in eBPF"
-                        )
-                        .into(),
-                    ));
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires exactly one positional count argument in eBPF"
+                    )));
                 }
                 let (_, count_reg) = self.positional_args[0];
                 self.get_metadata(count_reg)
@@ -1073,16 +1151,16 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_count_slice(
+            && self.lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
                 cmd_name,
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
+                input_meta: &input_meta,
                 count,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -1238,6 +1316,20 @@ impl<'a> HirToMirLowering<'a> {
                     "reverse requires a pipeline input with tracked metadata in eBPF".into(),
                 )
             })?;
+        if input_meta.direct_projected_list_consumer.is_some() {
+            let input_reg = input_reg.expect("metadata came from this input register");
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            return Ok(());
+        }
         if let Some(input_reg) = input_reg
             && self.lower_typed_fixed_array_reverse(
                 src_dst,
@@ -1392,16 +1484,16 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_count_slice(
-                "last",
+            && self.lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
+                cmd_name: "last",
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
+                input_meta: &input_meta,
                 count,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -1581,5 +1673,422 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(out_ty);
         out_meta.annotated_semantics =
             Some(AnnotatedValueSemantics::NumericList { max_len, known_len });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn with_test_lowering<R>(test: impl FnOnce(&mut HirToMirLowering<'_>) -> R) -> R {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+        test(&mut lowering)
+    }
+
+    fn register_kernel_fixed_array(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        elem_ty: MirType,
+        len: usize,
+        trusted_btf: bool,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(elem_ty.clone()),
+                len,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                trusted_btf,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn register_kernel_aggregate(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        ty: MirType,
+        trusted_btf: bool,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(ty),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                trusted_btf,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn count_loads_from(lowering: &HirToMirLowering<'_>, ptr_vreg: VReg) -> usize {
+        lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| matches!(inst, MirInst::Load { ptr, .. } if *ptr == ptr_vreg))
+            .count()
+    }
+
+    #[test]
+    fn first_accepts_trusted_kernel_scalar_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, true);
+            lowering.pipeline_input = Some(input_vreg);
+            lowering.pipeline_input_reg = Some(input_reg);
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            lowering
+                .lower_stack_list_first_or_last_scalar("first", src_dst, dst_vreg, false)
+                .expect("trusted kernel fixed-array first should lower");
+
+            assert_eq!(lowering.vreg_type_hints.get(&dst_vreg), Some(&MirType::U32));
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::U32)
+            );
+        });
+    }
+
+    #[test]
+    fn last_rejects_untrusted_kernel_scalar_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, false);
+            lowering.pipeline_input = Some(input_vreg);
+            lowering.pipeline_input_reg = Some(input_reg);
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            let err = lowering
+                .lower_stack_list_first_or_last_scalar("last", src_dst, dst_vreg, false)
+                .expect_err("untrusted kernel fixed-array last should be rejected");
+            let CompileError::UnsupportedInstruction(message) = err else {
+                panic!("expected unsupported-instruction error");
+            };
+            assert!(message.contains("requires trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn take_accepts_trusted_kernel_fixed_array_without_loads() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, true);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
+                        cmd_name: "take",
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value: false,
+                        input_reg,
+                        input_vreg,
+                        input_meta: &input_meta,
+                        count: 1,
+                    })
+                    .expect("trusted kernel fixed-array take should lower")
+            );
+
+            assert_eq!(
+                count_loads_from(lowering, input_vreg),
+                0,
+                "fixed-array take should preserve the kernel pointer without dereferencing it"
+            );
+            assert_eq!(
+                lowering.vreg_type_hints.get(&dst_vreg),
+                Some(&MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::U32),
+                        len: 1,
+                    }),
+                    address_space: AddressSpace::Kernel,
+                })
+            );
+        });
+    }
+
+    #[test]
+    fn reverse_accepts_trusted_kernel_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, true);
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+
+            assert!(
+                lowering
+                    .lower_typed_fixed_array_reverse(
+                        src_dst,
+                        dst_vreg,
+                        false,
+                        input_reg,
+                        input_vreg,
+                        &input_meta,
+                    )
+                    .expect("trusted kernel fixed-array reverse should lower")
+            );
+
+            assert!(
+                count_loads_from(lowering, input_vreg) > 0,
+                "expected reverse to copy from trusted kernel fixed-array input"
+            );
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 2,
+                })
+            );
+        });
+    }
+
+    #[test]
+    fn reverse_rejects_untrusted_kernel_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, false);
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+
+            let err = lowering
+                .lower_typed_fixed_array_reverse(
+                    src_dst,
+                    dst_vreg,
+                    false,
+                    input_reg,
+                    input_vreg,
+                    &input_meta,
+                )
+                .expect_err("untrusted kernel fixed-array reverse should be rejected");
+            let CompileError::UnsupportedInstruction(message) = err else {
+                panic!("expected unsupported-instruction error");
+            };
+            assert!(message.contains("requires trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn append_accepts_trusted_kernel_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, MirType::U32, 2, true);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+
+            let item_reg = RegId::new(2);
+            let item_vreg = lowering.get_vreg(item_reg);
+            lowering.vreg_type_hints.insert(item_vreg, MirType::I64);
+            lowering.reg_metadata.insert(
+                item_reg.get(),
+                RegMetadata {
+                    field_type: Some(MirType::I64),
+                    literal_int: Some(7),
+                    ..Default::default()
+                },
+            );
+
+            let src_dst = RegId::new(3);
+            let dst_vreg = lowering.get_vreg(src_dst);
+            assert!(
+                lowering
+                    .lower_typed_fixed_array_append_or_prepend(TypedFixedArrayAppendOrPrepend {
+                        cmd_name: "append",
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value: false,
+                        input_reg,
+                        input_vreg,
+                        input_meta: &input_meta,
+                        item_reg,
+                        item_vreg,
+                    })
+                    .expect("trusted kernel fixed-array append should lower")
+            );
+
+            assert!(
+                count_loads_from(lowering, input_vreg) > 0,
+                "expected append to copy from trusted kernel fixed-array input"
+            );
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 3,
+                })
+            );
+        });
+    }
+
+    #[test]
+    fn append_accepts_trusted_kernel_aggregate_item() {
+        with_test_lowering(|lowering| {
+            let elem_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 4,
+            };
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, elem_ty.clone(), 2, true);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+
+            let item_reg = RegId::new(2);
+            let item_vreg = register_kernel_aggregate(lowering, item_reg, elem_ty.clone(), true);
+            let src_dst = RegId::new(3);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_typed_fixed_array_append_or_prepend(TypedFixedArrayAppendOrPrepend {
+                        cmd_name: "append",
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value: false,
+                        input_reg,
+                        input_vreg,
+                        input_meta: &input_meta,
+                        item_reg,
+                        item_vreg,
+                    })
+                    .expect("trusted kernel aggregate item append should lower")
+            );
+
+            assert!(
+                count_loads_from(lowering, input_vreg) > 0,
+                "expected append to copy from trusted kernel fixed-array input"
+            );
+            assert!(
+                count_loads_from(lowering, item_vreg) > 0,
+                "expected append to copy the trusted kernel aggregate item"
+            );
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::Array {
+                    elem: Box::new(elem_ty),
+                    len: 3,
+                })
+            );
+        });
+    }
+
+    #[test]
+    fn append_rejects_untrusted_kernel_aggregate_item() {
+        with_test_lowering(|lowering| {
+            let elem_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 4,
+            };
+            let input_reg = RegId::new(1);
+            let input_vreg =
+                register_kernel_fixed_array(lowering, input_reg, elem_ty.clone(), 2, true);
+            let input_meta = lowering
+                .get_metadata(input_reg)
+                .cloned()
+                .expect("input metadata should be registered");
+
+            let item_reg = RegId::new(2);
+            let item_vreg = register_kernel_aggregate(lowering, item_reg, elem_ty, false);
+            let src_dst = RegId::new(3);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            let err = lowering
+                .lower_typed_fixed_array_append_or_prepend(TypedFixedArrayAppendOrPrepend {
+                    cmd_name: "append",
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value: false,
+                    input_reg,
+                    input_vreg,
+                    input_meta: &input_meta,
+                    item_reg,
+                    item_vreg,
+                })
+                .expect_err("untrusted kernel aggregate item append should be rejected");
+            let CompileError::UnsupportedInstruction(message) = err else {
+                panic!("expected unsupported-instruction error");
+            };
+            assert!(message.contains("requires trusted BTF provenance"));
+        });
     }
 }

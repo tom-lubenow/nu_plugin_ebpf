@@ -459,13 +459,8 @@ impl ConstantFolding {
                     false
                 }
             }
-            MirInst::Return { val } => {
-                if let Some(value) = val {
-                    self.rewrite_value(value, values)
-                } else {
-                    false
-                }
-            }
+            MirInst::Return { val: Some(value) } => self.rewrite_value(value, values),
+            MirInst::Return { val: None } => false,
             MirInst::TailCall { index, .. } => self.rewrite_value(index, values),
             _ => false,
         }

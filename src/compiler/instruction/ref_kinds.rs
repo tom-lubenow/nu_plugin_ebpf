@@ -506,12 +506,9 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         _ => {
             if KfuncSignature::for_name(kfunc).is_none() {
                 let kernel_btf = KernelBtf::get();
-                let Some(kind) = kernel_btf
+                let kind = kernel_btf
                     .kfunc_return_ref_family(kfunc)
-                    .map(ref_kind_from_btf_family)
-                else {
-                    return None;
-                };
+                    .map(ref_kind_from_btf_family)?;
                 let mut has_same_family_arg = false;
                 let mut has_non_const_same_family_arg = false;
                 let mut same_family_writable_named_in_count = 0usize;

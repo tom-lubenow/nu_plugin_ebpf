@@ -12,6 +12,8 @@ mod context_helpers;
 mod packet;
 mod trampoline;
 
+use context_helpers::HelperBackedTypedProjection;
+pub(in crate::compiler::ir_to_mir) use packet::TrampolineFieldProjectionLowering;
 use trampoline::TypedProjectionStep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +31,16 @@ enum KnownSourceMatchKind {
     Scalar(ScalarMatchKind),
     NumericScalar,
     NonScalar,
+}
+
+struct I64SteppedRangeMatch {
+    src_vreg: VReg,
+    start: i64,
+    next: i64,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    if_true: BlockId,
+    if_false: BlockId,
 }
 
 #[derive(Debug, Clone)]
@@ -189,10 +201,9 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             op,
             Operator::Math(Math::Add) | Operator::Math(Math::Concatenate)
-        ) {
-            if self.lower_runtime_string_concat(lhs_dst, lhs_vreg, rhs)? {
-                return Ok(());
-            }
+        ) && self.lower_runtime_string_concat(lhs_dst, lhs_vreg, rhs)?
+        {
+            return Ok(());
         }
 
         if matches!(
@@ -504,11 +515,6 @@ impl<'a> HirToMirLowering<'a> {
                 "ends-with operator requires a compile-time known string suffix in eBPF".into(),
             )
         })?;
-        if suffix.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "ends-with operator does not support NUL bytes in the suffix in eBPF".into(),
-            ));
-        }
 
         let lhs_meta = self.get_metadata(lhs_dst).cloned();
         let rhs_meta = self.get_metadata(rhs).cloned();
@@ -895,7 +901,7 @@ impl<'a> HirToMirLowering<'a> {
         allowed_kinds: Option<&[ScalarMatchKind]>,
     ) -> bool {
         if let Some(allowed_kinds) = allowed_kinds {
-            return allowed_kinds.iter().any(|kind| *kind == needle_kind);
+            return allowed_kinds.contains(&needle_kind);
         }
         if let Some(list_kind) = list_kind {
             return needle_kind == list_kind;
@@ -948,11 +954,6 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} operator requires a compile-time known string needle in eBPF"
             ))
         })?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} operator does not support NUL bytes in the string needle in eBPF"
-            )));
-        }
 
         let needle_meta = self.get_metadata(needle_reg).cloned();
         let haystack_meta = self.get_metadata(haystack_reg).cloned();
@@ -1175,12 +1176,24 @@ impl<'a> HirToMirLowering<'a> {
 
         let (val_type, append_max) = match source {
             StringConcatSource::Literal(bytes) => {
-                let append_max = bytes
-                    .iter()
-                    .rposition(|byte| *byte != 0)
-                    .map(|idx| idx + 1)
-                    .unwrap_or(0);
-                (StringAppendType::Literal { bytes }, append_max)
+                let append_max = if bytes.contains(&0) {
+                    bytes.len()
+                } else {
+                    bytes
+                        .iter()
+                        .rposition(|byte| *byte != 0)
+                        .map(|idx| idx + 1)
+                        .unwrap_or(0)
+                };
+                let val_type = if bytes.contains(&0) {
+                    StringAppendType::LiteralExact {
+                        bytes,
+                        len: append_max,
+                    }
+                } else {
+                    StringAppendType::Literal { bytes }
+                };
+                (val_type, append_max)
             }
             StringConcatSource::Slot { slot, max_len } => {
                 if max_len > STRING_APPEND_COPY_CAP {
@@ -1313,11 +1326,10 @@ impl<'a> HirToMirLowering<'a> {
 
     fn compile_time_integer_value(&self, reg: RegId) -> Option<i64> {
         self.get_metadata(reg).and_then(|meta| {
-            meta.literal_int
-                .or_else(|| match meta.constant_value.as_ref() {
-                    Some(Value::Int { val, .. }) => Some(*val),
-                    _ => None,
-                })
+            meta.literal_int.or(match meta.constant_value.as_ref() {
+                Some(Value::Int { val, .. }) => Some(*val),
+                _ => None,
+            })
         })
     }
 
@@ -1651,9 +1663,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let aligned_len = align_to_eight(bytes.len().saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let aligned_len = align_to_eight(bytes.len().saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let slot = self
             .func
             .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
@@ -1789,15 +1799,15 @@ impl<'a> HirToMirLowering<'a> {
 
         let Some(end) = end else {
             if let Some(next) = next {
-                return self.terminate_i64_stepped_range_match(
+                return self.terminate_i64_stepped_range_match(I64SteppedRangeMatch {
                     src_vreg,
                     start,
                     next,
-                    None,
-                    range.operator.inclusion,
+                    end: None,
+                    inclusion: range.operator.inclusion,
                     if_true,
                     if_false,
-                );
+                });
             }
             let lower_cmp = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
@@ -1815,15 +1825,15 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if let Some(next) = next {
-            return self.terminate_i64_stepped_range_match(
+            return self.terminate_i64_stepped_range_match(I64SteppedRangeMatch {
                 src_vreg,
                 start,
                 next,
-                Some(end),
-                range.operator.inclusion,
+                end: Some(end),
+                inclusion: range.operator.inclusion,
                 if_true,
                 if_false,
-            );
+            });
         }
 
         let (lower_op, lower_bound, upper_op, upper_bound) = if start <= end {
@@ -1871,14 +1881,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn terminate_i64_stepped_range_match(
         &mut self,
-        src_vreg: VReg,
-        start: i64,
-        next: i64,
-        end: Option<i64>,
-        inclusion: RangeInclusion,
-        if_true: BlockId,
-        if_false: BlockId,
+        range: I64SteppedRangeMatch,
     ) -> Result<(), CompileError> {
+        let I64SteppedRangeMatch {
+            src_vreg,
+            start,
+            next,
+            end,
+            inclusion,
+            if_true,
+            if_false,
+        } = range;
+
         let raw_step = next.checked_sub(start).ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "Match range pattern step overflows i64 in eBPF".into(),
@@ -2743,6 +2757,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_typed_value_projection(
         &mut self,
         dst_reg: RegId,
@@ -2798,16 +2813,18 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
 
-        if let Some(projected_ty) = self.try_lower_helper_backed_typed_projection(
-            dst_reg,
-            dst_vreg,
-            base_vreg,
-            base_runtime_ty,
-            path_members,
-            path_desc,
-            root_ctx_field,
-            projected_semantics,
-        )? {
+        if let Some(projected_ty) =
+            self.try_lower_helper_backed_typed_projection(HelperBackedTypedProjection {
+                dst_reg,
+                dst_vreg,
+                base_vreg,
+                base_runtime_ty,
+                path_members,
+                path_desc,
+                root_ctx_field,
+                projected_semantics,
+            })?
+        {
             return Ok(projected_ty);
         }
 
@@ -2823,12 +2840,7 @@ impl<'a> HirToMirLowering<'a> {
             {
                 let packet_offset = match member {
                     PathMember::Int { val, .. } => {
-                        let index = usize::try_from(*val).map_err(|_| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "typed field path '{}' requires a non-negative packet scalar index",
-                                path_desc
-                            ))
-                        })?;
+                        let index = *val;
                         base_offset
                             .checked_add(index.checked_mul(*element_size).ok_or_else(|| {
                                 CompileError::UnsupportedInstruction(format!(
@@ -2902,18 +2914,15 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(element_ty.clone());
             }
 
-            loop {
-                let ValueCursor::Pointer {
-                    base_vreg,
-                    address_space,
-                    base_offset,
-                    target_ty,
-                    direct,
-                    trusted_btf,
-                } = &cursor
-                else {
-                    break;
-                };
+            while let ValueCursor::Pointer {
+                base_vreg,
+                address_space,
+                base_offset,
+                target_ty,
+                direct,
+                trusted_btf,
+            } = &cursor
+            {
                 let MirType::Ptr {
                     pointee,
                     address_space: next_space,

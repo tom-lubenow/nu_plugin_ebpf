@@ -379,7 +379,7 @@ impl MapKind {
                 map_name
             ),
             MapKind::Arena => format!(
-                "map '{}' uses arena, but arena map_extra/mmap support is not modeled yet",
+                "map '{}' uses arena; source-level map-define object emission is supported, but generic arena operations and live mmap setup are not modeled yet",
                 map_name
             ),
             _ => format!("map '{}' uses unsupported map kind {}", map_name, self),
@@ -601,6 +601,8 @@ pub struct BitfieldInfo {
 pub enum StringAppendType {
     /// Append a literal string (bytes embedded in MIR)
     Literal { bytes: Vec<u8> },
+    /// Append literal bytes with an explicit logical length, allowing trailing NUL payloads.
+    LiteralExact { bytes: Vec<u8>, len: usize },
     /// Append from a string slot on the stack
     StringSlot { slot: StackSlotId, max_len: usize },
     /// Append an integer converted to decimal
@@ -2619,6 +2621,7 @@ pub struct MirTypeHints {
     pub declared_generic_maps: HashSet<MapRef>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    pub generic_map_extras: HashMap<MapRef, u64>,
     pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     pub generic_map_value_semantics:
         HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,

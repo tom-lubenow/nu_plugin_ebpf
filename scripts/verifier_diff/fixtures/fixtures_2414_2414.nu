@@ -13,6 +13,6 @@ const VERIFIER_DIFF_FIXTURES_2414_2414 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind array-of-maps requires --max-entries for the outer map"
+        error_contains: "map-define --kind array-of-maps requires --max-entries"
     }
 ]

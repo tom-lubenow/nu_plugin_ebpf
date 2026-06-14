@@ -274,7 +274,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         let map_ptr_offset = self.spill_dynamic_map_ptr(map_reg)?;
         let key_reg = self.ensure_reg(key)?;
         let val_reg = self.ensure_reg(val)?;
-        self.compile_dynamic_map_update(
+        self.compile_dynamic_map_update(DynamicMapUpdateCompile {
             map_ptr_offset,
             inner_map,
             key,
@@ -282,7 +282,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             val,
             val_reg,
             flags,
-        )
+        })
     }
 
     pub(super) fn compile_map_delete_inst(

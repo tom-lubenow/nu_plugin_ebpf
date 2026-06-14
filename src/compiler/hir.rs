@@ -325,6 +325,7 @@ pub enum FixedLayoutValueConsumer {
     MathRounding,
     MathAverage,
     MathMedian,
+    MathMode,
     MathFloatUnary,
     MathLog,
     MathVarianceStddev,
@@ -340,9 +341,16 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
-    compile_time_value_flows_to_fixed_layout_consumer_inner(
-        stmts, stmt_index, dst, decl_names, consumer, flow, true, false,
-    )
+    compile_time_value_flows_to_fixed_layout_consumer_inner(FixedLayoutConsumerFlowQuery {
+        stmts,
+        stmt_index,
+        dst,
+        decl_names,
+        consumer,
+        flow,
+        allow_aggregate_transforms: true,
+        list_transforms_only: false,
+    })
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer_without_transforms(
@@ -353,9 +361,16 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer_without_transforms(
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
-    compile_time_value_flows_to_fixed_layout_consumer_inner(
-        stmts, stmt_index, dst, decl_names, consumer, flow, false, false,
-    )
+    compile_time_value_flows_to_fixed_layout_consumer_inner(FixedLayoutConsumerFlowQuery {
+        stmts,
+        stmt_index,
+        dst,
+        decl_names,
+        consumer,
+        flow,
+        allow_aggregate_transforms: false,
+        list_transforms_only: false,
+    })
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer_through_list_transforms(
@@ -366,21 +381,43 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer_through_list_transforms
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
-    compile_time_value_flows_to_fixed_layout_consumer_inner(
-        stmts, stmt_index, dst, decl_names, consumer, flow, true, true,
-    )
+    compile_time_value_flows_to_fixed_layout_consumer_inner(FixedLayoutConsumerFlowQuery {
+        stmts,
+        stmt_index,
+        dst,
+        decl_names,
+        consumer,
+        flow,
+        allow_aggregate_transforms: true,
+        list_transforms_only: true,
+    })
 }
 
-fn compile_time_value_flows_to_fixed_layout_consumer_inner(
-    stmts: &[HirStmt],
+struct FixedLayoutConsumerFlowQuery<'a> {
+    stmts: &'a [HirStmt],
     stmt_index: usize,
     dst: RegId,
-    decl_names: &HashMap<DeclId, String>,
+    decl_names: &'a HashMap<DeclId, String>,
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
     allow_aggregate_transforms: bool,
     list_transforms_only: bool,
+}
+
+fn compile_time_value_flows_to_fixed_layout_consumer_inner(
+    query: FixedLayoutConsumerFlowQuery<'_>,
 ) -> bool {
+    let FixedLayoutConsumerFlowQuery {
+        stmts,
+        stmt_index,
+        dst,
+        decl_names,
+        consumer,
+        flow,
+        allow_aggregate_transforms,
+        list_transforms_only,
+    } = query;
+
     let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
         return false;
     };
@@ -1029,7 +1066,12 @@ fn compile_time_value_consumer_matches(
                 && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
-                && args.flags.iter().all(|flag| flag.as_slice() == b"reverse")
+                && args.flags.iter().all(|flag| {
+                    matches!(
+                        flag.as_slice(),
+                        b"reverse" | b"natural" | b"ignore-case" | b"values"
+                    )
+                })
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Find => {
@@ -1248,6 +1290,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MathMedian => {
             decl_name == Some("math median")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathMode => {
+            decl_name == Some("math mode")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()
@@ -1741,7 +1792,7 @@ const FIXED_ARRAY_STRING_MAX_SIZE: usize = 128;
 fn fixed_array_string_shape_len(byte_len: usize) -> usize {
     let content_len = byte_len.min(FIXED_ARRAY_STRING_MAX_SIZE.saturating_sub(1));
     let aligned_len = (content_len + 1).saturating_add(7) & !7;
-    8 + aligned_len.min(FIXED_ARRAY_STRING_MAX_SIZE).max(16)
+    8 + aligned_len.clamp(16, FIXED_ARRAY_STRING_MAX_SIZE)
 }
 
 fn fixed_array_constant_list_shape(values: &[Value]) -> Option<FixedArrayConstantElementShape> {
@@ -1865,13 +1916,12 @@ pub fn infer_ctx_param_excluding(
 
     // Second pass: find loaded variables that were never stored (parameters)
     for instruction in &ir_block.instructions {
-        if let Instruction::LoadVariable { var_id, .. } = instruction {
-            if !stored_vars.contains(var_id)
-                && !excluded_vars.contains(var_id)
-                && !first_loaded.contains(var_id)
-            {
-                first_loaded.push(*var_id);
-            }
+        if let Instruction::LoadVariable { var_id, .. } = instruction
+            && !stored_vars.contains(var_id)
+            && !excluded_vars.contains(var_id)
+            && !first_loaded.contains(var_id)
+        {
+            first_loaded.push(*var_id);
         }
     }
 
@@ -1888,16 +1938,13 @@ pub fn extract_closure_block_ids(ir_block: &IrBlock) -> Vec<NuBlockId> {
 
     for instruction in &ir_block.instructions {
         match instruction {
-            Instruction::LoadLiteral { lit, .. } => match lit {
-                Literal::Closure(block_id)
-                | Literal::Block(block_id)
-                | Literal::RowCondition(block_id) => {
-                    if !block_ids.contains(block_id) {
-                        block_ids.push(*block_id);
-                    }
-                }
-                _ => {}
-            },
+            Instruction::LoadLiteral {
+                lit:
+                    Literal::Closure(block_id)
+                    | Literal::Block(block_id)
+                    | Literal::RowCondition(block_id),
+                ..
+            } if !block_ids.contains(block_id) => block_ids.push(*block_id),
             Instruction::PushParserInfo { info, .. } => {
                 if let Some(block_id) = info.as_block()
                     && !block_ids.contains(&block_id)
@@ -1917,10 +1964,10 @@ pub fn extract_call_decl_ids(ir_block: &IrBlock) -> Vec<DeclId> {
     let mut decl_ids = Vec::new();
 
     for instruction in &ir_block.instructions {
-        if let Instruction::Call { decl_id, .. } = instruction {
-            if !decl_ids.contains(decl_id) {
-                decl_ids.push(*decl_id);
-            }
+        if let Instruction::Call { decl_id, .. } = instruction
+            && !decl_ids.contains(decl_id)
+        {
+            decl_ids.push(*decl_id);
         }
     }
 

@@ -361,10 +361,10 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_context_label(&self) -> String {
-        if let Some(spec) = self.parsed_program_spec() {
-            if spec.struct_ops_value_type_name().is_none() {
-                return spec.to_string();
-            }
+        if let Some(spec) = self.parsed_program_spec()
+            && spec.struct_ops_value_type_name().is_none()
+        {
+            return spec.to_string();
         }
 
         match self.btf_callable_surface() {
@@ -848,34 +848,7 @@ impl ProbeContext {
                 )
             })?;
 
-        match ret_type {
-            None | Some(TypeInfo::Void) => Ok(None),
-            Some(TypeInfo::Int { size, signed }) => Ok(Some(match (size, signed) {
-                (1, false) => HMType::Bool,
-                (1, true) => HMType::I8,
-                (2, false) => HMType::U16,
-                (2, true) => HMType::I16,
-                (4, false) => HMType::U32,
-                (4, true) => HMType::I32,
-                (8, false) => HMType::U64,
-                (8, true) => HMType::I64,
-                _ => {
-                    return Err(format!(
-                        "struct_ops {}.{} returns an unsupported integer width {}",
-                        value_type_name, self.target, size
-                    ));
-                }
-            })),
-            Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
-            Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => Err(format!(
-                "struct_ops {}.{} returns an aggregate type, which is not supported yet",
-                value_type_name, self.target
-            )),
-            Some(TypeInfo::Unknown) => Err(format!(
-                "struct_ops {}.{} returns an unsupported type",
-                value_type_name, self.target
-            )),
-        }
+        struct_ops_callback_expected_return_type(value_type_name, &self.target, ret_type)
     }
 
     pub(crate) fn resolve_ctx_field_name(&self, field_name: &str) -> Result<CtxField, String> {
@@ -1138,5 +1111,40 @@ impl ProbeContext {
     pub fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
         self.parsed_program_spec()
             .and_then(|spec| spec.socket_projection_access_error(member_name))
+    }
+}
+
+pub(crate) fn struct_ops_callback_expected_return_type(
+    value_type_name: &str,
+    callback_name: &str,
+    ret_type: Option<TypeInfo>,
+) -> Result<Option<HMType>, String> {
+    match ret_type {
+        None | Some(TypeInfo::Void) => Ok(None),
+        Some(TypeInfo::Int { size, signed }) => Ok(Some(match (size, signed) {
+            (1, false) => HMType::Bool,
+            (1, true) => HMType::I8,
+            (2, false) => HMType::U16,
+            (2, true) => HMType::I16,
+            (4, false) => HMType::U32,
+            (4, true) => HMType::I32,
+            (8, false) => HMType::U64,
+            (8, true) => HMType::I64,
+            _ => {
+                return Err(format!(
+                    "struct_ops {}.{} returns an unsupported integer width {}",
+                    value_type_name, callback_name, size
+                ));
+            }
+        })),
+        Some(TypeInfo::Ptr { .. }) => Ok(Some(HMType::I64)),
+        Some(TypeInfo::Struct { .. }) | Some(TypeInfo::Array { .. }) => Err(format!(
+            "struct_ops {}.{} returns an aggregate type, which kernel BPF trampoline function models reject for struct_ops callbacks",
+            value_type_name, callback_name
+        )),
+        Some(TypeInfo::Unknown) => Err(format!(
+            "struct_ops {}.{} returns an unsupported type",
+            value_type_name, callback_name
+        )),
     }
 }

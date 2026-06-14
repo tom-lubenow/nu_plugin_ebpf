@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2497_2502 = [
         error_contains: "str ends-with requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-ends-with-rejects-nul-suffix"
+        name: "core-string-ends-with-nul-suffix"
         category: "language-core"
-        tags: [string str ends-with diagnostics reject]
+        tags: [string str ends-with nul accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str ends-with "\u{0}"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str ends-with does not support NUL bytes in the suffix in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-ends-with-rejects-ignore-case-runtime-input"

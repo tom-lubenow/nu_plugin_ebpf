@@ -10,6 +10,39 @@ use crate::kernel_btf::KernelBtf;
 const CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE: &str =
     "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS";
 
+pub(super) struct HelperSemanticsValidation<'a, 'errors> {
+    pub(super) helper_id: u32,
+    pub(super) args: &'a [MirValue],
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) value_ranges: &'a HashMap<VReg, ValueRange>,
+    pub(super) value_multiple_facts: &'a HashMap<VReg, i64>,
+    pub(super) stack_slot_value_ranges: Option<&'a HashMap<StackSlotId, ValueRange>>,
+    pub(super) direct_ctx_field_sources: &'a HashMap<VReg, CtxField>,
+    pub(super) stack_bounds: &'a HashMap<VReg, StackBounds>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) errors: &'errors mut Vec<TypeError>,
+}
+
+pub(super) struct KfuncSemanticsValidation<'a, 'errors> {
+    pub(super) kfunc: &'a str,
+    pub(super) args: &'a [VReg],
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) value_ranges: &'a HashMap<VReg, ValueRange>,
+    pub(super) direct_ctx_field_sources: &'a HashMap<VReg, CtxField>,
+    pub(super) stack_bounds: &'a HashMap<VReg, StackBounds>,
+    pub(super) errors: &'errors mut Vec<TypeError>,
+}
+
+struct NamedHelperArgShapeValidation<'a, 'errors> {
+    helper: BpfHelper,
+    args: &'a [MirValue],
+    arg_idx: usize,
+    types: &'a HashMap<VReg, MirType>,
+    predicate: fn(&MirType) -> bool,
+    expected: &'a str,
+    errors: &'errors mut Vec<TypeError>,
+}
+
 impl<'a> TypeInference<'a> {
     pub(super) fn mir_type_for_vreg(&self, vreg: VReg, types: &HashMap<VReg, MirType>) -> MirType {
         types.get(&vreg).cloned().unwrap_or(MirType::Unknown)
@@ -457,19 +490,20 @@ impl<'a> TypeInference<'a> {
         (idle.unwrap_or(1), preempt.unwrap_or(2), wait.unwrap_or(4))
     }
 
-    pub(super) fn validate_helper_semantics(
-        &self,
-        helper_id: u32,
-        args: &[MirValue],
-        types: &HashMap<VReg, MirType>,
-        value_ranges: &HashMap<VReg, ValueRange>,
-        value_multiple_facts: &HashMap<VReg, i64>,
-        stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
-        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
-        stack_bounds: &HashMap<VReg, StackBounds>,
-        slot_sizes: &HashMap<StackSlotId, i64>,
-        errors: &mut Vec<TypeError>,
-    ) {
+    pub(super) fn validate_helper_semantics(&self, validation: HelperSemanticsValidation<'_, '_>) {
+        let HelperSemanticsValidation {
+            helper_id,
+            args,
+            types,
+            value_ranges,
+            value_multiple_facts,
+            stack_slot_value_ranges,
+            direct_ctx_field_sources,
+            stack_bounds,
+            slot_sizes,
+            errors,
+        } = validation;
+
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
             return;
         };
@@ -833,15 +867,15 @@ impl<'a> TypeInference<'a> {
             let Some(shape) = helper_named_arg_shape(helper, arg_idx) else {
                 continue;
             };
-            self.validate_named_helper_arg_shape(
+            self.validate_named_helper_arg_shape(NamedHelperArgShapeValidation {
                 helper,
                 args,
                 arg_idx,
                 types,
-                shape.predicate,
-                shape.expected,
+                predicate: shape.predicate,
+                expected: shape.expected,
                 errors,
-            );
+            });
         }
     }
 
@@ -1005,16 +1039,17 @@ impl<'a> TypeInference<'a> {
         }
     }
 
-    fn validate_named_helper_arg_shape(
-        &self,
-        helper: BpfHelper,
-        args: &[MirValue],
-        arg_idx: usize,
-        types: &HashMap<VReg, MirType>,
-        predicate: fn(&MirType) -> bool,
-        expected: &str,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn validate_named_helper_arg_shape(&self, validation: NamedHelperArgShapeValidation<'_, '_>) {
+        let NamedHelperArgShapeValidation {
+            helper,
+            args,
+            arg_idx,
+            types,
+            predicate,
+            expected,
+            errors,
+        } = validation;
+
         let Some(arg) = args.get(arg_idx) else {
             return;
         };
@@ -1037,16 +1072,17 @@ impl<'a> TypeInference<'a> {
         }
     }
 
-    pub(super) fn validate_kfunc_semantics(
-        &self,
-        kfunc: &str,
-        args: &[VReg],
-        types: &HashMap<VReg, MirType>,
-        value_ranges: &HashMap<VReg, ValueRange>,
-        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
-        stack_bounds: &HashMap<VReg, StackBounds>,
-        errors: &mut Vec<TypeError>,
-    ) {
+    pub(super) fn validate_kfunc_semantics(&self, validation: KfuncSemanticsValidation<'_, '_>) {
+        let KfuncSemanticsValidation {
+            kfunc,
+            args,
+            types,
+            value_ranges,
+            direct_ctx_field_sources,
+            stack_bounds,
+            errors,
+        } = validation;
+
         let semantics = kfunc_semantics(kfunc);
         let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
         for (arg_idx, vreg) in args.iter().enumerate() {
@@ -1215,11 +1251,12 @@ impl<'a> TypeInference<'a> {
                 continue;
             };
 
-            match self.mir_type_for_vreg(*ptr_vreg, types) {
-                MirType::Ptr {
-                    address_space,
-                    pointee,
-                } => match address_space {
+            if let MirType::Ptr {
+                address_space,
+                pointee,
+            } = self.mir_type_for_vreg(*ptr_vreg, types)
+            {
+                match address_space {
                     AddressSpace::Stack => {
                         if Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx) {
                             let is_base = stack_bounds
@@ -1255,8 +1292,7 @@ impl<'a> TypeInference<'a> {
                     | AddressSpace::User
                     | AddressSpace::Packet
                     | AddressSpace::Context => {}
-                },
-                _ => {}
+                }
             }
         }
 

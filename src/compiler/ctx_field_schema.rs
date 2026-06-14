@@ -1020,6 +1020,17 @@ pub(crate) fn static_ctx_field_projection_spec(
     raw_ctx_field_projection_spec(field)
 }
 
+pub(crate) fn program_type_ctx_field_projection_spec(
+    program_type: EbpfProgramType,
+    field: &CtxField,
+) -> Option<ContextFieldProjectionSpec> {
+    program_type
+        .base_ctx_field_access_error(field)
+        .is_none()
+        .then(|| raw_ctx_field_projection_spec(field))
+        .flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1089,15 +1100,4 @@ mod tests {
             }
         }
     }
-}
-
-pub(crate) fn program_type_ctx_field_projection_spec(
-    program_type: EbpfProgramType,
-    field: &CtxField,
-) -> Option<ContextFieldProjectionSpec> {
-    program_type
-        .base_ctx_field_access_error(field)
-        .is_none()
-        .then(|| raw_ctx_field_projection_spec(field))
-        .flatten()
 }

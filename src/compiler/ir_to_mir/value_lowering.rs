@@ -176,53 +176,51 @@ impl<'a> HirToMirLowering<'a> {
         declared_type: &Type,
         initial_value: &Value,
     ) -> String {
-        if matches!(initial_value, Value::Nothing { .. }) {
-            if let Some((path, kind)) =
+        if matches!(initial_value, Value::Nothing { .. })
+            && let Some((path, kind)) =
                 Self::find_null_annotated_global_unsupported_shape(declared_type, None)
-            {
-                let prefix = format!(
-                    "leading annotated mutable variable {} declared as {} cannot use `null` as the initializer",
-                    var_id.get(),
-                    declared_type
-                );
-                return match (path, kind) {
-                    (None, NullAnnotatedGlobalUnsupportedKind::String) => format!(
-                        "{prefix} because plain Nushell type annotations do not carry string capacity; use a concrete string initializer to establish capacity, or use `global-define --type string:N` when you need an explicit zero-initialized fixed-capacity string global"
-                    ),
-                    (Some(path), NullAnnotatedGlobalUnsupportedKind::String) => format!(
-                        "{prefix} because nested field '{path}' needs explicit string capacity; use a concrete record initializer to establish nested string capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity string fields"
-                    ),
-                    (None, NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
-                        "{prefix} because plain Nushell type annotations do not carry binary length; use a concrete binary initializer to establish length, or use `global-define --type bytes:N` when you need an explicit zero-initialized fixed-size byte buffer"
-                    ),
-                    (Some(path), NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
-                        "{prefix} because nested field '{path}' needs explicit binary length; use a concrete record initializer to establish nested byte-buffer lengths, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-size byte fields"
-                    ),
-                    (None, NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
-                        "{prefix} because plain Nushell list type annotations do not carry fixed numeric-list capacity; use a concrete list initializer such as `[]` to establish the exact capacity, or use `global-define --type list:int:N` (alias `list:i64:N`) when you need an explicit zero-initialized fixed-capacity numeric list"
-                    ),
-                    (Some(path), NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
-                        "{prefix} because nested field '{path}' needs explicit numeric-list capacity; use a concrete record initializer to establish nested list capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity list fields"
-                    ),
-                    (None, NullAnnotatedGlobalUnsupportedKind::FixedArrayList(_)) => format!(
-                        "{prefix} because plain Nushell list type annotations do not carry fixed-array length; use a concrete list initializer to establish array length and element layout, or use `global-define --type 'array{{...:N}}'` when you need an explicit zero-initialized fixed-array global"
-                    ),
-                    (
-                        Some(path),
-                        NullAnnotatedGlobalUnsupportedKind::FixedArrayList(element_type),
-                    ) => format!(
+        {
+            let prefix = format!(
+                "leading annotated mutable variable {} declared as {} cannot use `null` as the initializer",
+                var_id.get(),
+                declared_type
+            );
+            return match (path, kind) {
+                (None, NullAnnotatedGlobalUnsupportedKind::String) => format!(
+                    "{prefix} because plain Nushell type annotations do not carry string capacity; use a concrete string initializer to establish capacity, or use `global-define --type string:N` when you need an explicit zero-initialized fixed-capacity string global"
+                ),
+                (Some(path), NullAnnotatedGlobalUnsupportedKind::String) => format!(
+                    "{prefix} because nested field '{path}' needs explicit string capacity; use a concrete record initializer to establish nested string capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity string fields"
+                ),
+                (None, NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
+                    "{prefix} because plain Nushell type annotations do not carry binary length; use a concrete binary initializer to establish length, or use `global-define --type bytes:N` when you need an explicit zero-initialized fixed-size byte buffer"
+                ),
+                (Some(path), NullAnnotatedGlobalUnsupportedKind::Binary) => format!(
+                    "{prefix} because nested field '{path}' needs explicit binary length; use a concrete record initializer to establish nested byte-buffer lengths, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-size byte fields"
+                ),
+                (None, NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
+                    "{prefix} because plain Nushell list type annotations do not carry fixed numeric-list capacity; use a concrete list initializer such as `[]` to establish the exact capacity, or use `global-define --type list:int:N` (alias `list:i64:N`) when you need an explicit zero-initialized fixed-capacity numeric list"
+                ),
+                (Some(path), NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
+                    "{prefix} because nested field '{path}' needs explicit numeric-list capacity; use a concrete record initializer to establish nested list capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity list fields"
+                ),
+                (None, NullAnnotatedGlobalUnsupportedKind::FixedArrayList(_)) => format!(
+                    "{prefix} because plain Nushell list type annotations do not carry fixed-array length; use a concrete list initializer to establish array length and element layout, or use `global-define --type 'array{{...:N}}'` when you need an explicit zero-initialized fixed-array global"
+                ),
+                (Some(path), NullAnnotatedGlobalUnsupportedKind::FixedArrayList(element_type)) => {
+                    format!(
                         "{prefix} because nested field '{path}' declared as list<{element_type}> needs explicit fixed-array length; use a concrete record/list initializer to establish the nested array length and element layout, or switch to a named global declared with `global-define --type 'record{{...}}'` containing `array{{...:N}}` if you need zero-initialized fixed-array fields"
-                    ),
-                    (None, NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
-                        "{prefix} because declared type {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
-                        other
-                    ),
-                    (Some(path), NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
-                        "{prefix} because nested field '{path}' declared as {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
-                        other
-                    ),
-                };
-            }
+                    )
+                }
+                (None, NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
+                    "{prefix} because declared type {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
+                    other
+                ),
+                (Some(path), NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
+                    "{prefix} because nested field '{path}' declared as {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
+                    other
+                ),
+            };
         }
 
         format!(
@@ -881,9 +879,7 @@ impl<'a> HirToMirLowering<'a> {
             );
         }
         let content_len = bytes.len().min(max_content_len);
-        let aligned_len = align_to_eight(content_len.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let aligned_len = align_to_eight(content_len.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
 
         // Allocate stack slot for string buffer (aligned for emit)
         let slot = self
@@ -912,8 +908,15 @@ impl<'a> HirToMirLowering<'a> {
             dst_buffer: slot,
             dst_len: len_vreg,
             val: MirValue::Const(0),
-            val_type: StringAppendType::Literal {
-                bytes: literal_bytes,
+            val_type: if bytes[..content_len].contains(&0) {
+                StringAppendType::LiteralExact {
+                    bytes: literal_bytes,
+                    len: content_len,
+                }
+            } else {
+                StringAppendType::Literal {
+                    bytes: literal_bytes,
+                }
             },
         });
 
@@ -946,6 +949,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(array_ty);
         // Also track the literal string value for record field names
         if let Some(s) = string_value {
+            meta.string_char_width_min = Some(s.chars().count());
             meta.literal_string = Some(s);
         }
 
@@ -1183,7 +1187,7 @@ impl<'a> HirToMirLowering<'a> {
                 // Due to eBPF 512-byte stack limit, we cap capacity at 60 elements
                 // (8 bytes per elem + 8 bytes for length = 488 bytes max)
                 const MAX_LIST_CAPACITY: usize = 60;
-                let max_len = (*capacity as usize).min(MAX_LIST_CAPACITY);
+                let max_len = (*capacity).min(MAX_LIST_CAPACITY);
                 let buffer_size = i64_list_buffer_size(max_len); // length + elements
                 let list_ty = MirType::Array {
                     elem: Box::new(MirType::I64),

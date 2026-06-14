@@ -53,6 +53,31 @@ impl<'a> MirToEbpfCompiler<'a> {
                         .push(EbpfInsn::add64_imm(len_reg, effective_len as i32));
                 }
             }
+            StringAppendType::LiteralExact { bytes, len } => {
+                for (i, byte) in bytes.iter().enumerate() {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, len_reg));
+                    self.instructions
+                        .push(EbpfInsn::add64_imm(EbpfReg::R0, i as i32));
+
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R10));
+                    self.instructions
+                        .push(EbpfInsn::add64_imm(EbpfReg::R1, dst_offset as i32));
+                    self.instructions
+                        .push(EbpfInsn::add64_reg(EbpfReg::R1, EbpfReg::R0));
+
+                    self.instructions
+                        .push(EbpfInsn::mov64_imm(EbpfReg::R2, *byte as i32));
+                    self.instructions
+                        .push(EbpfInsn::stxb(EbpfReg::R1, 0, EbpfReg::R2));
+                }
+
+                if *len > 0 {
+                    self.instructions
+                        .push(EbpfInsn::add64_imm(len_reg, *len as i32));
+                }
+            }
 
             StringAppendType::StringSlot { slot, max_len } => {
                 // Copy bytes from source slot to destination

@@ -936,6 +936,14 @@ const CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bi
 const CGROUP_RETVAL_HELPERS: &[BpfHelper] = &[BpfHelper::GetRetval, BpfHelper::SetRetval];
 const IMA_HASH_HELPERS: &[BpfHelper] = &[BpfHelper::ImaInodeHash, BpfHelper::ImaFileHash];
 const SYSCALL_MODELED_HELPERS: &[BpfHelper] = &[
+    BpfHelper::MapLookupElem,
+    BpfHelper::MapUpdateElem,
+    BpfHelper::MapDeleteElem,
+    BpfHelper::MapPushElem,
+    BpfHelper::MapPopElem,
+    BpfHelper::MapPeekElem,
+    BpfHelper::GetCurrentPidTgid,
+    BpfHelper::KtimeGetNs,
     BpfHelper::SysBpf,
     BpfHelper::BtfFindByNameKind,
     BpfHelper::SysClose,
@@ -1285,14 +1293,14 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
 
 impl EbpfProgramType {
     pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        if let Some(policy) = program_specific_helper_policy(*self) {
-            if !helper_list_contains(policy.modeled_helpers, helper) {
-                return Some(format!(
-                    "helper '{}' is not modeled for {} programs",
-                    helper.name(),
-                    policy.label
-                ));
-            }
+        if let Some(policy) = program_specific_helper_policy(*self)
+            && !helper_list_contains(policy.modeled_helpers, helper)
+        {
+            return Some(format!(
+                "helper '{}' is not modeled for {} programs",
+                helper.name(),
+                policy.label
+            ));
         }
         helper_program_surface_spec(helper)
             .filter(|spec| !spec.allows(*self))
@@ -1666,6 +1674,16 @@ impl ProgramSpec {
             }
             ProgramIntrinsic::MapPop => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPopElem);
+            }
+            ProgramIntrinsic::StartTimer => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::GetCurrentPidTgid);
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::KtimeGetNs);
+            }
+            ProgramIntrinsic::StopTimer => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::GetCurrentPidTgid);
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapLookupElem);
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::KtimeGetNs);
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapDeleteElem);
             }
             _ => {}
         }
@@ -2096,6 +2114,34 @@ mod tests {
         assert!(xdp_map_contains.contains(&BpfHelper::MapPeekElem));
         assert!(xdp_map_contains.contains(&BpfHelper::CurrentTaskUnderCgroup));
         assert!(!xdp_map_contains.contains(&BpfHelper::SkbUnderCgroup));
+
+        let syscall = crate::program_spec::ProgramSpec::parse("syscall:demo")
+            .expect("syscall spec should parse");
+        assert_eq!(
+            syscall.intrinsic_backing_helpers(ProgramIntrinsic::MapGet),
+            vec![BpfHelper::MapLookupElem]
+        );
+        assert_eq!(
+            syscall.intrinsic_backing_helpers(ProgramIntrinsic::MapPut),
+            vec![BpfHelper::MapUpdateElem]
+        );
+        assert_eq!(
+            syscall.intrinsic_backing_helpers(ProgramIntrinsic::MapDelete),
+            vec![BpfHelper::MapDeleteElem]
+        );
+        assert_eq!(
+            syscall.intrinsic_backing_helpers(ProgramIntrinsic::StartTimer),
+            vec![BpfHelper::GetCurrentPidTgid, BpfHelper::KtimeGetNs]
+        );
+        assert_eq!(
+            syscall.intrinsic_backing_helpers(ProgramIntrinsic::StopTimer),
+            vec![
+                BpfHelper::GetCurrentPidTgid,
+                BpfHelper::MapLookupElem,
+                BpfHelper::KtimeGetNs,
+                BpfHelper::MapDeleteElem,
+            ]
+        );
 
         let sock_ops = crate::program_spec::ProgramSpec::parse("sock_ops:/sys/fs/cgroup")
             .expect("sock_ops spec should parse");

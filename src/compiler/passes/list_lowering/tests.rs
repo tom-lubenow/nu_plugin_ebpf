@@ -54,7 +54,6 @@ fn test_list_push_is_lowered() {
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let cfg = CFG::build(&func);
-    let mut func = func;
     let pass = ListLowering;
     assert!(pass.run(&mut func, &cfg));
 
@@ -107,7 +106,6 @@ fn test_list_get_const_is_lowered() {
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let cfg = CFG::build(&func);
-    let mut func = func;
     let pass = ListLowering;
     assert!(pass.run(&mut func, &cfg));
 
@@ -147,7 +145,6 @@ fn test_emit_event_list_ptr_is_rematerialized() {
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let cfg = CFG::build(&func);
-    let mut func = func;
     let pass = ListLowering;
     assert!(pass.run(&mut func, &cfg));
 
@@ -201,7 +198,6 @@ fn test_run_with_type_hints_seeds_list_push_temps() {
         .push(MirInst::ListPush { list, item });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let mut func = func;
     let pass = ListLowering;
     let mut hints = HashMap::new();
     assert!(pass.run_with_type_hints(&mut func, &mut hints));
@@ -268,7 +264,6 @@ fn test_run_with_type_hints_seeds_emit_event_tmp_ptr() {
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let mut func = func;
     let pass = ListLowering;
     let mut hints = HashMap::new();
     assert!(pass.run_with_type_hints(&mut func, &mut hints));

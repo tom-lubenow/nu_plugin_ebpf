@@ -67,7 +67,7 @@ fn test_btf_builder_rejects_struct_member_count_overflow() {
     let int_ty = btf.add_int("int", 4, true);
     let members = vec![("field", int_ty); usize::from(u16::MAX) + 1];
 
-    btf.add_btf_map_struct(&members);
+    btf.add_btf_map_struct_with_size(&members, 0);
 
     let err = btf
         .try_build()

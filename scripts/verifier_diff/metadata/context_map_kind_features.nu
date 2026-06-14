@@ -1,0 +1,36 @@
+const MAP_KIND_KERNEL_FEATURES = [
+    { kind: "array", feature: $KERNEL_FEATURE_MAP_ARRAY }
+    { kind: "array-of-maps", feature: $KERNEL_FEATURE_MAP_ARRAY_OF_MAPS }
+    { kind: "arena", feature: $KERNEL_FEATURE_MAP_ARENA }
+    { kind: "bloom-filter", feature: $KERNEL_FEATURE_MAP_BLOOM_FILTER }
+    { kind: "cgroup-storage", feature: $KERNEL_FEATURE_MAP_CGRP_STORAGE }
+    { kind: "cgroup-array", feature: $KERNEL_FEATURE_MAP_CGROUP_ARRAY }
+    { kind: "cgrp-storage", feature: $KERNEL_FEATURE_MAP_CGRP_STORAGE }
+    { kind: "cpumap", feature: $KERNEL_FEATURE_MAP_CPUMAP }
+    { kind: "deprecated-cgroup-storage", feature: $KERNEL_FEATURE_MAP_CGROUP_STORAGE }
+    { kind: "devmap", feature: $KERNEL_FEATURE_MAP_DEVMAP }
+    { kind: "devmap-hash", feature: $KERNEL_FEATURE_MAP_DEVMAP_HASH }
+    { kind: "hash", feature: $KERNEL_FEATURE_MAP_HASH }
+    { kind: "hash-of-maps", feature: $KERNEL_FEATURE_MAP_HASH_OF_MAPS }
+    { kind: "inode-storage", feature: $KERNEL_FEATURE_MAP_INODE_STORAGE }
+    { kind: "lpm-trie", feature: $KERNEL_FEATURE_MAP_LPM_TRIE }
+    { kind: "lru-hash", feature: $KERNEL_FEATURE_MAP_LRU_HASH }
+    { kind: "lru-per-cpu-hash", feature: $KERNEL_FEATURE_MAP_LRU_PERCPU_HASH }
+    { kind: "per-cpu-array", feature: $KERNEL_FEATURE_MAP_PERCPU_ARRAY }
+    { kind: "per-cpu-cgroup-storage", feature: $KERNEL_FEATURE_MAP_PERCPU_CGROUP_STORAGE }
+    { kind: "per-cpu-hash", feature: $KERNEL_FEATURE_MAP_PERCPU_HASH }
+    { kind: "perf-event-array", feature: $KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY }
+    { kind: "prog-array", feature: $KERNEL_FEATURE_MAP_PROG_ARRAY }
+    { kind: "queue", feature: $KERNEL_FEATURE_MAP_QUEUE }
+    { kind: "reuseport-sockarray", feature: $KERNEL_FEATURE_MAP_REUSEPORT_SOCKARRAY }
+    { kind: "ringbuf", feature: $KERNEL_FEATURE_MAP_RINGBUF }
+    { kind: "sk-storage", feature: $KERNEL_FEATURE_MAP_SK_STORAGE }
+    { kind: "sockhash", feature: $KERNEL_FEATURE_MAP_SOCKHASH }
+    { kind: "sockmap", feature: $KERNEL_FEATURE_MAP_SOCKMAP }
+    { kind: "stack", feature: $KERNEL_FEATURE_MAP_STACK }
+    { kind: "stack-trace", feature: $KERNEL_FEATURE_MAP_STACK_TRACE }
+    { kind: "struct-ops", feature: $KERNEL_FEATURE_MAP_STRUCT_OPS }
+    { kind: "task-storage", feature: $KERNEL_FEATURE_MAP_TASK_STORAGE }
+    { kind: "user-ringbuf", feature: $KERNEL_FEATURE_MAP_USER_RINGBUF }
+    { kind: "xskmap", feature: $KERNEL_FEATURE_MAP_XSKMAP }
+]

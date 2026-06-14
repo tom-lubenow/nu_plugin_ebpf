@@ -142,10 +142,10 @@ impl GraphColoringAllocator {
 
     /// Get the representative (alias) for a node
     pub(super) fn get_alias(&self, vreg: VReg) -> VReg {
-        if self.node_state.get(&vreg) == Some(&NodeState::Coalesced) {
-            if let Some(&alias) = self.alias.get(&vreg) {
-                return self.get_alias(alias);
-            }
+        if self.node_state.get(&vreg) == Some(&NodeState::Coalesced)
+            && let Some(&alias) = self.alias.get(&vreg)
+        {
+            return self.get_alias(alias);
         }
         vreg
     }

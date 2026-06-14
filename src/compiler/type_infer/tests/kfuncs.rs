@@ -5268,7 +5268,7 @@ fn test_infer_kfunc_graph_object_reference_return_preserves_payload_schema() {
     assert_eq!(
         TypeInference::precise_kfunc_return_mir_type_for_args(
             "bpf_list_pop_front",
-            &[root_ptr_ty.clone()],
+            std::slice::from_ref(&root_ptr_ty),
         ),
         Some(object_ptr_ty.clone())
     );

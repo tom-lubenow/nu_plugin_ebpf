@@ -3046,15 +3046,12 @@ fn find_lsm_hook_named_arg_candidate() -> Option<(&'static str, &'static str, us
 }
 
 fn find_kfunc_callback_signature_hint_candidate() -> Option<(&'static str, usize)> {
-    for candidate in [
+    [
         ("bpf_rbtree_add_impl", 2usize),
         ("bpf_wq_set_callback_impl", 1usize),
-    ] {
-        if KernelBtf::get().kfunc_signature_hint(candidate.0).is_some() {
-            return Some(candidate);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|candidate| KernelBtf::get().kfunc_signature_hint(candidate.0).is_some())
 }
 
 #[test]

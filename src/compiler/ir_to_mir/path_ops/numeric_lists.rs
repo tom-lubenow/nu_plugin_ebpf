@@ -1,5 +1,39 @@
 use super::super::*;
+use super::MetadataRecordFieldReplacement;
 use crate::compiler::mir::AddressSpace;
+
+pub(super) struct MetadataNumericListPathProjection<'a> {
+    pub(super) dst_reg: RegId,
+    pub(super) dst_vreg: VReg,
+    pub(super) base_vreg: VReg,
+    pub(super) base_runtime_ty: &'a MirType,
+    pub(super) path_members: &'a [PathMember],
+    pub(super) path_desc: &'a str,
+    pub(super) constant_value: Option<Value>,
+    pub(super) root_ctx_field: Option<&'a CtxField>,
+    pub(super) trusted_btf: bool,
+    pub(super) base_semantics: Option<&'a AnnotatedValueSemantics>,
+}
+
+pub(super) struct MaterializedNumericListPathUpdate<'a> {
+    pub(super) src_dst: RegId,
+    pub(super) base_vreg: VReg,
+    pub(super) pointee_ty: &'a MirType,
+    pub(super) path_members: &'a [PathMember],
+    pub(super) new_value: RegId,
+    pub(super) constant_value: Option<Value>,
+    pub(super) path_desc: &'a str,
+}
+
+pub(super) struct ExistingNumericListPathUpdate<'a> {
+    pub(super) src_dst: RegId,
+    pub(super) field_index: usize,
+    pub(super) path_members: &'a [PathMember],
+    pub(super) new_value: RegId,
+    pub(super) constant_value: Option<Value>,
+    pub(super) path_desc: &'a str,
+    pub(super) base_is_materialized_aggregate: bool,
+}
 
 impl<'a> HirToMirLowering<'a> {
     fn metadata_record_numeric_list_len(meta: &RegMetadata, field_name: &str) -> Option<usize> {
@@ -146,17 +180,21 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(super) fn lower_metadata_numeric_list_path_projection(
         &mut self,
-        dst_reg: RegId,
-        dst_vreg: VReg,
-        base_vreg: VReg,
-        base_runtime_ty: &MirType,
-        path_members: &[PathMember],
-        path_desc: &str,
-        constant_value: Option<Value>,
-        root_ctx_field: Option<&CtxField>,
-        trusted_btf: bool,
-        base_semantics: Option<&AnnotatedValueSemantics>,
+        projection: MetadataNumericListPathProjection<'_>,
     ) -> Result<bool, CompileError> {
+        let MetadataNumericListPathProjection {
+            dst_reg,
+            dst_vreg,
+            base_vreg,
+            base_runtime_ty,
+            path_members,
+            path_desc,
+            constant_value,
+            root_ctx_field,
+            trusted_btf,
+            base_semantics,
+        } = projection;
+
         let Some((list_path, index)) = Self::numeric_list_index_path(path_members) else {
             return Ok(false);
         };
@@ -222,14 +260,18 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(super) fn lower_materialized_numeric_list_path_update(
         &mut self,
-        src_dst: RegId,
-        base_vreg: VReg,
-        pointee_ty: &MirType,
-        path_members: &[PathMember],
-        new_value: RegId,
-        constant_value: Option<Value>,
-        path_desc: &str,
+        update: MaterializedNumericListPathUpdate<'_>,
     ) -> Result<bool, CompileError> {
+        let MaterializedNumericListPathUpdate {
+            src_dst,
+            base_vreg,
+            pointee_ty,
+            path_members,
+            new_value,
+            constant_value,
+            path_desc,
+        } = update;
+
         let Some((list_path, index)) = Self::numeric_list_index_path(path_members) else {
             return Ok(false);
         };
@@ -392,14 +434,18 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(super) fn lower_metadata_existing_numeric_list_path_update(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        path_members: &[PathMember],
-        new_value: RegId,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
+        update: ExistingNumericListPathUpdate<'_>,
     ) -> Result<bool, CompileError> {
+        let ExistingNumericListPathUpdate {
+            src_dst,
+            field_index,
+            path_members,
+            new_value,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        } = update;
+
         let [
             PathMember::String {
                 val: field_name, ..
@@ -498,15 +544,15 @@ impl<'a> HirToMirLowering<'a> {
                 val: MirValue::VReg(item_vreg),
                 ty: MirType::I64,
             });
-            self.replace_metadata_record_field(
+            self.replace_metadata_record_field(MetadataRecordFieldReplacement {
                 src_dst,
                 field_index,
-                existing_field,
+                updated_field: existing_field,
                 constant_value,
                 path_desc,
                 base_is_materialized_aggregate,
-                "updated",
-            )?;
+                action: "updated",
+            })?;
             return Ok(true);
         }
 
@@ -520,15 +566,15 @@ impl<'a> HirToMirLowering<'a> {
                 list: updated_field.value_vreg,
                 item: item_vreg,
             });
-            self.replace_metadata_record_field(
+            self.replace_metadata_record_field(MetadataRecordFieldReplacement {
                 src_dst,
                 field_index,
                 updated_field,
                 constant_value,
                 path_desc,
                 base_is_materialized_aggregate,
-                "updated",
-            )?;
+                action: "updated",
+            })?;
             return Ok(true);
         }
 
@@ -601,15 +647,15 @@ impl<'a> HirToMirLowering<'a> {
             is_context: false,
             root_ctx_field: None,
         };
-        self.replace_metadata_record_field(
+        self.replace_metadata_record_field(MetadataRecordFieldReplacement {
             src_dst,
             field_index,
             updated_field,
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-            "updated",
-        )?;
+            action: "updated",
+        })?;
         Ok(true)
     }
 }

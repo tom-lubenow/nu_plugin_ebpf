@@ -28,11 +28,12 @@ impl GraphColoringAllocator {
             };
 
             // If other is now non-move-related and low-degree, move to simplify
-            if !self.is_move_related(other) && self.graph.degree(other) < self.k {
-                if self.freeze_worklist.remove(&other) {
-                    self.simplify_worklist.push_back(other);
-                    self.node_state.insert(other, NodeState::Simplify);
-                }
+            if !self.is_move_related(other)
+                && self.graph.degree(other) < self.k
+                && self.freeze_worklist.remove(&other)
+            {
+                self.simplify_worklist.push_back(other);
+                self.node_state.insert(other, NodeState::Simplify);
             }
         }
     }

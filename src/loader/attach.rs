@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::MapKind;
 use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::ffi::CString;
@@ -214,6 +215,18 @@ pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<L
             LoadError::Load(format!(
                 "Aya-backed live loading of map-in-map runtime map '{}' ({}) is not supported by this loader yet{}; Aya's map creation path does not materialize inner_map_fd from BTF values metadata; use --dry-run to compile",
                 map.name, kind, inner_detail
+            ))
+        })
+    })
+}
+
+pub(super) fn unsupported_live_arena_map_error(object: &EbpfObject) -> Option<LoadError> {
+    object.maps.iter().find_map(|map| {
+        let kind = map.def.map_kind()?;
+        (kind == MapKind::Arena).then(|| {
+            LoadError::Load(format!(
+                "live loading of arena runtime map '{}' is not supported by this loader yet; arena maps require map_extra-aware creation plus userspace mmap setup; use --dry-run to compile",
+                map.name
             ))
         })
     })
@@ -1059,6 +1072,9 @@ impl EbpfState {
         if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
         }
+        if let Some(err) = unsupported_live_arena_map_error(object) {
+            return Err(err);
+        }
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepointWritable
@@ -1092,17 +1108,16 @@ impl EbpfState {
             });
             return self.attach_libbpf_flow_dissector_object(object, pin_group, program, target);
         }
-        if let ProgramSpec::LsmCgroup { target } = &spec {
-            if target.cgroup_path.is_some() {
-                return self.attach_libbpf_lsm_cgroup_object(object, pin_group, program, target);
-            }
+        if let ProgramSpec::LsmCgroup { target } = &spec
+            && target.cgroup_path.is_some()
+        {
+            return self.attach_libbpf_lsm_cgroup_object(object, pin_group, program, target);
         }
-        if let ProgramSpec::CgroupSockAddr { target } = &spec {
-            if target.is_unix() {
-                return self.attach_libbpf_cgroup_sock_addr_unix_object(
-                    object, pin_group, program, target,
-                );
-            }
+        if let ProgramSpec::CgroupSockAddr { target } = &spec
+            && target.is_unix()
+        {
+            return self
+                .attach_libbpf_cgroup_sock_addr_unix_object(object, pin_group, program, target);
         }
         if let Some(err) = unsupported_live_map_in_map_error(object) {
             return Err(err);
@@ -2304,6 +2319,9 @@ impl EbpfState {
         }
 
         if let Some(err) = current_kernel_compatibility_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = unsupported_live_arena_map_error(object) {
             return Err(err);
         }
 

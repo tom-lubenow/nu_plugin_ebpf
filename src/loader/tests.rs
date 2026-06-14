@@ -4,7 +4,8 @@ use super::attach::{
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
     kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
     kernel_minimum_requirement_detail, kernel_object_compatibility_requirement_detail,
-    libbpf_pin_compatible_object, unsupported_live_map_in_map_error,
+    libbpf_pin_compatible_object, unsupported_live_arena_map_error,
+    unsupported_live_map_in_map_error,
 };
 use super::*;
 use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
@@ -1688,7 +1689,7 @@ fn live_map_in_map_fixture_for_program(
     let mut object = object;
     for (index, inner_templates) in extra_inner_templates.into_iter().enumerate() {
         object.programs.push(
-            EbpfProgram::from_bytecode(prog_type, target, &format!("extra_{index}"), vec![])
+            EbpfProgram::from_bytecode(prog_type, target, format!("extra_{index}"), vec![])
                 .with_generic_map_inner_templates(inner_templates)
                 .into_program_section(),
         );
@@ -1798,6 +1799,82 @@ fn test_live_map_in_map_diagnostic_reports_ambiguous_inner_template_metadata() {
                     && msg.contains("--dry-run")
         ),
         "unexpected map-in-map live attach error: {err:?}"
+    );
+}
+
+#[test]
+fn test_live_arena_map_diagnostic_rejects_live_load() {
+    let object = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "arena_live",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "arena_pages".to_string(),
+            def: BpfMapDef::arena(64),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    )
+    .into_object();
+
+    let err =
+        unsupported_live_arena_map_error(&object).expect("live arena diagnostic should reject");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("live loading of arena runtime map 'arena_pages'")
+                    && msg.contains("map_extra-aware creation")
+                    && msg.contains("mmap setup")
+                    && msg.contains("--dry-run")
+        ),
+        "unexpected arena live attach error: {err:?}"
+    );
+}
+
+#[test]
+fn test_attach_rejects_live_arena_map_before_libbpf_dispatch() {
+    let state = EbpfState::new();
+    let object = EbpfProgram::with_maps(
+        EbpfProgramType::RawTracepointWritable,
+        "sys_enter",
+        "arena_libbpf_live",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "arena_pages".to_string(),
+            def: BpfMapDef::arena(64),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    )
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("live arena maps should reject before libbpf dispatch");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("live loading of arena runtime map 'arena_pages'")
+                    && msg.contains("map_extra-aware creation")
+                    && msg.contains("mmap setup")
+                    && msg.contains("--dry-run")
+        ),
+        "unexpected arena live attach error before libbpf dispatch: {err:?}"
     );
 }
 

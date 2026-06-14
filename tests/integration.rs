@@ -472,6 +472,7 @@ mod common_tests {
     #[test]
     fn test_module_compiles() {
         // If this test runs, the module compiled successfully
-        assert!(true);
+        let module_name = std::any::type_name::<nu_plugin_ebpf::EbpfPlugin>();
+        assert!(module_name.contains("EbpfPlugin"));
     }
 }

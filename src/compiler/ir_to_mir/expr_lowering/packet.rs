@@ -15,6 +15,16 @@ pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
     Tcp,
 }
 
+pub(in crate::compiler::ir_to_mir) struct TrampolineFieldProjectionLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) dst_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) ctx_field: &'a CtxField,
+    pub(in crate::compiler::ir_to_mir) spec: TrampolineValueSpec,
+    pub(in crate::compiler::ir_to_mir) projection: &'a TrampolineFieldProjection,
+    pub(in crate::compiler::ir_to_mir) root_runtime_ty: &'a MirType,
+    pub(in crate::compiler::ir_to_mir) projected_ty: &'a MirType,
+    pub(in crate::compiler::ir_to_mir) path_desc: &'a str,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn packet_load_ptr_vreg(
         &mut self,
@@ -38,14 +48,18 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(in crate::compiler::ir_to_mir) fn lower_trampoline_field_projection(
         &mut self,
-        dst_vreg: VReg,
-        ctx_field: &CtxField,
-        spec: TrampolineValueSpec,
-        projection: &TrampolineFieldProjection,
-        root_runtime_ty: &MirType,
-        projected_ty: &MirType,
-        path_desc: &str,
+        lowering: TrampolineFieldProjectionLowering<'_>,
     ) -> Result<Option<KernelBtfFieldAddr>, CompileError> {
+        let TrampolineFieldProjectionLowering {
+            dst_vreg,
+            ctx_field,
+            spec,
+            projection,
+            root_runtime_ty,
+            projected_ty,
+            path_desc,
+        } = lowering;
+
         let projected_by_ref =
             matches!(projected_ty, MirType::Array { .. } | MirType::Struct { .. });
         let mut kernel_btf_field_addr = None;
@@ -753,12 +767,7 @@ impl<'a> HirToMirLowering<'a> {
                 )))
             }
             (MirType::Array { elem, len }, PathMember::Int { val, .. }) => {
-                let index = usize::try_from(*val).map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "typed field path '{}' requires a non-negative array index",
-                        path_desc
-                    ))
-                })?;
+                let index = *val;
                 if index >= *len {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "typed field path '{}' index {} is out of bounds (len {})",

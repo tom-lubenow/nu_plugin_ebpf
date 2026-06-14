@@ -32,16 +32,29 @@ pub(super) fn apply_phi_edge_inst(
     core::apply_phi_edge_inst(dst, src, types, state);
 }
 
-pub(super) fn apply_inst(
-    inst: &MirInst,
-    types: &HashMap<VReg, MirType>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct ApplyInst<'a, 'state, 'errors> {
+    pub(super) inst: &'a MirInst,
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) subfn_summaries: &'a HashMap<SubfunctionId, SubfunctionSummary>,
+    pub(super) program: Option<&'a ProgramTypeInfo>,
+    pub(super) probe_ctx: Option<&'a ProbeContext>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_inst(apply: ApplyInst<'_, '_, '_>) {
+    let ApplyInst {
+        inst,
+        types,
+        slot_sizes,
+        subfn_summaries,
+        program,
+        probe_ctx,
+        state,
+        errors,
+    } = apply;
+
     match inst {
         MirInst::Copy { dst, src } => {
             apply_copy_inst(*dst, src, types, slot_sizes, state);
@@ -62,7 +75,16 @@ pub(super) fn apply_inst(
             offset,
             ty,
         } => {
-            apply_load_slot_inst(*dst, *slot, *offset, ty, types, slot_sizes, state, errors);
+            apply_load_slot_inst(LoadSlotApply {
+                dst: *dst,
+                slot: *slot,
+                offset: *offset,
+                ty,
+                types,
+                slot_sizes,
+                state,
+                errors,
+            });
         }
         MirInst::StoreSlot {
             slot,
@@ -79,9 +101,17 @@ pub(super) fn apply_inst(
             apply_unary_inst(*dst, *op, src, state);
         }
         MirInst::CallHelper { dst, helper, args } => {
-            apply_call_helper_inst(
-                *dst, *helper, args, types, slot_sizes, program, probe_ctx, state, errors,
-            );
+            apply_call_helper_inst(CallHelperApply {
+                dst: *dst,
+                helper: *helper,
+                args,
+                types,
+                slot_sizes,
+                program,
+                probe_ctx,
+                state,
+                errors,
+            });
         }
         MirInst::LoadMapFd { dst, map } => {
             apply_typed_dst_inst(*dst, types, state);
@@ -93,12 +123,21 @@ pub(super) fn apply_inst(
         MirInst::CallKfunc {
             dst, kfunc, args, ..
         } => {
-            apply_call_kfunc_inst(*dst, kfunc, args, types, program, probe_ctx, state, errors);
+            apply_call_kfunc_inst(CallKfuncApply {
+                dst: *dst,
+                kfunc,
+                args,
+                types,
+                program,
+                probe_ctx,
+                state,
+                errors,
+            });
         }
         MirInst::CallSubfn { dst, subfn, args } => {
-            apply_call_subfn_inst(
-                *dst,
-                *subfn,
+            apply_call_subfn_inst(CallSubfnApply {
+                dst: *dst,
+                subfn: *subfn,
                 args,
                 types,
                 slot_sizes,
@@ -106,7 +145,7 @@ pub(super) fn apply_inst(
                 probe_ctx,
                 state,
                 errors,
-            );
+            });
         }
         MirInst::StrCmp { dst, .. } | MirInst::StopTimer { dst, .. } => {
             apply_typed_dst_inst(*dst, types, state);
@@ -147,9 +186,16 @@ pub(super) fn apply_inst(
             apply_list_get_inst(*dst, *list, idx, types, state, errors);
         }
         MirInst::LoadCtxField { dst, field, slot } => {
-            apply_load_ctx_field_inst(
-                *dst, field, *slot, probe_ctx, types, slot_sizes, state, errors,
-            );
+            apply_load_ctx_field_inst(LoadCtxFieldApply {
+                dst: *dst,
+                field,
+                slot: *slot,
+                probe_ctx,
+                types,
+                slot_sizes,
+                state,
+                errors,
+            });
         }
         MirInst::StoreCtxField { target, val, ty } => {
             apply_store_ctx_field_inst(target, val, ty, probe_ctx, state, slot_sizes, errors);
@@ -180,9 +226,16 @@ pub(super) fn apply_inst(
             val,
             flags,
         } => {
-            apply_map_update_dynamic_inst(
-                *map_ptr, inner_map, *key, *val, *flags, types, state, errors,
-            );
+            apply_map_update_dynamic_inst(MapUpdateDynamicApply {
+                map_ptr: *map_ptr,
+                inner_map,
+                key: *key,
+                val: *val,
+                flags: *flags,
+                types,
+                state,
+                errors,
+            });
         }
         MirInst::MapDelete { map, key } => {
             apply_map_delete_inst(map, *key, types, state, errors);

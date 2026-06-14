@@ -276,6 +276,29 @@ impl BtfBuilder {
         self.add_ptr(array_type)
     }
 
+    /// Create a __ulong(name, val) type pattern with a single ENUM64 value.
+    ///
+    /// libbpf reads 64-bit BTF map attributes such as `map_extra` from a
+    /// one-element ENUM/ENUM64 type instead of the pointer-to-array shape used
+    /// by `__uint`.
+    pub fn add_ulong_type(&mut self, name: &str, value: u64) -> u32 {
+        let type_name_off = self.add_string(name);
+        let value_name_off = self.add_string("__value");
+        let type_id = self.alloc_type_id("enum64 map attribute");
+        let info = self.encode_info_for_len(BtfKind::Enum64, 1, false, "enum64 value");
+
+        self.types.extend_from_slice(&type_name_off.to_le_bytes());
+        self.types.extend_from_slice(&info.to_le_bytes());
+        self.types.extend_from_slice(&8u32.to_le_bytes());
+
+        self.types.extend_from_slice(&value_name_off.to_le_bytes());
+        self.types.extend_from_slice(&(value as u32).to_le_bytes());
+        self.types
+            .extend_from_slice(&((value >> 32) as u32).to_le_bytes());
+
+        type_id
+    }
+
     /// Add a struct type, return its type ID
     ///
     /// Members are: (name, type_id, size_in_bytes)
@@ -343,43 +366,6 @@ impl BtfBuilder {
             self.types.extend_from_slice(&member_name_off.to_le_bytes());
             self.types.extend_from_slice(&member_type.to_le_bytes());
             let offset_bits = self.byte_offset_to_bits(*member_offset_bytes, "struct member");
-            self.types.extend_from_slice(&offset_bits.to_le_bytes());
-        }
-
-        type_id
-    }
-
-    /// Add an anonymous struct (no name) with pointer-sized members
-    ///
-    /// This is used for BTF-defined maps where all fields are pointers.
-    /// Members are: (name, type_id) - all members are pointer-sized (8 bytes)
-    pub fn add_btf_map_struct(&mut self, members: &[(&str, u32)]) -> u32 {
-        let type_id = self.alloc_type_id("BTF map struct");
-
-        // Size = number of members * 8 (pointer size)
-        let size = match members.len().checked_mul(8) {
-            Some(size) => self.checked_u32_from_usize(size, "BTF map struct size"),
-            None => {
-                self.record_error(format!(
-                    "BTF map struct member count {} exceeds size encoding limit",
-                    members.len()
-                ));
-                0
-            }
-        };
-
-        // btf_type header (name_off = 0 for anonymous struct)
-        self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off = 0 (anonymous)
-        let info = self.encode_info_for_len(BtfKind::Struct, members.len(), false, "map member");
-        self.types.extend_from_slice(&info.to_le_bytes());
-        self.types.extend_from_slice(&size.to_le_bytes());
-
-        // Member entries (each pointer is 8 bytes)
-        for (idx, (member_name, member_type)) in members.iter().enumerate() {
-            let member_name_off = self.add_string(member_name);
-            self.types.extend_from_slice(&member_name_off.to_le_bytes());
-            self.types.extend_from_slice(&member_type.to_le_bytes());
-            let offset_bits = self.pointer_member_offset_bits(idx, "map member");
             self.types.extend_from_slice(&offset_bits.to_le_bytes());
         }
 

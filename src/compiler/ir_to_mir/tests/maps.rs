@@ -3285,7 +3285,10 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
         ),
         ("struct-ops", "reserved for struct_ops objects"),
         ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
-        ("arena", "arena map_extra/mmap support is not modeled yet"),
+        (
+            "arena",
+            "generic arena operations and live mmap setup are not modeled yet",
+        ),
         ("deprecated-cgroup-storage", "deprecated cgroup-storage map"),
         ("per-cpu-cgroup-storage", "deprecated cgroup-storage map"),
     ] {
@@ -4096,6 +4099,88 @@ fn test_map_define_max_entries_registers_capacity() {
         result.type_hints.generic_map_max_entries.get(&map_ref),
         Some(&128)
     );
+}
+
+#[test]
+fn test_map_define_arena_registers_capacity_and_map_extra() {
+    let map_define_decl = DeclId::new(41);
+    let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("arena_pages".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("arena".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(64),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0x100000000),
+                },
+                HirStmt::Call {
+                    decl_id: map_define_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(1)),
+                            (b"max-entries".to_vec(), RegId::new(2)),
+                            (b"map-extra".to_vec(), RegId::new(3)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram {
+        main: func,
+        closures: HashMap::new(),
+        closure_param_sources: HashMap::new(),
+        captures: Vec::new(),
+        ctx_param: None,
+        annotated_mut_globals: Vec::new(),
+    };
+    let map_ref = MapRef {
+        name: "arena_pages".to_string(),
+        kind: MapKind::Arena,
+    };
+
+    let result = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("arena map-define should lower");
+
+    assert_eq!(result.generic_map_max_entries.get(&map_ref), Some(&64));
+    assert_eq!(result.generic_map_extras.get(&map_ref), Some(&0x100000000));
+    assert!(result.type_hints.declared_generic_maps.contains(&map_ref));
+    assert!(!result.generic_map_value_types.contains_key(&map_ref));
 }
 
 #[test]

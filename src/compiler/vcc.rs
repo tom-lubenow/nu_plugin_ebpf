@@ -599,6 +599,12 @@ pub struct VccFunction {
     reg_count: u32,
 }
 
+impl Default for VccFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VccFunction {
     pub fn new() -> Self {
         let entry = VccBlockId(0);
@@ -778,13 +784,13 @@ fn verify_mir_with_subfunction_summaries_impl(
 ) -> Result<(), Vec<VccError>> {
     let effective_program = probe_ctx.map(|ctx| ctx.program_info()).or(program);
 
-    if let Some(program) = effective_program {
-        if let Err(errors) = validate_program_capabilities_for_info(func, program) {
-            return Err(errors
-                .into_iter()
-                .map(|err| VccError::new(VccErrorKind::UnsupportedInstruction, err.message))
-                .collect());
-        }
+    if let Some(program) = effective_program
+        && let Err(errors) = validate_program_capabilities_for_info(func, program)
+    {
+        return Err(errors
+            .into_iter()
+            .map(|err| VccError::new(VccErrorKind::UnsupportedInstruction, err.message))
+            .collect());
     }
 
     if func.param_count > 5 {
@@ -803,9 +809,7 @@ fn verify_mir_with_subfunction_summaries_impl(
             .collect());
     }
     let total_vregs = (func.vreg_count as usize).max(func.param_count);
-    if let Err(errors) = validate_type_map_vregs(types, total_vregs) {
-        return Err(errors);
-    }
+    validate_type_map_vregs(types, total_vregs)?;
     let empty_map_value_types = HashMap::new();
     let mut early_errors = check_generic_map_layout_constraints(
         func,
@@ -1208,9 +1212,7 @@ fn update_list_operand_facts(
             MirInst::Phi { args, .. } => {
                 let mut merged = None;
                 for (_, reg) in args {
-                    let Some(fact) = facts.get(reg).copied() else {
-                        return None;
-                    };
+                    let fact = facts.get(reg).copied()?;
                     match merged {
                         None => merged = Some(fact),
                         Some(existing) if existing == fact => {}

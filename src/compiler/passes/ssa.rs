@@ -55,6 +55,14 @@ struct SsaBuilder<'a> {
     original_vregs: HashSet<VReg>,
 }
 
+struct SsaHintContext<'a, 'hints> {
+    probe_ctx: Option<&'a ProbeContext>,
+    original_hints: &'a HashMap<VReg, MirType>,
+    stack_slot_hints: &'a HashMap<StackSlotId, MirType>,
+    generic_map_value_types: &'a HashMap<MapRef, MirType>,
+    ssa_hints: &'hints mut HashMap<VReg, MirType>,
+}
+
 impl<'a> SsaBuilder<'a> {
     fn new(func: &'a mut MirFunction, cfg: &'a CFG) -> Self {
         Self {
@@ -226,15 +234,14 @@ impl<'a> SsaBuilder<'a> {
         ssa_hints: &mut HashMap<VReg, MirType>,
     ) {
         let dom_children = self.build_dominator_tree_children();
-        self.rename_block_with_hints(
-            self.cfg.entry,
-            &dom_children,
+        let mut hints = SsaHintContext {
             probe_ctx,
             original_hints,
             stack_slot_hints,
             generic_map_value_types,
             ssa_hints,
-        );
+        };
+        self.rename_block_with_hints(self.cfg.entry, &dom_children, &mut hints);
     }
 
     /// Build a map of block -> children in dominator tree
@@ -295,15 +302,15 @@ impl<'a> SsaBuilder<'a> {
             self.func.blocks[block_idx].instructions[i] = new_inst;
 
             // Then, handle definitions - create new version
-            if let Some(def_vreg) = self.func.blocks[block_idx].instructions[i].def() {
-                if self.original_vregs.contains(&def_vreg) {
-                    let orig_vreg = self.get_original_vreg(def_vreg);
-                    let new_vreg = self.new_version(orig_vreg);
-                    *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
+            if let Some(def_vreg) = self.func.blocks[block_idx].instructions[i].def()
+                && self.original_vregs.contains(&def_vreg)
+            {
+                let orig_vreg = self.get_original_vreg(def_vreg);
+                let new_vreg = self.new_version(orig_vreg);
+                *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
 
-                    // Update the instruction's destination
-                    update_def(&mut self.func.blocks[block_idx].instructions[i], new_vreg);
-                }
+                // Update the instruction's destination
+                update_def(&mut self.func.blocks[block_idx].instructions[i], new_vreg);
             }
         }
 
@@ -338,11 +345,7 @@ impl<'a> SsaBuilder<'a> {
         &mut self,
         block_id: BlockId,
         dom_children: &HashMap<BlockId, Vec<BlockId>>,
-        probe_ctx: Option<&ProbeContext>,
-        original_hints: &HashMap<VReg, MirType>,
-        stack_slot_hints: &HashMap<StackSlotId, MirType>,
-        generic_map_value_types: &HashMap<MapRef, MirType>,
-        ssa_hints: &mut HashMap<VReg, MirType>,
+        hints: &mut SsaHintContext<'_, '_>,
     ) {
         let mut pushed_counts: HashMap<VReg, usize> = HashMap::new();
 
@@ -369,22 +372,18 @@ impl<'a> SsaBuilder<'a> {
             let new_inst = self.rename_uses(&self.func.blocks[block_idx].instructions[i].clone());
             self.func.blocks[block_idx].instructions[i] = new_inst;
 
-            if let Some(def_vreg) = self.func.blocks[block_idx].instructions[i].def() {
-                if self.original_vregs.contains(&def_vreg) {
-                    let orig_vreg = self.get_original_vreg(def_vreg);
-                    let new_vreg = self.new_version(orig_vreg);
-                    *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
-                    update_def(&mut self.func.blocks[block_idx].instructions[i], new_vreg);
-                    self.record_ssa_hint_for_def(
-                        &self.func.blocks[block_idx].instructions[i],
-                        orig_vreg,
-                        probe_ctx,
-                        original_hints,
-                        stack_slot_hints,
-                        generic_map_value_types,
-                        ssa_hints,
-                    );
-                }
+            if let Some(def_vreg) = self.func.blocks[block_idx].instructions[i].def()
+                && self.original_vregs.contains(&def_vreg)
+            {
+                let orig_vreg = self.get_original_vreg(def_vreg);
+                let new_vreg = self.new_version(orig_vreg);
+                *pushed_counts.entry(orig_vreg).or_insert(0) += 1;
+                update_def(&mut self.func.blocks[block_idx].instructions[i], new_vreg);
+                self.record_ssa_hint_for_def(
+                    &self.func.blocks[block_idx].instructions[i],
+                    orig_vreg,
+                    &mut *hints,
+                );
             }
         }
 
@@ -398,15 +397,7 @@ impl<'a> SsaBuilder<'a> {
 
         if let Some(children) = dom_children.get(&block_id) {
             for &child in children {
-                self.rename_block_with_hints(
-                    child,
-                    dom_children,
-                    probe_ctx,
-                    original_hints,
-                    stack_slot_hints,
-                    generic_map_value_types,
-                    ssa_hints,
-                );
+                self.rename_block_with_hints(child, dom_children, &mut *hints);
             }
         }
 
@@ -492,30 +483,31 @@ impl<'a> SsaBuilder<'a> {
         &self,
         inst: &MirInst,
         orig_vreg: VReg,
-        probe_ctx: Option<&ProbeContext>,
-        original_hints: &HashMap<VReg, MirType>,
-        stack_slot_hints: &HashMap<StackSlotId, MirType>,
-        generic_map_value_types: &HashMap<MapRef, MirType>,
-        ssa_hints: &mut HashMap<VReg, MirType>,
+        hints: &mut SsaHintContext<'_, '_>,
     ) {
-        let map_value_types =
-            infer_generic_map_value_types(self.func, ssa_hints, Some(generic_map_value_types));
+        let map_value_types = infer_generic_map_value_types(
+            self.func,
+            &*hints.ssa_hints,
+            Some(hints.generic_map_value_types),
+        );
         let inferred = infer_instruction_def_type(
             inst,
-            probe_ctx,
-            ssa_hints,
-            stack_slot_hints,
+            hints.probe_ctx,
+            &*hints.ssa_hints,
+            hints.stack_slot_hints,
             &map_value_types,
         )
         .map(|(dst, ty, _)| (dst, ty))
         .or_else(|| {
-            (self.def_counts.get(&orig_vreg).copied() == Some(1))
-                .then(|| original_hints.get(&orig_vreg).cloned())
-                .flatten()
-                .and_then(|ty| inst.def().map(|dst| (dst, ty)))
+            if self.def_counts.get(&orig_vreg).copied() == Some(1) {
+                inst.def()
+                    .zip(hints.original_hints.get(&orig_vreg).cloned())
+            } else {
+                None
+            }
         });
         if let Some((dst, ty)) = inferred {
-            ssa_hints.insert(dst, ty);
+            hints.ssa_hints.insert(dst, ty);
         }
     }
 

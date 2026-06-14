@@ -610,13 +610,26 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 let previous_call_result_metadata_only = self.current_call_result_metadata_only;
+                let previous_call_result_type_metadata_only =
+                    self.current_call_result_type_metadata_only;
                 let previous_call_result_list_shape_metadata_only =
                     self.current_call_result_list_shape_metadata_only;
                 let previous_call_result_list_transform_metadata_only =
                     self.current_call_result_list_transform_metadata_only;
+                let previous_call_result_direct_list_projection =
+                    self.current_call_result_direct_list_projection;
                 self.current_call_result_metadata_only = match stmt {
                     HirStmt::Call { src_dst, .. } => self
                         .call_result_flows_to_metadata_only_consumer(
+                            &block.stmts,
+                            stmt_index,
+                            *src_dst,
+                        ),
+                    _ => false,
+                };
+                self.current_call_result_type_metadata_only = match stmt {
+                    HirStmt::Call { src_dst, .. } => self
+                        .call_result_flows_to_type_metadata_only_consumer(
                             &block.stmts,
                             stmt_index,
                             *src_dst,
@@ -641,12 +654,25 @@ impl<'a> HirToMirLowering<'a> {
                         ),
                     _ => false,
                 };
+                self.current_call_result_direct_list_projection = match stmt {
+                    HirStmt::Call { src_dst, .. } => self
+                        .call_result_direct_list_projection_consumer(
+                            &block.stmts,
+                            stmt_index,
+                            *src_dst,
+                        ),
+                    _ => None,
+                };
                 let result = self.lower_stmt(stmt);
                 self.current_call_result_metadata_only = previous_call_result_metadata_only;
+                self.current_call_result_type_metadata_only =
+                    previous_call_result_type_metadata_only;
                 self.current_call_result_list_shape_metadata_only =
                     previous_call_result_list_shape_metadata_only;
                 self.current_call_result_list_transform_metadata_only =
                     previous_call_result_list_transform_metadata_only;
+                self.current_call_result_direct_list_projection =
+                    previous_call_result_direct_list_projection;
                 result?;
             }
             if self.current_block_has_real_terminator() {
@@ -1295,6 +1321,22 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn is_compile_time_only_math_mode_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::MathMode,
+            CompileTimeValueFlow::AggregateBuilder,
+        )
+    }
+
     fn is_compile_time_only_math_average_value(
         &self,
         stmts: &[HirStmt],
@@ -1468,8 +1510,8 @@ impl<'a> HirToMirLowering<'a> {
 
     fn append_prepend_item_call_args_touch_reg(args: &HirCallArgs, reg: RegId) -> bool {
         args.pipeline_input == Some(reg)
-            || args.positional.iter().any(|arg| *arg == reg)
-            || args.rest.iter().any(|arg| *arg == reg)
+            || args.positional.contains(&reg)
+            || args.rest.contains(&reg)
             || args.named.iter().any(|(_, arg)| *arg == reg)
     }
 
@@ -1540,6 +1582,7 @@ impl<'a> HirToMirLowering<'a> {
             || self.is_compile_time_only_math_rounding_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_average_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_median_value(stmts, stmt_index, dst)
+            || self.is_compile_time_only_math_mode_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_float_unary_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_log_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_variance_stddev_value(stmts, stmt_index, dst)
@@ -1571,6 +1614,7 @@ impl<'a> HirToMirLowering<'a> {
             FixedLayoutValueConsumer::Compact,
             FixedLayoutValueConsumer::Fill,
             FixedLayoutValueConsumer::Describe,
+            FixedLayoutValueConsumer::MathMode,
         ]
         .into_iter()
         .any(|consumer| {
@@ -1583,6 +1627,22 @@ impl<'a> HirToMirLowering<'a> {
                 CompileTimeValueFlow::Direct,
             )
         })
+    }
+
+    fn call_result_flows_to_type_metadata_only_consumer(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::Describe,
+            CompileTimeValueFlow::Direct,
+        )
     }
 
     fn call_result_flows_to_list_shape_metadata_only_consumer(
@@ -1642,6 +1702,108 @@ impl<'a> HirToMirLowering<'a> {
                 CompileTimeValueFlow::Direct,
             )
         })
+    }
+
+    fn call_result_direct_list_projection_consumer(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> Option<DirectListProjection> {
+        let next_index = stmt_index.saturating_add(1);
+        let HirStmt::Call {
+            decl_id,
+            args,
+            src_dst: next_dst,
+            ..
+        } = stmts.get(next_index)?
+        else {
+            return None;
+        };
+        if args.pipeline_input != Some(dst)
+            || !args.rest.is_empty()
+            || !args.named.is_empty()
+            || !args.flags.is_empty()
+            || !args.parser_info.is_empty()
+        {
+            return None;
+        }
+
+        let projection = match self.decl_names.get(decl_id).map(String::as_str) {
+            Some("first") if args.positional.is_empty() => DirectListProjection::First,
+            Some("last") if args.positional.is_empty() => DirectListProjection::Last,
+            Some("get") if args.positional.len() == 1 => {
+                let index = args.positional.first().and_then(|arg| {
+                    self.get_metadata(*arg).and_then(|meta| {
+                        meta.literal_int.or_else(|| {
+                            meta.cell_path
+                                .as_ref()
+                                .and_then(|path| match path.members.as_slice() {
+                                    [PathMember::Int { val, .. }] => Some(*val as i64),
+                                    _ => None,
+                                })
+                        })
+                    })
+                })?;
+                DirectListProjection::Index(index)
+            }
+            Some("reverse") if args.positional.is_empty() => {
+                let HirStmt::Call {
+                    decl_id: consumer_decl_id,
+                    args: consumer_args,
+                    ..
+                } = stmts.get(next_index.saturating_add(1))?
+                else {
+                    return None;
+                };
+                if consumer_args.pipeline_input != Some(*next_dst)
+                    || !consumer_args.rest.is_empty()
+                    || !consumer_args.named.is_empty()
+                    || !consumer_args.flags.is_empty()
+                    || !consumer_args.parser_info.is_empty()
+                {
+                    return None;
+                }
+                match self.decl_names.get(consumer_decl_id).map(String::as_str) {
+                    Some("first") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::ReverseFirst
+                    }
+                    Some("last") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::ReverseLast
+                    }
+                    Some("get") if consumer_args.positional.len() == 1 => {
+                        let index = consumer_args.positional.first().and_then(|arg| {
+                            self.get_metadata(*arg).and_then(|meta| {
+                                meta.literal_int.or_else(|| {
+                                    meta.cell_path.as_ref().and_then(|path| {
+                                        match path.members.as_slice() {
+                                            [PathMember::Int { val, .. }] => Some(*val as i64),
+                                            _ => None,
+                                        }
+                                    })
+                                })
+                            })
+                        })?;
+                        DirectListProjection::ReverseIndex(index)
+                    }
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+
+        let reuse_start = match projection {
+            DirectListProjection::ReverseFirst
+            | DirectListProjection::ReverseLast
+            | DirectListProjection::ReverseIndex(_) => stmt_index.saturating_add(3),
+            _ => stmt_index.saturating_add(2),
+        };
+        let old_value_reused = stmts
+            .get(reuse_start..)
+            .into_iter()
+            .flatten()
+            .any(|stmt| Self::append_prepend_item_stmt_touches_reg(stmt, dst));
+        (!old_value_reused).then_some(projection)
     }
 
     fn lower_compile_time_only_list_push(
@@ -2021,12 +2183,24 @@ impl<'a> HirToMirLowering<'a> {
                             .unwrap()
                             .as_bytes()
                             .to_vec();
-                        let append_max = bytes
-                            .iter()
-                            .rposition(|b| *b != 0)
-                            .map(|idx| idx + 1)
-                            .unwrap_or(0);
-                        (StringAppendType::Literal { bytes }, append_max)
+                        let append_max = if bytes.contains(&0) {
+                            bytes.len()
+                        } else {
+                            bytes
+                                .iter()
+                                .rposition(|b| *b != 0)
+                                .map(|idx| idx + 1)
+                                .unwrap_or(0)
+                        };
+                        let val_type = if bytes.contains(&0) {
+                            StringAppendType::LiteralExact {
+                                bytes,
+                                len: append_max,
+                            }
+                        } else {
+                            StringAppendType::Literal { bytes }
+                        };
+                        (val_type, append_max)
                     } else {
                         // Default to integer
                         (StringAppendType::Integer, MAX_INT_STRING_LEN)

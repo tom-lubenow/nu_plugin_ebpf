@@ -37,6 +37,7 @@ static KERNEL_BTF: OnceLock<KernelBtf> = OnceLock::new();
 
 /// Errors that can occur when working with kernel BTF
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum BtfError {
     /// BTF is not available on this system
     NotAvailable,
@@ -205,6 +206,12 @@ enum FunctionListResult {
     NotAvailable,
 }
 
+type FunctionArgTypeInfoCache =
+    RwLock<HashMap<(String, usize), Result<Option<TypeInfo>, BtfError>>>;
+type KfuncPointerRefFamilyMap = HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>;
+type KfuncPointerIndexPairMap = HashMap<String, Vec<(usize, usize)>>;
+type KfuncStackObjectArgMap = HashMap<String, Vec<(usize, u32, String)>>;
+
 /// Service for querying kernel type information
 ///
 /// This is a singleton that provides access to:
@@ -229,8 +236,7 @@ pub struct KernelBtf {
     /// Cached per-function trampoline layouts for BTF-backed tracing programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
     /// Cached exact kernel-BTF argument type info by function name and argument index.
-    function_arg_type_info_cache:
-        RwLock<HashMap<(String, usize), Result<Option<TypeInfo>, BtfError>>>,
+    function_arg_type_info_cache: FunctionArgTypeInfoCache,
     /// Cached exact kernel-BTF return type info by function name.
     function_ret_type_info_cache: RwLock<HashMap<String, Result<Option<TypeInfo>, BtfError>>>,
     /// Cached per-callback trampoline layouts for struct_ops callbacks.
@@ -247,8 +253,7 @@ pub struct KernelBtf {
     /// Cached mapping of kfunc names to pointer argument indices that require kernel pointers.
     kfunc_kernel_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer argument ref families.
-    kfunc_pointer_ref_family_cache:
-        RwLock<Option<HashMap<String, Vec<(usize, KfuncPointerRefFamily)>>>>,
+    kfunc_pointer_ref_family_cache: RwLock<Option<KfuncPointerRefFamilyMap>>,
     /// Cached mapping of kfunc names to return-value ref families.
     kfunc_return_ref_family_cache: RwLock<Option<HashMap<String, KfuncPointerRefFamily>>>,
     /// Cached mapping of kfunc names to inferred release-arg indices.
@@ -258,7 +263,7 @@ pub struct KernelBtf {
     /// Cached mapping of kfunc names to scalar argument indices that must be positive (> 0).
     kfunc_positive_scalar_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer->size argument relationships.
-    kfunc_pointer_size_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
+    kfunc_pointer_size_arg_cache: RwLock<Option<KfuncPointerIndexPairMap>>,
     /// Cached mapping of kfunc names to pointer args that require stack-slot base pointers.
     kfunc_stack_slot_base_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to pointer args inferred as by-reference out parameters.
@@ -267,9 +272,9 @@ pub struct KernelBtf {
     kfunc_in_pointer_arg_cache: RwLock<Option<HashMap<String, Vec<usize>>>>,
     /// Cached mapping of kfunc names to stack-object pointer argument metadata.
     /// Tuple format: `(arg_idx, pointee_type_id, pointee_type_name)`.
-    kfunc_stack_object_arg_cache: RwLock<Option<HashMap<String, Vec<(usize, u32, String)>>>>,
+    kfunc_stack_object_arg_cache: RwLock<Option<KfuncStackObjectArgMap>>,
     /// Cached mapping of kfunc names to pointer argument fixed access sizes.
-    kfunc_pointer_fixed_size_cache: RwLock<Option<HashMap<String, Vec<(usize, usize)>>>>,
+    kfunc_pointer_fixed_size_cache: RwLock<Option<KfuncPointerIndexPairMap>>,
     /// Cached mapping of kfunc names to inferred coarse signatures.
     kfunc_signature_hint_cache: RwLock<Option<HashMap<String, KfuncSignatureHint>>>,
 }
@@ -637,7 +642,7 @@ impl KernelBtf {
                 param.type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes, &raw_pointer_targets)
+        Self::type_info_from_btf_type(&btf, param_ty, &raw_type_sizes, &raw_pointer_targets)
             .map(Some)
     }
 
@@ -700,7 +705,7 @@ impl KernelBtf {
             })?;
             infos.push(Self::type_info_from_btf_type(
                 &btf,
-                &param_ty,
+                param_ty,
                 &raw_type_sizes,
                 &raw_pointer_targets,
             )?);
@@ -745,7 +750,7 @@ impl KernelBtf {
             })?;
             let type_info = Self::type_info_from_btf_type(
                 &btf,
-                &param_ty,
+                param_ty,
                 &raw_type_sizes,
                 &raw_pointer_targets,
             )?;
@@ -887,7 +892,7 @@ impl KernelBtf {
                 param.type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes, &raw_pointer_targets)
+        Self::type_info_from_btf_type(&btf, param_ty, &raw_type_sizes, &raw_pointer_targets)
             .map(Some)
     }
 
@@ -926,7 +931,7 @@ impl KernelBtf {
             })?;
             let type_info = Self::type_info_from_btf_type(
                 &btf,
-                &param_ty,
+                param_ty,
                 &raw_type_sizes,
                 &raw_pointer_targets,
             )?;
@@ -1013,8 +1018,7 @@ impl KernelBtf {
                 ret_type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes, &raw_pointer_targets)
-            .map(Some)
+        Self::type_info_from_btf_type(&btf, ret_ty, &raw_type_sizes, &raw_pointer_targets).map(Some)
     }
 
     /// Resolve a typed trampoline return-value slot for an attached function.
@@ -1084,8 +1088,7 @@ impl KernelBtf {
                 ret_type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes, &raw_pointer_targets)
-            .map(Some)
+        Self::type_info_from_btf_type(&btf, ret_ty, &raw_type_sizes, &raw_pointer_targets).map(Some)
     }
 
     /// Validate that a function target is attachable via an fentry trampoline.
@@ -1387,7 +1390,7 @@ impl KernelBtf {
             .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
         let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
-        Self::type_info_from_btf_type(&btf, &ty, &raw_type_sizes, &raw_pointer_targets)
+        Self::type_info_from_btf_type(&btf, ty, &raw_type_sizes, &raw_pointer_targets)
     }
 
     /// Resolve the size in bytes of a named kernel BTF type.
@@ -1401,7 +1404,7 @@ impl KernelBtf {
             .get(&ty.type_id)
             .copied()
             .map(|size| size as usize);
-        Self::trampoline_size_bytes(&btf, &ty, raw_size_bytes)
+        Self::trampoline_size_bytes(&btf, ty, raw_size_bytes)
     }
 
     /// Resolve a named kernel enum definition and its entries from kernel BTF.

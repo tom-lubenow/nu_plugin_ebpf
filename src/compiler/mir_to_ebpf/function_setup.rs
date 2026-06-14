@@ -1,5 +1,13 @@
 use super::*;
 
+type StackLayout = (
+    HashMap<StackSlotId, i16>,
+    HashMap<VReg, i16>,
+    i16,
+    Option<i16>,
+    Option<i16>,
+);
+
 impl<'a> MirToEbpfCompiler<'a> {
     /// Run graph coloring register allocation for a function
     fn allocate_registers_for_function(
@@ -22,16 +30,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         &self,
         func: &LirFunction,
         alloc: &ColoringResult,
-    ) -> Result<
-        (
-            HashMap<StackSlotId, i16>,
-            HashMap<VReg, i16>,
-            i16,
-            Option<i16>,
-            Option<i16>,
-        ),
-        CompileError,
-    > {
+    ) -> Result<StackLayout, CompileError> {
         let mut slots: Vec<StackSlot> = func.stack_slots.clone();
         let spill_base = slots.len() as u32;
 
@@ -284,12 +283,11 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         let mut reg_moves: HashMap<EbpfReg, EbpfReg> = HashMap::new();
 
-        for i in 0..func.param_count {
+        for (i, src) in arg_regs.iter().copied().enumerate().take(func.param_count) {
             let vreg = VReg(i as u32);
             if !live_in.contains(&vreg) {
                 continue;
             }
-            let src = arg_regs[i];
             if let Some(&dst) = self.vreg_to_phys.get(&vreg) {
                 if dst != src {
                     reg_moves.insert(src, dst);

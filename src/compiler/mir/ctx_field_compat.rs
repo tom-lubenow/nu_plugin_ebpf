@@ -137,10 +137,10 @@ impl ContextFieldCompatibilityRequirement {
     }
 
     pub(crate) fn for_field_on_program_spec(field: &CtxField, spec: &ProgramSpec) -> Option<Self> {
-        if let Some((category, name)) = spec.tracepoint_parts() {
-            if let CtxField::TracepointField(field_name) = field {
-                return Self::for_tracepoint_field(category, name, field_name);
-            }
+        if let Some((category, name)) = spec.tracepoint_parts()
+            && let CtxField::TracepointField(field_name) = field
+        {
+            return Self::for_tracepoint_field(category, name, field_name);
         }
 
         let mut requirement = Self::for_field_on_program_iter_target(

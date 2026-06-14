@@ -1,5 +1,19 @@
+use super::helper_semantics::{HelperSemanticsValidation, KfuncSemanticsValidation};
 use super::*;
 use crate::compiler::instruction::{kfunc_arg_pointee_mismatch, unknown_kfunc_signature_message};
+
+struct ValidateInstInput<'a> {
+    inst: &'a MirInst,
+    types: &'a HashMap<VReg, MirType>,
+    value_ranges: &'a HashMap<VReg, ValueRange>,
+    value_multiple_facts: &'a HashMap<VReg, i64>,
+    stack_slot_value_ranges: Option<&'a HashMap<StackSlotId, ValueRange>>,
+    direct_ctx_field_sources: &'a HashMap<VReg, CtxField>,
+    block_ctx_field_ranges: Option<&'a HashMap<CtxField, ValueRange>>,
+    stack_bounds: &'a HashMap<VReg, StackBounds>,
+    slot_sizes: &'a HashMap<StackSlotId, i64>,
+    errors: &'a mut Vec<TypeError>,
+}
 
 impl<'a> TypeInference<'a> {
     fn validate_helper_allowed_u64_arg(
@@ -41,7 +55,6 @@ impl<'a> TypeInference<'a> {
         };
         if let Some(message) = ctx.helper_call_error(helper) {
             errors.push(TypeError::new(message));
-            return;
         }
     }
 
@@ -63,7 +76,7 @@ impl<'a> TypeInference<'a> {
         if !ProbeContext::resolve_ctx_field_is_raw_context_pointer(self.probe_ctx.as_ref(), field) {
             return false;
         }
-        self.probe_ctx.as_ref().map_or(true, |ctx| {
+        self.probe_ctx.as_ref().is_none_or(|ctx| {
             ctx.program_type()
                 .kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
         })
@@ -320,49 +333,50 @@ impl<'a> TypeInference<'a> {
         for block in &func.blocks {
             let block_ctx_field_ranges = block_ctx_field_ranges.get(&block.id);
             for (idx, inst) in block.instructions.iter().enumerate() {
-                self.validate_inst(
+                self.validate_inst(ValidateInstInput {
                     inst,
                     types,
-                    &value_ranges,
-                    &value_multiple_facts,
-                    stack_slot_value_ranges.get(&(block.id, idx)),
-                    &direct_ctx_field_sources,
+                    value_ranges: &value_ranges,
+                    value_multiple_facts: &value_multiple_facts,
+                    stack_slot_value_ranges: stack_slot_value_ranges.get(&(block.id, idx)),
+                    direct_ctx_field_sources: &direct_ctx_field_sources,
                     block_ctx_field_ranges,
-                    &stack_bounds,
-                    &slot_sizes,
+                    stack_bounds: &stack_bounds,
+                    slot_sizes: &slot_sizes,
                     errors,
-                );
+                });
             }
-            self.validate_inst(
-                &block.terminator,
+            self.validate_inst(ValidateInstInput {
+                inst: &block.terminator,
                 types,
-                &value_ranges,
-                &value_multiple_facts,
-                stack_slot_value_ranges.get(&(block.id, block.instructions.len())),
-                &direct_ctx_field_sources,
+                value_ranges: &value_ranges,
+                value_multiple_facts: &value_multiple_facts,
+                stack_slot_value_ranges: stack_slot_value_ranges
+                    .get(&(block.id, block.instructions.len())),
+                direct_ctx_field_sources: &direct_ctx_field_sources,
                 block_ctx_field_ranges,
-                &stack_bounds,
-                &slot_sizes,
+                stack_bounds: &stack_bounds,
+                slot_sizes: &slot_sizes,
                 errors,
-            );
+            });
         }
         self.validate_void_call_return_uses(func, &void_returns, errors);
         self.validate_required_return_range(func, types, &value_ranges, errors);
     }
 
-    pub(super) fn validate_inst(
-        &self,
-        inst: &MirInst,
-        types: &HashMap<VReg, MirType>,
-        value_ranges: &HashMap<VReg, ValueRange>,
-        value_multiple_facts: &HashMap<VReg, i64>,
-        stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
-        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
-        block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
-        stack_bounds: &HashMap<VReg, StackBounds>,
-        slot_sizes: &HashMap<StackSlotId, i64>,
-        errors: &mut Vec<TypeError>,
-    ) {
+    fn validate_inst(&self, input: ValidateInstInput<'_>) {
+        let ValidateInstInput {
+            inst,
+            types,
+            value_ranges,
+            value_multiple_facts,
+            stack_slot_value_ranges,
+            direct_ctx_field_sources,
+            block_ctx_field_ranges,
+            stack_bounds,
+            slot_sizes,
+            errors,
+        } = input;
         if let Some(ctx) = self.probe_ctx.as_ref() {
             Self::validate_program_capability_for_info(inst, ctx.program_info(), errors);
         }
@@ -428,13 +442,11 @@ impl<'a> TypeInference<'a> {
                                         ));
                                     }
                                 }
-                                (None, Some(_)) => {
-                                    if !Self::is_const_zero(lhs) {
-                                        errors.push(TypeError::new(
-                                            "pointer comparison only supports null (0) constants"
-                                                .to_string(),
-                                        ));
-                                    }
+                                (None, Some(_)) if !Self::is_const_zero(lhs) => {
+                                    errors.push(TypeError::new(
+                                        "pointer comparison only supports null (0) constants"
+                                            .to_string(),
+                                    ))
                                 }
                                 _ => {}
                             }
@@ -695,9 +707,10 @@ impl<'a> TypeInference<'a> {
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
+                        MirType::Ptr {
+                            address_space: AddressSpace::Stack | AddressSpace::Map,
+                            ..
+                        } => {}
                         _ => errors.push(TypeError::new(format!(
                             "map '{}' expects stack/map byte-buffer pointer key, got {:?}",
                             map.name, key_ty
@@ -705,9 +718,10 @@ impl<'a> TypeInference<'a> {
                     }
                 } else {
                     match key_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
+                        MirType::Ptr {
+                            address_space: AddressSpace::Stack | AddressSpace::Map,
+                            ..
+                        } => {}
                         _ if Self::mir_is_numeric(&key_ty) => {}
                         _ => errors.push(TypeError::new(format!(
                             "map '{}' key expects numeric or stack/map pointer, got {:?}",
@@ -718,8 +732,10 @@ impl<'a> TypeInference<'a> {
 
                 let val_ty = self.mir_type_for_vreg(*val, types);
                 match val_ty {
-                    MirType::Ptr { address_space, .. }
-                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    } => {}
                     _ if Self::mir_is_numeric(&val_ty) => {}
                     _ => errors.push(TypeError::new(format!(
                         "map '{}' value expects numeric or stack/map pointer, got {:?}",
@@ -752,8 +768,10 @@ impl<'a> TypeInference<'a> {
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 match key_ty {
-                    MirType::Ptr { address_space, .. }
-                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    } => {}
                     _ if Self::mir_is_numeric(&key_ty) => {}
                     _ => errors.push(TypeError::new(format!(
                         "map '{}' key expects numeric or stack/map pointer, got {:?}",
@@ -763,8 +781,10 @@ impl<'a> TypeInference<'a> {
 
                 let val_ty = self.mir_type_for_vreg(*val, types);
                 match val_ty {
-                    MirType::Ptr { address_space, .. }
-                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    } => {}
                     _ if Self::mir_is_numeric(&val_ty) => {}
                     _ => errors.push(TypeError::new(format!(
                         "map '{}' value expects numeric or stack/map pointer, got {:?}",
@@ -782,9 +802,10 @@ impl<'a> TypeInference<'a> {
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
+                        MirType::Ptr {
+                            address_space: AddressSpace::Stack | AddressSpace::Map,
+                            ..
+                        } => {}
                         _ => errors.push(TypeError::new(format!(
                             "map '{}' expects stack/map byte-buffer pointer key, got {:?}",
                             map.name, key_ty
@@ -792,9 +813,10 @@ impl<'a> TypeInference<'a> {
                     }
                 } else {
                     match key_ty {
-                        MirType::Ptr { address_space, .. }
-                            if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {
-                        }
+                        MirType::Ptr {
+                            address_space: AddressSpace::Stack | AddressSpace::Map,
+                            ..
+                        } => {}
                         _ if Self::mir_is_numeric(&key_ty) => {}
                         _ => errors.push(TypeError::new(format!(
                             "map '{}' key expects numeric or stack/map pointer, got {:?}",
@@ -825,8 +847,10 @@ impl<'a> TypeInference<'a> {
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 match key_ty {
-                    MirType::Ptr { address_space, .. }
-                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    } => {}
                     _ if Self::mir_is_numeric(&key_ty) => {}
                     _ => errors.push(TypeError::new(format!(
                         "map '{}' key expects numeric or stack/map pointer, got {:?}",
@@ -844,8 +868,10 @@ impl<'a> TypeInference<'a> {
                 Self::validate_helper_allowed_u64_arg(BpfHelper::MapPushElem, 2, *flags, errors);
                 let val_ty = self.mir_type_for_vreg(*val, types);
                 match val_ty {
-                    MirType::Ptr { address_space, .. }
-                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    MirType::Ptr {
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                        ..
+                    } => {}
                     _ if Self::mir_is_numeric(&val_ty) => {}
                     _ => errors.push(TypeError::new(format!(
                         "map '{}' value expects numeric or stack/map pointer, got {:?}",
@@ -1064,8 +1090,8 @@ impl<'a> TypeInference<'a> {
                             }
                         }
                     }
-                    self.validate_helper_semantics(
-                        *helper,
+                    self.validate_helper_semantics(HelperSemanticsValidation {
+                        helper_id: *helper,
                         args,
                         types,
                         value_ranges,
@@ -1075,7 +1101,7 @@ impl<'a> TypeInference<'a> {
                         stack_bounds,
                         slot_sizes,
                         errors,
-                    );
+                    });
                 } else if args.len() > 5 {
                     errors.push(TypeError::new(
                         "BPF helpers support at most 5 arguments".to_string(),
@@ -1251,7 +1277,7 @@ impl<'a> TypeInference<'a> {
                         },
                     }
                 }
-                self.validate_kfunc_semantics(
+                self.validate_kfunc_semantics(KfuncSemanticsValidation {
                     kfunc,
                     args,
                     types,
@@ -1259,15 +1285,13 @@ impl<'a> TypeInference<'a> {
                     direct_ctx_field_sources,
                     stack_bounds,
                     errors,
-                );
+                });
             }
 
-            MirInst::CallSubfn { args, .. } => {
-                if args.len() > 5 {
-                    errors.push(TypeError::new(
-                        "BPF subfunctions support at most 5 arguments".to_string(),
-                    ));
-                }
+            MirInst::CallSubfn { args, .. } if args.len() > 5 => {
+                errors.push(TypeError::new(
+                    "BPF subfunctions support at most 5 arguments".to_string(),
+                ));
             }
 
             _ => {}

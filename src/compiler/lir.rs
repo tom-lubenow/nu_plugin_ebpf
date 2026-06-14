@@ -75,6 +75,12 @@ pub struct LirFunction {
     pub precolored: HashMap<VReg, EbpfReg>,
 }
 
+impl Default for LirFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LirFunction {
     pub fn new() -> Self {
         Self {
@@ -602,9 +608,9 @@ impl LirInst {
             } => &SCRATCH_LIST_GET,
             LirInst::StringAppend { val_type, .. } => match val_type {
                 StringAppendType::Integer => &SCRATCH_STRING_APPEND_INT,
-                StringAppendType::Literal { .. } | StringAppendType::StringSlot { .. } => {
-                    &SCRATCH_STRING_APPEND
-                }
+                StringAppendType::Literal { .. }
+                | StringAppendType::LiteralExact { .. }
+                | StringAppendType::StringSlot { .. } => &SCRATCH_STRING_APPEND,
             },
             LirInst::StrCmp { .. } => &SCRATCH_STRCMP,
             LirInst::IntToString { .. } => &SCRATCH_INT_TO_STRING,

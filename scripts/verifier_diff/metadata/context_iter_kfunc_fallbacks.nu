@@ -1,0 +1,29 @@
+const ITER_KFUNC_KERNEL_FEATURE_FALLBACKS = [
+    { name: "bpf_iter_bits_destroy", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_bits_new", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_bits_next", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_destroy", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_new", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_next", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_destroy", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_new", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_next", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_destroy", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_new", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_next", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_scx_dsq_destroy", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_scx_dsq_new", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_scx_dsq_next", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_task_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+]

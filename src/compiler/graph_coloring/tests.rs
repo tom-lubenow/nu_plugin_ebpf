@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::mir::{BinOpKind, MirInst, MirValue, StackSlotKind, StringAppendType};
 
+type AllocationSnapshot = (Vec<(u32, EbpfReg)>, Vec<u32>, usize);
+
 fn make_simple_function() -> MirFunction {
     // v0 = 1
     // v1 = 2
@@ -175,7 +177,7 @@ fn test_register_pressure_allocation_stable() {
     let func = make_pressure_function();
     let available = vec![EbpfReg::R6, EbpfReg::R7, EbpfReg::R8];
 
-    let mut baseline: Option<(Vec<(u32, EbpfReg)>, Vec<u32>, usize)> = None;
+    let mut baseline: Option<AllocationSnapshot> = None;
 
     for _ in 0..8 {
         let result = allocate_registers(&func, available.clone());

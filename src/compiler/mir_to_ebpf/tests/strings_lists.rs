@@ -52,6 +52,55 @@ fn test_string_append_literal() {
 }
 
 #[test]
+fn test_string_append_literal_exact_nul() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let len_vreg = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: len_vreg,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::LiteralExact {
+                bytes: vec![0; 16],
+                len: 1,
+            },
+        });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let compiler = MirToEbpfCompiler::new(&lir, None);
+    let result = compiler.compile();
+
+    assert!(
+        result.is_ok(),
+        "StringAppend exact NUL literal should compile"
+    );
+    assert!(
+        !result.unwrap().bytecode.is_empty(),
+        "Should generate bytecode"
+    );
+}
+
+#[test]
 fn test_int_to_string() {
     // Test integer to string conversion
     use crate::compiler::mir::*;

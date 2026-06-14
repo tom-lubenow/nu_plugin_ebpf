@@ -234,6 +234,8 @@ struct RegMetadata {
     string_len_vreg: Option<VReg>,
     /// Max possible content length for the string (excludes padding)
     string_len_bound: Option<usize>,
+    /// Conservative lower bound for character width when known.
+    string_char_width_min: Option<usize>,
     /// Record fields being built
     record_fields: Vec<RecordField>,
     /// Type of value in this register (for context fields)
@@ -272,6 +274,8 @@ struct RegMetadata {
     closure_block_id: Option<nu_protocol::BlockId>,
     /// The aggregate storage was mutated in place, so field descriptors may be stale.
     materialized_record_dirty: bool,
+    /// A producer already satisfied this direct list consumer by projecting a single item.
+    direct_projected_list_consumer: Option<DirectListProjection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -293,6 +297,21 @@ pub enum AnnotatedValueSemantics {
     },
     Record(Vec<(String, AnnotatedValueSemantics)>),
 }
+
+pub type HirToMirLoweringArtifacts = (
+    MirProgram,
+    MirTypeHints,
+    HashMap<MapRef, MirType>,
+    HashMap<MapRef, AnnotatedValueSemantics>,
+    HashMap<MapRef, MirType>,
+    HashMap<MapRef, u32>,
+    HashMap<MapRef, u64>,
+    HashMap<MapRef, MapRef>,
+    HashMap<MapRef, AnnotatedValueSemantics>,
+    Vec<ReadonlyGlobal>,
+    Vec<DataGlobal>,
+    Vec<BssGlobal>,
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SyntheticStackSlotSeed {
@@ -357,6 +376,16 @@ struct MutableCaptureGlobal {
     string_content_cap: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectListProjection {
+    First,
+    Last,
+    Index(i64),
+    ReverseFirst,
+    ReverseLast,
+    ReverseIndex(i64),
+}
+
 /// Lowering context for HIR to MIR conversion
 pub struct HirToMirLowering<'a> {
     /// The MIR function being built
@@ -388,10 +417,14 @@ pub struct HirToMirLowering<'a> {
     positional_args: Vec<(VReg, RegId)>,
     /// Current call result is only used by consumers that fold compile-time metadata.
     current_call_result_metadata_only: bool,
+    /// Current call result is only used by consumers that need type metadata.
+    current_call_result_type_metadata_only: bool,
     /// Current call result is only used by direct list-length or empty-predicate consumers.
     current_call_result_list_shape_metadata_only: bool,
     /// Current call result is only used through list-preserving transforms by metadata consumers.
     current_call_result_list_transform_metadata_only: bool,
+    /// Current call result flows directly into a single-item consumer.
+    current_call_result_direct_list_projection: Option<DirectListProjection>,
     /// Named flags for the next call (e.g., --verbose)
     named_flags: Vec<String>,
     /// Named arguments with values for the next call (e.g., --count 5)
@@ -434,6 +467,8 @@ pub struct HirToMirLowering<'a> {
     map_value_types: HashMap<MapRef, MirType>,
     /// Source-order generic map max-entry declarations discovered during lowering
     map_max_entries: HashMap<MapRef, u32>,
+    /// Source-order generic map-extra declarations discovered during lowering
+    map_extras: HashMap<MapRef, u64>,
     /// Source-order map-in-map inner template declarations discovered during lowering
     map_inner_templates: HashMap<MapRef, MapRef>,
     /// Literal map names whose kind has already been observed during lowering.
@@ -442,6 +477,8 @@ pub struct HirToMirLowering<'a> {
     declared_map_value_types: HashSet<MapRef>,
     /// Map-in-map outers declared explicitly with `map-define --inner-map`
     declared_map_inner_templates: HashSet<MapRef>,
+    /// Arena maps declared explicitly with `map-define --kind arena`
+    declared_arena_maps: HashSet<MapRef>,
     /// Logical semantics for generic map keys with richer runtime layouts.
     map_key_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Logical semantics for generic map values with richer runtime layouts.
@@ -452,6 +489,8 @@ pub struct HirToMirLowering<'a> {
     conflicting_map_key_types: HashSet<MapRef>,
     /// Generic maps whose declared max-entry counts conflict
     conflicting_map_max_entries: HashSet<MapRef>,
+    /// Generic maps whose declared map-extra values conflict
+    conflicting_map_extras: HashSet<MapRef>,
     /// Generic maps whose observed key semantics conflict
     conflicting_map_key_semantics: HashSet<MapRef>,
     /// Generic maps whose observed value semantics conflict
@@ -524,25 +563,44 @@ pub struct HirToMirLowering<'a> {
     current_subfunction_aggregate_return: Option<ActiveSubfunctionAggregateReturn>,
 }
 
+struct HirToMirLoweringInput<'a> {
+    probe_ctx: Option<&'a ProbeContext>,
+    decl_names: &'a HashMap<DeclId, String>,
+    closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
+    closure_param_sources: &'a HashMap<nu_protocol::BlockId, HirClosureParamSource>,
+    captures: &'a [(VarId, Value)],
+    ctx_param: Option<VarId>,
+    type_hints: Option<&'a HirMirTypeHints>,
+    external_map_key_types: Option<&'a HashMap<MapRef, MirType>>,
+    external_map_key_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
+    external_map_max_entries: Option<&'a HashMap<MapRef, u32>>,
+    external_map_inner_templates: Option<&'a HashMap<MapRef, MapRef>>,
+    external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
+    external_map_value_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
+    user_functions: &'a HashMap<DeclId, HirFunction>,
+    decl_signatures: &'a HashMap<DeclId, UserFunctionSig>,
+}
+
 impl<'a> HirToMirLowering<'a> {
     /// Create a new lowering context
-    fn new(
-        probe_ctx: Option<&'a ProbeContext>,
-        decl_names: &'a HashMap<DeclId, String>,
-        closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
-        closure_param_sources: &'a HashMap<nu_protocol::BlockId, HirClosureParamSource>,
-        captures: &'a [(VarId, Value)],
-        ctx_param: Option<VarId>,
-        type_hints: Option<&'a HirMirTypeHints>,
-        external_map_key_types: Option<&'a HashMap<MapRef, MirType>>,
-        external_map_key_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
-        external_map_max_entries: Option<&'a HashMap<MapRef, u32>>,
-        external_map_inner_templates: Option<&'a HashMap<MapRef, MapRef>>,
-        external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
-        external_map_value_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
-        user_functions: &'a HashMap<DeclId, HirFunction>,
-        decl_signatures: &'a HashMap<DeclId, UserFunctionSig>,
-    ) -> Self {
+    fn new(input: HirToMirLoweringInput<'a>) -> Self {
+        let HirToMirLoweringInput {
+            probe_ctx,
+            decl_names,
+            closure_irs,
+            closure_param_sources,
+            captures,
+            ctx_param,
+            type_hints,
+            external_map_key_types,
+            external_map_key_semantics,
+            external_map_max_entries,
+            external_map_inner_templates,
+            external_map_value_types,
+            external_map_value_semantics,
+            user_functions,
+            decl_signatures,
+        } = input;
         let (current_type_hints, closure_type_hints, decl_type_hints) = match type_hints {
             Some(hints) => (
                 hints.main.clone(),
@@ -578,8 +636,10 @@ impl<'a> HirToMirLowering<'a> {
             pipeline_input_reg: None,
             positional_args: Vec::new(),
             current_call_result_metadata_only: false,
+            current_call_result_type_metadata_only: false,
             current_call_result_list_shape_metadata_only: false,
             current_call_result_list_transform_metadata_only: false,
+            current_call_result_direct_list_projection: None,
             named_flags: Vec::new(),
             named_args: HashMap::new(),
             parser_info_args: Vec::new(),
@@ -600,16 +660,19 @@ impl<'a> HirToMirLowering<'a> {
             implied_ctx_fields: HashSet::new(),
             map_key_types,
             map_max_entries,
+            map_extras: HashMap::new(),
             map_inner_templates,
             observed_map_refs: HashSet::new(),
             map_value_types,
             declared_map_value_types: HashSet::new(),
             declared_map_inner_templates: HashSet::new(),
+            declared_arena_maps: HashSet::new(),
             map_key_semantics,
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
             conflicting_map_key_types: HashSet::new(),
             conflicting_map_max_entries: HashSet::new(),
+            conflicting_map_extras: HashSet::new(),
             conflicting_map_key_semantics: HashSet::new(),
             conflicting_map_value_semantics: HashSet::new(),
             externally_seeded_map_key_types,
@@ -647,33 +710,21 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _, _, _, _, _, _, _, _, _, _) = self.finish_with_hints();
+        let (program, _, _, _, _, _, _, _, _, _, _, _) = self.finish_with_hints();
         program
     }
 
-    pub fn finish_with_hints(
-        self,
-    ) -> (
-        MirProgram,
-        MirTypeHints,
-        HashMap<MapRef, MirType>,
-        HashMap<MapRef, AnnotatedValueSemantics>,
-        HashMap<MapRef, MirType>,
-        HashMap<MapRef, u32>,
-        HashMap<MapRef, MapRef>,
-        HashMap<MapRef, AnnotatedValueSemantics>,
-        Vec<ReadonlyGlobal>,
-        Vec<DataGlobal>,
-        Vec<BssGlobal>,
-    ) {
+    pub fn finish_with_hints(self) -> HirToMirLoweringArtifacts {
         let mut program = MirProgram::new(self.func);
         program.subfunctions = self.subfunctions;
         let mut declared_generic_maps = self.declared_map_value_types.clone();
         declared_generic_maps.extend(self.declared_map_inner_templates.iter().cloned());
+        declared_generic_maps.extend(self.declared_arena_maps.iter().cloned());
         declared_generic_maps.retain(|map| {
             !self.conflicting_map_key_types.contains(map)
                 && !self.conflicting_map_value_types.contains(map)
                 && !self.conflicting_map_max_entries.contains(map)
+                && !self.conflicting_map_extras.contains(map)
                 && !self.conflicting_map_key_semantics.contains(map)
                 && !self.conflicting_map_value_semantics.contains(map)
         });
@@ -709,6 +760,12 @@ impl<'a> HirToMirLowering<'a> {
                 .filter(|(map, _)| !self.conflicting_map_max_entries.contains(*map))
                 .map(|(map, max_entries)| (map.clone(), *max_entries))
                 .collect(),
+            generic_map_extras: self
+                .map_extras
+                .iter()
+                .filter(|(map, _)| !self.conflicting_map_extras.contains(*map))
+                .map(|(map, map_extra)| (map.clone(), *map_extra))
+                .collect(),
             generic_map_inner_templates: self.map_inner_templates.clone(),
             generic_map_value_semantics: self
                 .map_value_semantics
@@ -731,6 +788,7 @@ impl<'a> HirToMirLowering<'a> {
         let map_key_types = hints.generic_map_key_types.clone();
         let map_key_semantics = hints.generic_map_key_semantics.clone();
         let map_max_entries = hints.generic_map_max_entries.clone();
+        let map_extras = hints.generic_map_extras.clone();
         let map_inner_templates = hints.generic_map_inner_templates.clone();
         let map_value_semantics = hints.generic_map_value_semantics.clone();
         (
@@ -740,6 +798,7 @@ impl<'a> HirToMirLowering<'a> {
             map_key_semantics,
             map_value_types,
             map_max_entries,
+            map_extras,
             map_inner_templates,
             map_value_semantics,
             self.readonly_globals,

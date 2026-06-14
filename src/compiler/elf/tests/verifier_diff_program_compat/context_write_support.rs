@@ -98,7 +98,7 @@ pub(super) fn context_write_scanner_assignment(
     form: ContextWriteScannerForm,
 ) -> String {
     let root = form.root();
-    let assignment = if field_name == "flow_keys" {
+    if field_name == "flow_keys" {
         format!("  {root}.{field_name}.ip_proto = 6")
     } else if indexed {
         format!("  {root}.{field_name}.0 = 42")
@@ -106,9 +106,7 @@ pub(super) fn context_write_scanner_assignment(
         format!("  {root}.{field_name} = \"1\"")
     } else {
         format!("  {root}.{field_name} = 1")
-    };
-
-    assignment
+    }
 }
 
 pub(super) fn context_write_scanner_source_from_assignments(

@@ -148,12 +148,18 @@ fn make_sockopt_optval_store_function(
         let block = func.block(guard_block);
         for inst in &block.instructions {
             match inst {
-                MirInst::LoadCtxField { dst, field, .. }
-                    if matches!(field, CtxField::SockoptOptvalEnd) =>
-                {
+                MirInst::LoadCtxField {
+                    dst,
+                    field: CtxField::SockoptOptvalEnd,
+                    ..
+                } => {
                     types.insert(*dst, kernel_u8_ptr());
                 }
-                MirInst::BinOp { dst, op, .. } if matches!(op, BinOpKind::Add) => {
+                MirInst::BinOp {
+                    dst,
+                    op: BinOpKind::Add,
+                    ..
+                } => {
                     types.insert(*dst, kernel_u8_ptr());
                 }
                 _ => {}

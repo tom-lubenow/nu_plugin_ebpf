@@ -3637,7 +3637,7 @@ fn test_verify_mir_for_probe_context_syscall_program_rejects_unmodeled_helper() 
         .instructions
         .push(MirInst::CallHelper {
             dst,
-            helper: BpfHelper::GetCurrentPidTgid as u32,
+            helper: BpfHelper::GetCurrentComm as u32,
             args: vec![],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -3648,7 +3648,7 @@ fn test_verify_mir_for_probe_context_syscall_program_rejects_unmodeled_helper() 
         .expect_err("expected unmodeled syscall helper to be rejected");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs")
+            .contains("helper 'bpf_get_current_comm' is not modeled for syscall programs")
     }));
 }
 
@@ -6443,9 +6443,7 @@ fn test_verify_mir_for_probe_context_sk_cgroup_helpers_reject_sk_msg() {
             .push(MirInst::CallHelper {
                 dst,
                 helper: helper as u32,
-                args: std::iter::once(MirValue::VReg(sk))
-                    .chain(args.into_iter())
-                    .collect(),
+                args: std::iter::once(MirValue::VReg(sk)).chain(args).collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -6520,9 +6518,7 @@ fn test_verify_mir_for_probe_context_sk_cgroup_helpers_accept_cgroup_skb() {
         func.block_mut(call).instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(sock))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(sock)).chain(args).collect(),
         });
         func.block_mut(call).instructions.push(MirInst::CallHelper {
             dst: cleanup_ret,
@@ -6712,7 +6708,7 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_eg
                 dst,
                 helper: helper as u32,
                 args: std::iter::once(MirValue::VReg(ctx))
-                    .chain(extra_args.into_iter())
+                    .chain(extra_args)
                     .collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -6884,7 +6880,7 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_tc_in
                 dst,
                 helper: helper as u32,
                 args: std::iter::once(MirValue::VReg(ctx))
-                    .chain(extra_args.into_iter())
+                    .chain(extra_args)
                     .collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -6935,7 +6931,7 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_unsup
                 dst,
                 helper: helper as u32,
                 args: std::iter::once(MirValue::VReg(ctx))
-                    .chain(extra_args.into_iter())
+                    .chain(extra_args)
                     .collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -9827,9 +9823,7 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
             .push(MirInst::CallHelper {
                 dst,
                 helper: helper as u32,
-                args: std::iter::once(MirValue::VReg(ctx))
-                    .chain(args.into_iter())
-                    .collect(),
+                args: std::iter::once(MirValue::VReg(ctx)).chain(args).collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -10178,9 +10172,7 @@ fn test_verify_mir_for_probe_context_lwt_skb_helpers() {
             .push(MirInst::CallHelper {
                 dst,
                 helper: helper as u32,
-                args: std::iter::once(MirValue::VReg(ctx))
-                    .chain(args.into_iter())
-                    .collect(),
+                args: std::iter::once(MirValue::VReg(ctx)).chain(args).collect(),
             });
         func.block_mut(entry).terminator = MirInst::Return { val: None };
 

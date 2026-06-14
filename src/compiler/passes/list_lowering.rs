@@ -152,13 +152,11 @@ impl ListLowering {
                                     }
                                 }
                             }
-                            if consistent {
-                                if let Some(m) = meta {
-                                    let entry = info.entry(*dst).or_insert(m);
-                                    if *entry != m {
-                                        *entry = m;
-                                        changed = true;
-                                    }
+                            if consistent && let Some(m) = meta {
+                                let entry = info.entry(*dst).or_insert(m);
+                                if *entry != m {
+                                    *entry = m;
+                                    changed = true;
                                 }
                             }
                         }

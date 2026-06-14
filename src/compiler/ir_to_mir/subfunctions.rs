@@ -136,9 +136,7 @@ impl<'a> HirToMirLowering<'a> {
         self.ctx_param = old_ctx_param;
         self.current_subfunction_aggregate_return = old_aggregate_return;
 
-        if let Err(err) = result {
-            return Err(err);
-        }
+        result?;
 
         let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
         self.subfunctions.push(subfn);
@@ -433,9 +431,7 @@ impl<'a> HirToMirLowering<'a> {
 
         self.subfunction_in_progress.remove(&decl_id);
 
-        if let Err(err) = result {
-            return Err(err);
-        }
+        result?;
 
         let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
         self.subfunctions.push(subfn);

@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2564_2570 = [
         error_contains: "fill --character requires a compile-time string literal"
     }
     {
-        name: "core-string-fill-rejects-nul-character"
+        name: "core-string-fill-nul-character"
         category: "language-core"
-        tags: [string fill diagnostics reject]
+        tags: [string fill nul length accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  "abc" | fill --character "\u{0000}" --width 5'
+            '  "abc" | fill --character "\u{0000}" --width 5 | str length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "fill --character does not support NUL bytes in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-fill-rejects-dynamic-input"

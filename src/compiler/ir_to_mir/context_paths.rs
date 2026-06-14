@@ -6,6 +6,16 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::TrampolineBitfieldInfo;
 
+struct PacketBitfieldStoreValue<'a> {
+    packet_store_vreg: VReg,
+    new_value_vreg: VReg,
+    store_ty: &'a MirType,
+    bitfield: TrampolineBitfieldInfo,
+    packet_big_endian: bool,
+    end_field: CtxField,
+    path_desc: &'a str,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn ctx_path_member_name(member: &PathMember) -> Result<String, CompileError> {
         match member {
@@ -176,12 +186,7 @@ impl<'a> HirToMirLowering<'a> {
             {
                 let packet_offset = match member {
                     PathMember::Int { val, .. } => {
-                        let index = usize::try_from(*val).map_err(|_| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "context cell path update '.{} = ...' requires a non-negative packet scalar index",
-                                path_desc
-                            ))
-                        })?;
+                        let index = *val;
                         base_offset
                             .checked_add(index.checked_mul(*element_size).ok_or_else(|| {
                                 CompileError::UnsupportedInstruction(format!(
@@ -473,14 +478,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_packet_bitfield_store_value(
         &mut self,
-        packet_store_vreg: VReg,
-        new_value_vreg: VReg,
-        store_ty: &MirType,
-        bitfield: TrampolineBitfieldInfo,
-        packet_big_endian: bool,
-        end_field: CtxField,
-        path_desc: &str,
+        store: PacketBitfieldStoreValue<'_>,
     ) -> Result<VReg, CompileError> {
+        let PacketBitfieldStoreValue {
+            packet_store_vreg,
+            new_value_vreg,
+            store_ty,
+            bitfield,
+            packet_big_endian,
+            end_field,
+            path_desc,
+        } = store;
+
         let current_vreg = self.func.alloc_vreg();
         self.vreg_type_hints.insert(current_vreg, store_ty.clone());
         self.emit_packet_guarded_load(
@@ -757,15 +766,15 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if let Some(bitfield) = bitfield {
-            stored_vreg = self.emit_packet_bitfield_store_value(
+            stored_vreg = self.emit_packet_bitfield_store_value(PacketBitfieldStoreValue {
                 packet_store_vreg,
-                stored_vreg,
-                &store_ty,
+                new_value_vreg: stored_vreg,
+                store_ty: &store_ty,
                 bitfield,
                 packet_big_endian,
-                end_field.clone(),
+                end_field: end_field.clone(),
                 path_desc,
-            )?;
+            })?;
         }
 
         self.emit_packet_guarded_store(

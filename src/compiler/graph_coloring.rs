@@ -453,7 +453,7 @@ impl GraphColoringAllocator {
         }
 
         let mut spilled: Vec<VReg> = self.spilled_nodes.iter().copied().collect();
-        spilled.sort_by(|a, b| self.graph.degree(*b).cmp(&self.graph.degree(*a)));
+        spilled.sort_by_key(|vreg| std::cmp::Reverse(self.graph.degree(*vreg)));
 
         let mut slot_for: HashMap<VReg, u32> = HashMap::new();
         let mut max_slot: u32 = 0;
@@ -461,10 +461,10 @@ impl GraphColoringAllocator {
         for vreg in spilled {
             let mut used: HashSet<u32> = HashSet::new();
             for neighbor in self.graph.adjacent(vreg) {
-                if self.spilled_nodes.contains(&neighbor) {
-                    if let Some(&slot) = slot_for.get(&neighbor) {
-                        used.insert(slot);
-                    }
+                if self.spilled_nodes.contains(&neighbor)
+                    && let Some(&slot) = slot_for.get(&neighbor)
+                {
+                    used.insert(slot);
                 }
             }
             let mut slot = 0u32;

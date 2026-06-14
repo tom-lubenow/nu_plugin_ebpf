@@ -440,9 +440,14 @@ libbpf-backed attach paths can rely on libbpf's BTF inner-map handling when
 and guarded dynamic inner `map-get $inner`, `map-put $inner`, `map-delete
 $inner`, and `map-contains $inner` operations are modeled; outer maps
 intentionally do not accept `--value-type`.
+Arena maps reserve `arena` object maps with `--max-entries` as the page count
+and optional `--map-extra` as a fixed mmap base address. Object emission writes
+libbpf-compatible `map_extra` BTF metadata, while live loading is still rejected
+before Aya until map-extra-aware creation and userspace mmap setup are modeled.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
+  map-define arena_pages --kind arena --max-entries 64 --map-extra 0x100000000
   map-define graph_items --kind hash --value-type 'record{root:bpf_list_head:node_data:node,cookie:u64}'
   let entry = (0 | map-get timers --kind array)
   if $entry != 0 { helper-call "bpf_timer_start" $entry.timer 1000 0 }"#
@@ -455,7 +460,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, queue, stack, bloom-filter, sk-storage, task-storage, inode-storage, cgrp-storage, array-of-maps, or hash-of-maps (default hash)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, queue, stack, bloom-filter, sk-storage, task-storage, inode-storage, cgrp-storage, array-of-maps, hash-of-maps, or arena (default hash)",
                 None,
             )
             .named(
@@ -467,7 +472,7 @@ Example:
             .named(
                 "value-type",
                 SyntaxShape::String,
-                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; required except for map-in-map outer maps",
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; required except for map-in-map outer maps and arena maps",
                 None,
             )
             .named(
@@ -479,7 +484,13 @@ Example:
             .named(
                 "max-entries",
                 SyntaxShape::Int,
-                "Optional positive map capacity; not supported for local-storage map kinds",
+                "Optional positive map capacity; required for map-in-map outer maps and arena maps; not supported for local-storage map kinds",
+                None,
+            )
+            .named(
+                "map-extra",
+                SyntaxShape::Int,
+                "Optional arena map_extra value, used by libbpf as the fixed mmap base address",
                 None,
             )
             .category(Category::Experimental)

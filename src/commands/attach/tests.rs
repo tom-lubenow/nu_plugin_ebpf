@@ -8,13 +8,14 @@ use crate::compiler::hir_to_mir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
-    AddressSpace, CtxField, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, MirValue, StructField,
-    USTACK_MAP_NAME,
+    AddressSpace, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapRef,
+    MirInst, MirValue, StructField, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
     BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfProgram, EbpfProgramType, MirType,
     ProbeContext, StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
+    compile_mir_to_ebpf_with_hints_and_globals,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use crate::program_spec::ProgramSpec;
@@ -546,12 +547,73 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_integer_expression_
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_integer_floor_div_mod_pow_initializer() {
+    let source =
+        "{|| let base = 17; mut value: int = (($base // 5) + ($base mod 5) + (2 ** 3)); $value }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("integer floor-div/mod/pow initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(13));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_divide_expression_initializer() {
+    let source = r#"{|| let numerator = 5; mut value: string = (($numerator / 2) | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("divide expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("02.5"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_mixed_scalar_math_expression_initializer() {
+    let source = r#"{|| let base = 5.5; mut value: string = (((($base // 2) + ($base mod 2)) * (4 ** 0.5) - (1 / 2)) | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("mixed scalar math expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("06.5"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_bitwise_expression_initializer() {
+    let source = "{|| let mask = 10; mut value: int = (((15 bit-and $mask) bit-or (1 bit-shl 5)) bit-xor (64 bit-shr 1)); $value }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("bitwise expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(10));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_boolean_expression_initializer() {
     let source = "{|| let threshold = 4; mut ok: bool = ($threshold >= 4 and not false); $ok }";
     let ir_block = one_let_then_single_annotated_global_return_ir_block();
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("let-bound boolean expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_mixed_numeric_comparison_initializer() {
+    let source = "{|| let threshold = 1.5; mut ok: bool = ($threshold < 2 and 2 >= $threshold and 2.0 == 2 and 1.0 != 2); $ok }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("mixed numeric comparison initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
@@ -582,6 +644,18 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_string_affix_compar
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_regex_comparison_initializer() {
+    let source = r#"{|| let pattern = "^kern"; mut ok: bool = ("kernel" =~ $pattern and "kernel" !~ "^user"); $ok }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound regex comparison initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_list_membership_initializer() {
     let source =
         "{|| let values = [1, 2, 3]; mut ok: bool = (2 in $values and 4 not-in $values); $ok }";
@@ -589,6 +663,18 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_list_membership_ini
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("let-bound list membership initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_range_membership_initializer() {
+    let source = "{|| let values = 1..3; mut ok: bool = (2 in $values and 4 not-in $values); $ok }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound range membership initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
@@ -927,6 +1013,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_default_empty_initia
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].initial_value.as_str().ok(), Some("fallback"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_default_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | default [9]); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input default initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("default should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 2, 3]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1511,6 +1618,43 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_last_count_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_first_count_initializer() {
+    let source = "{|| mut vals: list<int> = (1..5 | first 2); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list first count initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_int()
+                        .expect("counted range first should keep integers")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 2]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_last_initializer() {
+    let source = "{|| mut val: int = (1..5 | last); $val }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list last initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(5));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_rejects_constant_list_first_negative_count() {
     let source = "{|| mut vals: list<int> = ([7, 2, 4] | first -1); $vals }";
     let ir_block = IrBlock {
@@ -1579,6 +1723,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_take_initialize
                 .map(|value| value.as_int().expect("take should keep integers"))
                 .collect::<Vec<_>>();
             assert_eq!(ints, vec![7, 2]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_take_initializer() {
+    let source = "{|| let start = 1; mut vals: list<int> = ($start..6 | skip 1 | take 3); $vals }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list take initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("take should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![2, 3, 4]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -1737,6 +1902,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_reverse_initial
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_reverse_initializer() {
+    let source = "{|| mut vals: list<int> = (1..4 | reverse); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("reverse should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![4, 3, 2, 1]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_uniq_initializer() {
     let source = "{|| mut vals: list<int> = ([7, 2, 7, 4, 2] | uniq); $vals }";
     let ir_block = IrBlock {
@@ -1770,6 +1956,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_uniq_initialize
                 .map(|value| value.as_int().expect("uniq should keep integers"))
                 .collect::<Vec<_>>();
             assert_eq!(ints, vec![7, 2, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_uniq_initializer() {
+    let source = "{|| mut vals: list<int> = (1..4 | uniq); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list uniq initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("uniq should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 2, 3, 4]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -1881,6 +2088,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_compact_empty_i
         Value::List { vals, .. } => {
             assert_eq!(vals.len(), 1);
             assert_eq!(vals[0].as_str().ok(), Some("a"));
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_compact_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | compact --empty); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list compact initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("compact should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 2, 3]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -2037,6 +2265,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_initialize
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_sort_initializer() {
+    let source = "{|| mut vals: list<int> = (1..4 | sort --reverse); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list sort initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("sort should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![4, 3, 2, 1]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_reverse_initializer() {
     let source = "{|| mut vals: list<string> = ([\"a\", \"c\", \"b\"] | sort --reverse); $vals }";
     let ir_block = IrBlock {
@@ -2076,6 +2325,49 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_reverse_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_natural_initializer() {
+    let source = "{|| mut vals: list<string> = ([\"item10\", \"item2\", \"item1\"] | sort --natural); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list sort --natural initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("sort should keep strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["item1", "item2", "item10"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_ignore_case_initializer() {
+    let source =
+        "{|| mut vals: list<string> = ([\"B\", \"a\", \"A\"] | sort --ignore-case); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list sort --ignore-case initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("sort should keep strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["a", "A", "B"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_external_sort_reverse_flag() {
     let source = r#"{|| let flag = "--reverse"; mut vals: list<string> = (["a", "c", "b"] | ^sort $flag); $vals }"#;
     let ir_block = one_let_then_single_annotated_global_return_ir_block();
@@ -2093,6 +2385,380 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_external_sort_rever
             assert_eq!(strings, vec!["c", "b", "a"]);
         }
         other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_sort_natural_ignore_case_flags()
+ {
+    let source = r#"{|| let flag = "--natural"; mut vals: list<string> = (["a10", "a2", "A1"] | ^sort $flag --ignore-case); $vals }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external sort --natural --ignore-case flags should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("sort should keep strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["A1", "a2", "a10"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_integer_initializer() {
+    let source = "{|| mut vals: list<int> = (seq 1 2 5); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant integer seq initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("seq should produce integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 3, 5]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_float_length_initializer() {
+    let source = "{|| mut count: int = (seq 1.0 0.5 2.0 | length); $count }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant float seq length initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("seq length should produce an integer"),
+        3
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_char_initializer() {
+    let source = "{|| mut vals: list<string> = (seq char c a); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant seq char initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq char should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["c", "b", "a"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_seq_char_initializer() {
+    let source = "{|| mut vals: list<string> = (^seq char a c); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external seq char initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq char should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["a", "b", "c"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_date_range_initializer() {
+    let source = r#"{|| mut vals: list<string> = (seq date --begin-date "2020-01-01" --end-date "2020-01-03"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant seq date range initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["2020-01-01", "2020-01-02", "2020-01-03"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_date_periods_initializer() {
+    let source = r#"{|| mut vals: list<string> = (seq date --begin-date "2020-01-01" --periods 3 --increment 2 --output-format "%Y/%m/%d"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant seq date periods initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["2020/01/01", "2020/01/03", "2020/01/05"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_date_reverse_initializer() {
+    let source = r#"{|| mut vals: list<string> = (seq date --begin-date "2020-01-03" --periods 2 --reverse); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant seq date reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                strings,
+                vec!["2020-01-03", "2020-01-02", "2020-01-01", "2019-12-31"]
+            );
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_seq_date_initializer() {
+    let source = r#"{|| mut vals: list<string> = (^seq date --begin-date "2020-01-01" --periods 2 --output-format "%m/%d"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external seq date initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["01/01", "01/02"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_seq_date_short_reverse() {
+    let source = r#"{|| mut vals: list<string> = (^seq date -b 2020-01-03 -p 1 -r); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external seq date short reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["2020-01-03", "2020-01-02", "2020-01-01"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_seq_date_dash_value() {
+    let source = r#"{|| mut vals: list<string> = (^seq date --begin-date "2020-01-01" --periods 1 --output-format "-%Y"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external seq date dash-prefixed value should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["-2020"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_seq_date_inline_values() {
+    let source = r#"{|| mut vals: list<string> = (^seq date --begin-date=2020-01-01 --periods=2 --output-format=%d); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external seq date inline values should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("seq date should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["01", "02"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_seq_date_nul_output_initializer() {
+    let source = "{|| mut text: string = (seq date --begin-date \"2020-01-01\" --days 1 --output-format \"%Y\\u{0}%m\\u{0}%d\" | first); $text }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant seq date NUL output initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("seq date first should produce a string"),
+        concat!("2020\0", "01\0", "01")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_values_initializer() {
+    let source = "{|| mut vals: list<int> = ([2, 10, 1] | sort --values --reverse); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list sort --values initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("sort should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![10, 2, 1]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_sort_values_initializer() {
+    let source = "{|| mut state: record<a: int b: int> = ({b: 4, a: 3} | sort --values); $state }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record sort --values initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            let fields = val
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str(),
+                        value.as_int().expect("sort should keep integer values"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(fields, vec![("a", 3), ("b", 4)]);
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_sort_values_natural_initializer()
+{
+    let source = "{|| mut state: record<c: string a: string b: string> = ({b: \"item10\", a: \"item2\", c: \"item1\"} | sort --values --natural); $state }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record sort --values --natural initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            let fields = val
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str(),
+                        value.as_str().expect("sort should keep string values"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                fields,
+                vec![("c", "item1"), ("a", "item2"), ("b", "item10")]
+            );
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_record_sort_values_reverse_flag() {
+    let source = r#"{|| let flag = "--values"; mut state: record<b: int a: int> = ({b: 4, a: 3} | ^sort $flag --reverse); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external record sort --values --reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            let fields = val
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str(),
+                        value.as_int().expect("sort should keep integer values"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(fields, vec![("b", 4), ("a", 3)]);
+        }
+        other => panic!("expected record initializer, got {other:?}"),
     }
 }
 
@@ -2165,6 +2831,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_find_initialize
                 .map(|value| value.as_int().expect("find should keep integers"))
                 .collect::<Vec<_>>();
             assert_eq!(ints, vec![7, 7]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_find_initializer() {
+    let source = "{|| mut vals: list<int> = (1..4 | find 3); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list find initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("find should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![3]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -2282,6 +2969,61 @@ fn test_map_leading_annotated_mut_globals_supports_constant_fill_list_initialize
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_fill_initializer() {
+    let source = r#"{|| mut vals: list<string> = (1..3 | fill --width 3 --alignment right --character "0"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input fill initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("fill should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["001", "002", "003"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_fill_nul_character_initializer() {
+    let source =
+        "{|| mut value: string = (\"a\" | fill --width 3 --character \"\\u{0}\"); $value }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant fill NUL character initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("a\0\0"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_fill_nul_character_list_initializer() {
+    let source = "{|| mut vals: list<string> = ([\"a\", \"bc\"] | fill --width 3 --character \"\\u{0}\"); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant fill NUL character list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("fill should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["a\0\0", "bc\0"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_external_fill_options() {
     let source = r#"{|| let opts = {width: 5, alignment: "right", character: "0"}; mut value: string = ("ab" | ^fill --width $opts.width --alignment $opts.alignment --character $opts.character); $value }"#;
     let ir_block = one_let_then_single_annotated_global_return_ir_block();
@@ -2315,6 +3057,18 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_sqrt_str_join_i
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].initial_value.as_str().ok(), Some("1.5,2.5"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_sqrt_initializer() {
+    let source = r#"{|| mut value: string = (1..4 | math sqrt | first | fill --width 1); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math sqrt initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("1"));
 }
 
 #[test]
@@ -2419,6 +3173,19 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_log_list_str_jo
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_log_initializer() {
+    let source =
+        r#"{|| mut value: string = (2..4 | math log 2 | first | fill --width 1); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math log initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("1"));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_external_constant_math_log_fill_initializer() {
     let source = r#"{|| mut value: string = (100 | ^math log 10 | fill --width 4 --alignment right --character "0"); $value }"#;
     let ir_block = single_annotated_global_return_ir_block();
@@ -2501,6 +3268,18 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_variance_stddev
             "{message}: expected {text:?} to start with {expected_prefix:?}"
         );
     }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_variance_initializer() {
+    let source = r#"{|| mut value: string = (1..5 | math variance --sample | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math variance initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("02.5"));
 }
 
 #[test]
@@ -2599,6 +3378,77 @@ fn test_map_leading_annotated_mut_globals_supports_constant_length_initializer()
             .expect("length should produce an integer"),
         3
     );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_length_initializer() {
+    let source = "{|| mut count: int = (1..4 | length); $count }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("bounded range length initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("range length should produce an integer"),
+        4
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_length_initializer() {
+    let source = r#"{|| mut count: int = ({a: 1, b: "x", c: true} | length); $count }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record length initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("record length should produce an integer"),
+        3
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_describe_initializers() {
+    let cases = [
+        ("{|| mut ty: string = (123 | describe); $ty }", "int"),
+        ("{|| mut ty: string = (describe); $ty }", "nothing"),
+        (
+            "{|| mut ty: string = ([1, 2] | describe); $ty }",
+            "list<int>",
+        ),
+        (
+            r#"{|| mut ty: string = ({a: 1, b: "x"} | describe); $ty }"#,
+            "record<a: int, b: string>",
+        ),
+        ("{|| mut ty: string = (123 | ^describe); $ty }", "int"),
+        ("{|| mut ty: string = (^describe); $ty }", "nothing"),
+    ];
+
+    for (source, expected) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("constant describe should map {source:?}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_str()
+                .expect("describe should produce a string"),
+            expected,
+            "unexpected describe result for {source}"
+        );
+    }
 }
 
 #[test]
@@ -4373,6 +5223,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bits_binary_list_ini
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_bits_binary_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | bits and 1); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input bits binary initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(1, Span::test_data()),
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bits_binary_args() {
     let source = "{|| let target = 0x[AA]; let endian = \"big\"; mut out: binary = (0x[CA FE] | bits xor $target --endian $endian); $out }";
     let ir_block = IrBlock {
@@ -4605,6 +5477,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bits_not_list_initia
             Value::List { vals, .. } => assert_eq!(vals, &expected, "{message}"),
             other => panic!("expected list initializer, got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_bits_not_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | bits not --number-bytes 1); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input bits not initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(254, Span::test_data()),
+                Value::int(253, Span::test_data()),
+                Value::int(252, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
     }
 }
 
@@ -4926,6 +5820,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bits_shift_rotate_li
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_bits_shift_rotate_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | bits shl 1); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input bits shift/rotate initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(2, Span::test_data()),
+                Value::int(4, Span::test_data()),
+                Value::int(6, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bits_shift_rotate_args() {
     let source = "{|| let count = 1; let width = 1; mut out: int = (127 | bits shl $count --number-bytes $width --signed); $out }";
     let ir_block = IrBlock {
@@ -5136,6 +6052,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_abs_list_initia
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_abs_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | math abs); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math abs initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_math_abs_input() {
     let source = "{|| let input = -7; mut out: int = ($input | math abs); $out }";
     let ir_block = IrBlock {
@@ -5331,6 +6269,50 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_int_reduce_init
                 .initial_value
                 .as_int()
                 .expect("math integer reduction should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_int_reduce_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (1..4 | math sum); $out }",
+            10,
+            "math sum should fold range input",
+        ),
+        (
+            "{|| mut out: int = (1..4 | math product); $out }",
+            24,
+            "math product should fold range input",
+        ),
+        (
+            "{|| mut out: int = (1..4 | math min); $out }",
+            1,
+            "math min should fold range input",
+        ),
+        (
+            "{|| mut out: int = (1..4 | math max); $out }",
+            4,
+            "math max should fold range input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("math range reduction should produce an integer"),
             expected,
             "{message}"
         );
@@ -5625,6 +6607,18 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_avg_numeric_fil
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_avg_initializer() {
+    let source = r#"{|| mut value: string = (1..4 | math avg | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math avg initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("02.5"));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_avg_duration() {
     let source = "{|| mut out: duration = ([1sec, 3sec] | ^math avg); $out }";
     let ir_block = IrBlock {
@@ -5859,6 +6853,24 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_median_int_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_median_initializer() {
+    let source = "{|| mut out: int = (1..5 | math median); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math median initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("math median should produce an integer"),
+        3
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_math_median_mixed_numeric_integer_result()
  {
     let source = "{|| mut out: int = ([1.5, 3, 10.5] | math median); $out }";
@@ -6028,6 +7040,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_mode_sorted_ini
             &vec![
                 Value::int(1, Span::test_data()),
                 Value::int(5, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_mode_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | math mode); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math mode initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
             ]
         ),
         other => panic!("expected list initializer, got {other:?}"),
@@ -6324,6 +7358,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_rounding_list_i
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_math_rounding_initializer() {
+    let source = "{|| mut out: list<int> = (1..3 | math round); $out }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input math rounding initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_rounding() {
     let source = "{|| mut out: int = (1.25 | ^math ceil); $out }";
     let ir_block = IrBlock {
@@ -6518,7 +7574,7 @@ fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() 
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_rejects_constant_char_nul_initializer() {
+fn test_map_leading_annotated_mut_globals_supports_constant_char_nul_initializer() {
     let source = "{|| mut glyph: string = (char \"nul\"); $glyph }";
     let ir_block = IrBlock {
         instructions: vec![
@@ -6540,12 +7596,88 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_char_nul_initializer(
         file_count: 0,
     };
 
-    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect_err("char NUL output should be rejected");
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("char NUL output should map cleanly");
 
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("char should produce a string"),
+        "\0"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_char_list_length_initializer() {
+    let source = "{|| mut count: int = (char --list --unicode --integer prompt | length); $count }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("char --list length initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("char --list length should produce an integer"),
+        113
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_char_list_projection_initializer() {
+    let source =
+        "{|| mut ok: bool = (char --list | get 10 | get unicode | str starts-with \"d a\"); $ok }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("char --list projection initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
     assert!(
-        format!("{err:?}").contains("NUL bytes"),
-        "unexpected error: {err:?}"
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("char --list projection should produce a bool")
     );
 }
 
@@ -6622,6 +7754,24 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_length_chars_ini
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_length_unicode_width_initializer() {
+    let source = "{|| mut count: int = (\"字\\r\\n字\" | str length --unicode-width); $count }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str length --unicode-width initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("str length --unicode-width should produce an integer"),
+        5
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_external_str_length_mode_flag() {
     let source =
         "{|| let flag = \"--chars\"; mut count: int = (\"\u{00e9}\" | ^str length $flag); $count }";
@@ -6637,6 +7787,25 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_external_str_length
             .as_int()
             .expect("external str length --chars should produce an integer"),
         1
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_str_length_unicode_width_flag()
+ {
+    let source = "{|| let flag = \"--unicode-width\"; mut count: int = (\"字\\r\\n字\" | ^str length $flag); $count }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external str length --unicode-width mode flag should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("external str length --unicode-width should produce an integer"),
+        5
     );
 }
 
@@ -6680,6 +7849,32 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_length_list_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_length_unicode_width_list_initializer()
+ {
+    let source = "{|| mut counts: list<int> = ([\"字\", \"\\r\\n\", \"abc\"] | str length --unicode-width); $counts }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str length --unicode-width list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let lengths = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_int()
+                        .expect("str length --unicode-width should produce ints")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(lengths, vec![2, 1, 3]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_starts_with_initializer() {
     let source = "{|| mut ok: bool = (\"abcdef\" | str starts-with \"abc\"); $ok }";
     let ir_block = IrBlock {
@@ -6704,6 +7899,23 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_starts_with_init
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant str starts-with initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str starts-with should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_starts_with_nul_initializer() {
+    let source = "{|| mut ok: bool = (\"\\u{0}abcdef\" | str starts-with \"\\u{0}\"); $ok }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str starts-with NUL initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert!(
@@ -6740,6 +7952,23 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_ends_with_ignore
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant str ends-with --ignore-case initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str ends-with should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_ends_with_nul_initializer() {
+    let source = "{|| mut ok: bool = (\"abcdef\\u{0}\" | str ends-with \"\\u{0}\"); $ok }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str ends-with NUL initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert!(
@@ -6790,6 +8019,28 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_contains_list_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_contains_nul_list_initializer() {
+    let source =
+        "{|| mut oks: list<bool> = ([\"a\\u{0}b\", \"ab\"] | str contains \"\\u{0}\"); $oks }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str contains NUL list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .iter()
+                .map(|value| value.as_bool().expect("str contains should produce bools"))
+                .collect::<Vec<_>>();
+            assert_eq!(values, vec![true, false]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_str_contains_initializer() {
     let source = "{|| let needle = \"bc\"; mut ok: bool = (\"abcd\" | str contains $needle); $ok }";
     let ir_block = IrBlock {
@@ -6829,6 +8080,24 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_str_contai
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_external_str_contains_nul_initializer() {
+    let source =
+        "{|| let needle = \"\\u{0}\"; mut ok: bool = (\"a\\u{0}b\" | ^str contains $needle); $ok }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external str contains NUL initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str contains should produce a boolean")
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_index_of_initializer() {
     let source = "{|| mut index: int = (\"ababa\" | str index-of \"ba\"); $index }";
     let ir_block = IrBlock {
@@ -6853,6 +8122,42 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_index_of_initial
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant str index-of initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("str index-of should produce an integer"),
+        1
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_index_of_nul_initializer() {
+    let source = "{|| mut index: int = (\"a\\u{0}b\" | str index-of \"\\u{0}\"); $index }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str index-of NUL initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("str index-of should produce an integer"),
+        1
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_str_index_of_nul_initializer() {
+    let source = "{|| let needle = \"\\u{0}\"; mut index: int = (\"a\\u{0}b\" | ^str index-of $needle); $index }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external str index-of NUL initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert_eq!(
@@ -7305,6 +8610,24 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_join_list_initia
             .as_str()
             .expect("str join should produce a string"),
         "a-b-"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_str_join_initializer() {
+    let source = "{|| mut joined: string = (1..3 | str join \",\"); $joined }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input str join initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str join should produce a string"),
+        "1,2,3"
     );
 }
 
@@ -7993,6 +9316,25 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_right_char_
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_nul_char_initializer() {
+    let source =
+        "{|| mut trimmed: string = (\"\\u{0}abc\\u{0}\" | str trim --char \"\\u{0}\"); $trimmed }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim --char NUL initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str trim should produce a string"),
+        "abc"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_list_initializer() {
     let source = "{|| mut trimmed: list<string> = ([\" ab \", \" cd \"] | str trim); $trimmed }";
     let ir_block = IrBlock {
@@ -8017,6 +9359,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_list_initia
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant str trim list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let trimmed = vals
+                .iter()
+                .map(|value| value.as_str().expect("str trim should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(trimmed, vec!["ab", "cd"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_nul_char_list_initializer() {
+    let source = "{|| mut trimmed: list<string> = ([\"\\u{0}ab\", \"cd\\u{0}\"] | str trim --char \"\\u{0}\"); $trimmed }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim --char NUL list initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     match &globals[0].initial_value {
@@ -8195,6 +9558,33 @@ fn test_map_leading_annotated_mut_globals_supports_constant_split_list_initializ
                 })
                 .collect::<Vec<_>>();
             assert_eq!(groups, vec![vec!["a", "b"], vec!["c"]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_split_list_initializer() {
+    let source = "{|| mut groups: list<list<int>> = (1..5 | split list 3); $groups }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input split list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let groups = vals
+                .iter()
+                .map(|value| match value {
+                    Value::List { vals, .. } => vals
+                        .iter()
+                        .map(|value| value.as_int().expect("split list should keep integers"))
+                        .collect::<Vec<_>>(),
+                    other => panic!("expected nested list item, got {other:?}"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(groups, vec![vec![1, 2], vec![4, 5]]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -8598,6 +9988,23 @@ fn test_map_leading_annotated_mut_globals_supports_constant_non_empty_predicate_
             .initial_value
             .as_bool()
             .expect("is-not-empty should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_empty_predicate_initializer() {
+    let source = "{|| mut ok: bool = ((1..<1 | is-empty) and (1..4 | is-not-empty)); $ok }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("bounded range empty predicates should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("range empty predicates should produce a boolean")
     );
 }
 
@@ -9084,9 +10491,9 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_length_string_initial
         .expect_err("length on a string should be rejected");
 
     assert!(
-        err.labels
-            .iter()
-            .any(|label| label.text.contains("requires list, binary, or null input")),
+        err.labels.iter().any(|label| label
+            .text
+            .contains("requires list, bounded range, record, binary, or null input")),
         "unexpected labels: {:?}",
         err.labels
     );
@@ -9410,6 +10817,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_upsert_initiali
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_upsert_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | upsert 1 (2 ** 4)); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list upsert initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("upsert should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 16, 3]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_insert_initializer() {
     let source =
         "{|| mut state: record<pid: int ok: bool> = ({ok: false} | insert pid (2 ** 3)); $state }";
@@ -9490,6 +10918,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_update_initiali
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_update_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | update 1 (2 ** 4)); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list update initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("update should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 16, 3]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_append_initializer() {
     let source = "{|| mut vals: list<int> = ([1, 2] | append (2 ** 3)); $vals }";
     let ir_block = IrBlock {
@@ -9533,6 +10982,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_append_initiali
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_append_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | append 4); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list append initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("append should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![1, 2, 3, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_prepend_initializer() {
     let source = "{|| mut vals: list<int> = ([1, 2] | prepend 0); $vals }";
     let ir_block = IrBlock {
@@ -9570,6 +11040,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_prepend_initial
                 })
                 .collect();
             assert_eq!(ints, vec![0, 1, 2]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_list_prepend_initializer() {
+    let source = "{|| mut vals: list<int> = (1..3 | prepend 0); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input list prepend initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("prepend should keep range integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![0, 1, 2, 3]);
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
@@ -9793,6 +11284,18 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_get_initializer
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant list get initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_range_input_get_initializer() {
+    let source = "{|| mut second: int = (1..3 | get 1); $second }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("range input get initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].initial_value.as_int().ok(), Some(2));
@@ -11582,41 +13085,39 @@ fn int_member(index: usize) -> PathMember {
 }
 
 fn find_function_trampoline_named_projection_candidate() -> Option<(String, String, String)> {
-    for (function_name, arg_name, field_name) in [("security_file_open", "file", "f_flags")] {
-        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
-        if let Ok(Some(arg_idx)) =
-            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
-            && matches!(
-                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
-                Ok(Some(_))
-            )
-        {
-            return Some((
-                function_name.to_string(),
-                arg_name.to_string(),
-                field_name.to_string(),
-            ));
-        }
+    let (function_name, arg_name, field_name) = ("security_file_open", "file", "f_flags");
+    let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+    if let Ok(Some(arg_idx)) =
+        KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+        && matches!(
+            KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+            Ok(Some(_))
+        )
+    {
+        return Some((
+            function_name.to_string(),
+            arg_name.to_string(),
+            field_name.to_string(),
+        ));
     }
     None
 }
 
 fn find_function_trampoline_named_struct_leaf_candidate() -> Option<(String, String, String)> {
-    for (function_name, arg_name, field_name) in [("security_file_open", "file", "f_path")] {
-        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
-        if let Ok(Some(arg_idx)) =
-            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
-            && matches!(
-                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
-                Ok(Some(_))
-            )
-        {
-            return Some((
-                function_name.to_string(),
-                arg_name.to_string(),
-                field_name.to_string(),
-            ));
-        }
+    let (function_name, arg_name, field_name) = ("security_file_open", "file", "f_path");
+    let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+    if let Ok(Some(arg_idx)) =
+        KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+        && matches!(
+            KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+            Ok(Some(_))
+        )
+    {
+        return Some((
+            function_name.to_string(),
+            arg_name.to_string(),
+            field_name.to_string(),
+        ));
     }
     None
 }
@@ -11637,23 +13138,22 @@ fn find_function_trampoline_named_root_candidate() -> Option<(String, String)> {
 }
 
 fn find_function_trampoline_named_pointer_index_candidate() -> Option<(String, String)> {
-    for (function_name, arg_name) in [("do_close_on_exec", "files")] {
-        let path = [
-            TrampolineFieldSelector::Field("fdt".to_string()),
-            TrampolineFieldSelector::Field("fd".to_string()),
-            TrampolineFieldSelector::Index(0),
-            TrampolineFieldSelector::Field("f_inode".to_string()),
-            TrampolineFieldSelector::Field("i_ino".to_string()),
-        ];
-        if let Ok(Some(arg_idx)) =
-            KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
-            && matches!(
-                KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
-                Ok(Some(_))
-            )
-        {
-            return Some((function_name.to_string(), arg_name.to_string()));
-        }
+    let (function_name, arg_name) = ("do_close_on_exec", "files");
+    let path = [
+        TrampolineFieldSelector::Field("fdt".to_string()),
+        TrampolineFieldSelector::Field("fd".to_string()),
+        TrampolineFieldSelector::Index(0),
+        TrampolineFieldSelector::Field("f_inode".to_string()),
+        TrampolineFieldSelector::Field("i_ino".to_string()),
+    ];
+    if let Ok(Some(arg_idx)) =
+        KernelBtf::get().function_trampoline_arg_index_by_name(function_name, arg_name)
+        && matches!(
+            KernelBtf::get().function_trampoline_arg_field(function_name, arg_idx, &path),
+            Ok(Some(_))
+        )
+    {
+        return Some((function_name.to_string(), arg_name.to_string()));
     }
     None
 }
@@ -11710,20 +13210,19 @@ fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
 }
 
 fn find_lsm_named_projection_candidate() -> Option<(String, String, String)> {
-    for (hook_name, arg_name, field_name) in [("file_open", "file", "f_flags")] {
-        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
-        if let Ok(Some(arg_idx)) = KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name)
-            && matches!(
-                KernelBtf::get().lsm_hook_arg_field(hook_name, arg_idx, &path),
-                Ok(Some(_))
-            )
-        {
-            return Some((
-                hook_name.to_string(),
-                arg_name.to_string(),
-                field_name.to_string(),
-            ));
-        }
+    let (hook_name, arg_name, field_name) = ("file_open", "file", "f_flags");
+    let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+    if let Ok(Some(arg_idx)) = KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name)
+        && matches!(
+            KernelBtf::get().lsm_hook_arg_field(hook_name, arg_idx, &path),
+            Ok(Some(_))
+        )
+    {
+        return Some((
+            hook_name.to_string(),
+            arg_name.to_string(),
+            field_name.to_string(),
+        ));
     }
     None
 }
@@ -11741,14 +13240,13 @@ fn find_fexit_ret_candidate() -> Option<String> {
 }
 
 fn find_fexit_ret_projection_candidate() -> Option<(String, String)> {
-    for (function_name, field_name) in [("__jump_label_patch", "size")] {
-        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
-        if matches!(
-            KernelBtf::get().function_trampoline_ret_field(function_name, &path),
-            Ok(Some(_))
-        ) {
-            return Some((function_name.to_string(), field_name.to_string()));
-        }
+    let (function_name, field_name) = ("__jump_label_patch", "size");
+    let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+    if matches!(
+        KernelBtf::get().function_trampoline_ret_field(function_name, &path),
+        Ok(Some(_))
+    ) {
+        return Some((function_name.to_string(), field_name.to_string()));
     }
     None
 }
@@ -12140,17 +13638,30 @@ struct ExpectedHelperCall {
     const_args: &'static [(usize, i64)],
 }
 
-fn compile_intrinsic_call_expect_helper(
-    context: &str,
-    command_name: &str,
+struct IntrinsicHelperCallCase<'a> {
+    context: &'a str,
+    command_name: &'a str,
     program_type: EbpfProgramType,
-    target: &str,
+    target: &'a str,
     positional: Vec<HirLiteral>,
     named: Vec<(Vec<u8>, HirLiteral)>,
     flags: Vec<Vec<u8>>,
     return_value: HirLiteral,
     expected: ExpectedHelperCall,
-) {
+}
+
+fn compile_intrinsic_call_expect_helper(case: IntrinsicHelperCallCase<'_>) {
+    let IntrinsicHelperCallCase {
+        context,
+        command_name,
+        program_type,
+        target,
+        positional,
+        named,
+        flags,
+        return_value,
+        expected,
+    } = case;
     let hir =
         make_intrinsic_call_return_program(DeclId::new(42), positional, named, flags, return_value);
     let probe_ctx = ProbeContext::new(program_type, target);
@@ -12271,6 +13782,106 @@ fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_literal_int_count_program(count_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_literal_int_histogram_program(histogram_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: histogram_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_start_timer_program(start_timer_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::Call {
+                decl_id: start_timer_decl_id,
+                src_dst: RegId::new(0),
+                args: HirCallArgs::default(),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 1],
+        ast: vec![None; 1],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_stop_timer_program(stop_timer_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::Call {
+                decl_id: stop_timer_decl_id,
+                src_dst: RegId::new(0),
+                args: HirCallArgs::default(),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 1],
+        ast: vec![None; 1],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_ctx_iterate_count_program(cell_path: CellPath, count_decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -12381,6 +13992,68 @@ fn make_typed_global_define_count_program(
         ast: vec![None; 5],
         comments: vec![],
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_typed_global_define_set_get_program(
+    define_decl_id: DeclId,
+    set_decl_id: DeclId,
+    get_decl_id: DeclId,
+    type_spec: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(type_spec.into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: set_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -12709,6 +14382,34 @@ fn make_annotated_mut_int_count_program(count_decl_id: DeclId) -> HirProgram {
         entry: HirBlockId(0),
         spans: vec![Span::test_data(); 2],
         ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Int,
+        initial_value: Value::int(7, Span::test_data()),
+    }];
+    hir
+}
+
+fn make_annotated_mut_int_return_program() -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let global_var = VarId::new(10);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data()],
+        ast: vec![None],
         comments: vec![],
         register_count: 1,
         file_count: 0,
@@ -13953,6 +15654,106 @@ fn make_map_delete_program(map_delete_decl: DeclId, kind: &str) -> HirProgram {
         ast: vec![None; 7],
         comments: vec![],
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_literal_hash_map_update_contains_delete_program(
+    map_put_decl: DeclId,
+    map_contains_decl: DeclId,
+    map_delete_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(7),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"scratch".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::String(b"hash".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::Call {
+            decl_id: map_put_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1), RegId::new(2)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(3)),
+                    (b"flags".to_vec(), RegId::new(4)),
+                ],
+                pipeline_input: Some(RegId::new(0)),
+                ..Default::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(6),
+            lit: HirLiteral::String(b"scratch".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(7),
+            lit: HirLiteral::String(b"hash".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: map_contains_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(6)],
+                named: vec![(b"kind".to_vec(), RegId::new(7))],
+                ..Default::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(9),
+            lit: HirLiteral::String(b"scratch".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(10),
+            lit: HirLiteral::String(b"hash".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: map_delete_decl,
+            src_dst: RegId::new(8),
+            args: HirCallArgs {
+                positional: vec![RegId::new(9)],
+                named: vec![(b"kind".to_vec(), RegId::new(10))],
+                ..Default::default()
+            },
+        },
+    ];
+    let stmt_count = stmts.len();
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); stmt_count],
+        ast: vec![None; stmt_count],
+        comments: vec![],
+        register_count: 11,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -16992,6 +18793,353 @@ fn test_compile_syscall_return_program() {
         "demo",
         &HashMap::new(),
         "syscall return 0",
+    );
+}
+
+#[test]
+fn test_compile_syscall_generic_map_operations_program() {
+    let hir = make_literal_hash_map_update_contains_delete_program(
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+    );
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-put".to_string()),
+        (DeclId::new(43), "map-contains".to_string()),
+        (DeclId::new(44), "map-delete".to_string()),
+    ]);
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Syscall,
+        "demo",
+        &decl_names,
+        "syscall generic map operations",
+    );
+}
+
+#[test]
+fn test_compile_syscall_named_global_define_set_get_program() {
+    let hir = make_typed_global_define_set_get_program(
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+        "int",
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "global-define".to_string()),
+        (DeclId::new(43), "global-set".to_string()),
+        (DeclId::new(44), "global-get".to_string()),
+    ]);
+
+    let MirLoweringResult {
+        mut program,
+        mut type_hints,
+        readonly_globals,
+        data_globals,
+        bss_globals,
+        ..
+    } = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall named global define/set/get should lower");
+
+    optimize_with_ssa_hints(
+        &mut program.main,
+        Some(&probe_ctx),
+        &mut type_hints.main,
+        &type_hints.main_stack_slots,
+        &type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints_and_globals(
+        &program,
+        Some(&probe_ctx),
+        Some(&type_hints),
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    )
+    .expect("syscall named global define/set/get should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall named global define/set/get should produce bytecode"
+    );
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_global_seen_pid");
+    assert_eq!(result.bss_globals[0].size, std::mem::size_of::<i64>());
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| { reloc.symbol_name == "__nu_global_seen_pid" })
+    );
+}
+
+#[test]
+fn test_compile_syscall_annotated_mut_int_return_program() {
+    let hir = make_annotated_mut_int_return_program();
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+
+    let MirLoweringResult {
+        mut program,
+        mut type_hints,
+        readonly_globals,
+        data_globals,
+        bss_globals,
+        ..
+    } = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall annotated mut int should lower");
+
+    optimize_with_ssa_hints(
+        &mut program.main,
+        Some(&probe_ctx),
+        &mut type_hints.main,
+        &type_hints.main_stack_slots,
+        &type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints_and_globals(
+        &program,
+        Some(&probe_ctx),
+        Some(&type_hints),
+        readonly_globals,
+        data_globals,
+        bss_globals,
+    )
+    .expect("syscall annotated mut int should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall annotated mut int should produce bytecode"
+    );
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_local_global_10");
+    assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| { reloc.symbol_name == "__nu_local_global_10" })
+    );
+}
+
+#[test]
+fn test_compile_syscall_literal_int_count_program() {
+    let hir = make_literal_int_count_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall literal int count should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("syscall literal int count should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall literal int count should produce bytecode"
+    );
+    let counter_map = result
+        .maps
+        .iter()
+        .find(|map| map.name == COUNTER_MAP_NAME)
+        .expect("expected counters runtime map");
+    assert_eq!(counter_map.def.key_size, 8);
+    assert_eq!(counter_map.def.value_size, 8);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| { reloc.symbol_name == COUNTER_MAP_NAME })
+    );
+}
+
+#[test]
+fn test_compile_syscall_literal_int_histogram_program() {
+    let hir = make_literal_int_histogram_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let decl_names = HashMap::from([(DeclId::new(42), "histogram".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall literal int histogram should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("syscall literal int histogram should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall literal int histogram should produce bytecode"
+    );
+    let histogram_map = result
+        .maps
+        .iter()
+        .find(|map| map.name == HISTOGRAM_MAP_NAME)
+        .expect("expected histogram runtime map");
+    assert_eq!(histogram_map.def.key_size, 8);
+    assert_eq!(histogram_map.def.value_size, 8);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| { reloc.symbol_name == HISTOGRAM_MAP_NAME })
+    );
+}
+
+#[test]
+fn test_compile_syscall_start_timer_program() {
+    let hir = make_start_timer_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let decl_names = HashMap::from([(DeclId::new(42), "start-timer".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall start-timer should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("syscall start-timer should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall start-timer should produce bytecode"
+    );
+    let timestamp_map = result
+        .maps
+        .iter()
+        .find(|map| map.name == TIMESTAMP_MAP_NAME)
+        .expect("expected timer runtime map");
+    assert_eq!(timestamp_map.def.key_size, 8);
+    assert_eq!(timestamp_map.def.value_size, 8);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| { reloc.symbol_name == TIMESTAMP_MAP_NAME })
+    );
+}
+
+#[test]
+fn test_compile_syscall_stop_timer_program() {
+    let hir = make_stop_timer_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let decl_names = HashMap::from([(DeclId::new(42), "stop-timer".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("syscall stop-timer should lower");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("syscall stop-timer should compile");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "syscall stop-timer should produce bytecode"
+    );
+    let timestamp_map = result
+        .maps
+        .iter()
+        .find(|map| map.name == TIMESTAMP_MAP_NAME)
+        .expect("expected timer runtime map");
+    assert_eq!(timestamp_map.def.key_size, 8);
+    assert_eq!(timestamp_map.def.value_size, 8);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .filter(|reloc| reloc.symbol_name == TIMESTAMP_MAP_NAME)
+            .count()
+            >= 2
     );
 }
 
@@ -25283,17 +27431,17 @@ fn test_compile_packet_intrinsic_programs() {
             },
         ),
     ] {
-        compile_intrinsic_call_expect_helper(
+        compile_intrinsic_call_expect_helper(IntrinsicHelperCallCase {
             context,
             command_name,
             program_type,
             target,
             positional,
-            vec![],
+            named: vec![],
             flags,
             return_value,
             expected,
-        );
+        });
     }
 }
 

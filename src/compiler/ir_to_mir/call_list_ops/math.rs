@@ -9,6 +9,37 @@ enum CompileTimeI64Unit {
     Duration,
 }
 
+struct TypedFixedArrayIdentityMath<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    max_list_len: usize,
+}
+
+struct TypedFixedArrayBoundedMath<'a> {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    max_len: usize,
+}
+
+struct TypedFixedArrayReduceMath<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn compile_time_i64_unit_value(
         value: &nu_protocol::Value,
@@ -331,7 +362,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Err(CompileError::UnsupportedInstruction(
-            "math avg compile-time list result has type float; eBPF supports only average results folded by fill".into(),
+            "math avg compile-time list result has type float; eBPF supports only average results folded by metadata-only consumers".into(),
         ))
     }
 
@@ -445,7 +476,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "{cmd_name} compile-time list result has type float; eBPF supports only results folded by fill"
+            "{cmd_name} compile-time list result has type float; eBPF supports only results folded by metadata-only consumers"
         )))
     }
 
@@ -586,7 +617,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let result_type = result.get_type();
         Err(CompileError::UnsupportedInstruction(format!(
-            "math round --precision compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+            "math round --precision compile-time result has type {result_type}; eBPF supports only results folded by metadata-only consumers"
         )))
     }
 
@@ -930,7 +961,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let result_type = result.get_type();
         Err(CompileError::UnsupportedInstruction(format!(
-            "math log compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+            "math log compile-time result has type {result_type}; eBPF supports only results folded by metadata-only consumers"
         )))
     }
 
@@ -966,7 +997,7 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     format!("{cmd_name} does not accept arguments in eBPF")
                 };
-                return Err(CompileError::UnsupportedInstruction(message.into()));
+                return Err(CompileError::UnsupportedInstruction(message));
             }
         }
         let degrees = self
@@ -975,21 +1006,17 @@ impl<'a> HirToMirLowering<'a> {
             .any(|flag| matches!(flag.as_str(), "degrees" | "d"));
 
         let input_reg = input_reg.ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                format!("{cmd_name} requires compile-time known integer or float input in eBPF")
-                    .into(),
-            )
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compile-time known integer or float input in eBPF"
+            ))
         })?;
         let value = self
             .get_metadata(input_reg)
             .and_then(|meta| meta.constant_value.clone())
             .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    format!(
-                        "{cmd_name} requires compile-time known integer or float input in eBPF"
-                    )
-                    .into(),
-                )
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compile-time known integer or float input in eBPF"
+                ))
             })?;
 
         let result = match value {
@@ -1018,7 +1045,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let result_type = result.get_type();
         Err(CompileError::UnsupportedInstruction(format!(
-            "{cmd_name} compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+            "{cmd_name} compile-time result has type {result_type}; eBPF supports only results folded by metadata-only consumers"
         )))
     }
 
@@ -1097,7 +1124,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(input_meta) = input_meta.as_ref()
-            && self.lower_typed_fixed_array_integer_identity_math(
+            && self.lower_typed_fixed_array_integer_identity_math(TypedFixedArrayIdentityMath {
                 cmd_name,
                 src_dst,
                 dst_vreg,
@@ -1105,8 +1132,8 @@ impl<'a> HirToMirLowering<'a> {
                 input_reg,
                 input_vreg,
                 input_meta,
-                MAX_IDENTITY_STACK_LIST_CAPACITY,
-            )?
+                max_list_len: MAX_IDENTITY_STACK_LIST_CAPACITY,
+            })?
         {
             return Ok(());
         }
@@ -1186,15 +1213,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_integer_identity_math(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
-        max_list_len: usize,
+        math: TypedFixedArrayIdentityMath<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayIdentityMath {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+            max_list_len,
+        } = math;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -1308,7 +1339,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 return Err(CompileError::UnsupportedInstruction(
-                    "math abs compile-time list result includes floats; eBPF supports only float results folded by fill or str join"
+                    "math abs compile-time list result includes floats; eBPF supports only float results folded by metadata-only consumers"
                         .into(),
                 ));
             }
@@ -1425,11 +1456,10 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(input) = input_meta.as_ref().and_then(|meta| {
-            meta.literal_int
-                .or_else(|| match meta.constant_value.as_ref() {
-                    Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                    _ => None,
-                })
+            meta.literal_int.or(match meta.constant_value.as_ref() {
+                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                _ => None,
+            })
         }) {
             let output = input.wrapping_abs();
 
@@ -1466,7 +1496,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             return Err(CompileError::UnsupportedInstruction(
-                "math abs compile-time result has type float; eBPF supports only float results folded by fill or str join"
+                "math abs compile-time result has type float; eBPF supports only float results folded by metadata-only consumers"
                     .into(),
             ));
         }
@@ -1677,20 +1707,85 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_math_mode(
+            && self.lower_typed_fixed_array_math_mode(TypedFixedArrayBoundedMath {
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
-                MAX_RUNTIME_MODE_STACK_LIST_CAPACITY,
-            )?
+                input_meta: &input_meta,
+                max_len: MAX_RUNTIME_MODE_STACK_LIST_CAPACITY,
+            })?
         {
             return Ok(());
         }
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value {
+            if !vals.is_empty()
+                && vals
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Float { .. }))
+            {
+                let mut values = Vec::with_capacity(vals.len());
+                for (index, value) in vals.into_iter().enumerate() {
+                    let nu_protocol::Value::Float { val, .. } = value else {
+                        unreachable!("all values were checked as floats");
+                    };
+                    if !val.is_finite() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math mode requires finite float list items in eBPF; item {index} is {val}"
+                        )));
+                    }
+                    values.push(val);
+                }
+
+                values.sort_by(|lhs, rhs| {
+                    if *lhs == 0.0 && *rhs == 0.0 {
+                        lhs.is_sign_negative().cmp(&rhs.is_sign_negative())
+                    } else {
+                        lhs.partial_cmp(rhs).expect("finite floats are comparable")
+                    }
+                });
+
+                let mut counts = Vec::<(f64, usize)>::new();
+                for value in values {
+                    if let Some((last_value, count)) = counts.last_mut()
+                        && last_value.to_bits() == value.to_bits()
+                    {
+                        *count += 1;
+                        continue;
+                    }
+                    counts.push((value, 1));
+                }
+
+                let max_count = counts.iter().map(|(_, count)| *count).max().unwrap_or(0);
+                let modes = counts
+                    .into_iter()
+                    .filter_map(|(value, count)| {
+                        (count == max_count)
+                            .then_some(nu_protocol::Value::float(value, Span::unknown()))
+                    })
+                    .collect::<Vec<_>>();
+                if modes.len() > MAX_MODE_STACK_LIST_CAPACITY {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math mode output exceeds stack-backed numeric list capacity {MAX_MODE_STACK_LIST_CAPACITY} in eBPF"
+                    )));
+                }
+
+                if self.current_call_result_metadata_only {
+                    self.lower_compile_time_only_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::list(modes, Span::unknown()),
+                    );
+                    return Ok(());
+                }
+
+                return Err(CompileError::UnsupportedInstruction(
+                    "math mode compile-time list result has type list<float>; eBPF supports only float results folded by metadata-only consumers"
+                        .into(),
+                ));
+            }
+
             let mut counts = std::collections::BTreeMap::<i64, usize>::new();
             for (index, value) in vals.into_iter().enumerate() {
                 let nu_protocol::Value::Int { val, .. } = value else {
@@ -1721,9 +1816,10 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
-            return Err(CompileError::UnsupportedInstruction(format!(
+            return Err(CompileError::UnsupportedInstruction(
                 "math mode requires compile-time known integer-list or stack-backed numeric-list input in eBPF"
-            )));
+                    .to_string(),
+            ));
         };
         if max_len > MAX_RUNTIME_MODE_STACK_LIST_CAPACITY {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -1743,14 +1839,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_math_mode(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
-        max_mode_len: usize,
+        math: TypedFixedArrayBoundedMath<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBoundedMath {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+            max_len: max_mode_len,
+        } = math;
+
         let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_numeric_list_input(
             "math mode",
             input_reg,
@@ -2195,15 +2295,15 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_math_median(
+            && self.lower_typed_fixed_array_math_median(TypedFixedArrayBoundedMath {
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
-                MAX_MEDIAN_STACK_LIST_LEN,
-            )?
+                input_meta: &input_meta,
+                max_len: MAX_MEDIAN_STACK_LIST_LEN,
+            })?
         {
             return Ok(());
         }
@@ -2263,7 +2363,7 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(());
                 }
                 return Err(CompileError::UnsupportedInstruction(
-                    "math median compile-time list median has type float; eBPF supports only integer median results unless folded by fill".into(),
+                    "math median compile-time list median has type float; eBPF supports only integer median results unless folded by metadata-only consumers".into(),
                 ));
             }
 
@@ -2279,7 +2379,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 nu_protocol::Value::Float { .. } => {
                     return Err(CompileError::UnsupportedInstruction(
-                        "math median compile-time list median has type float; eBPF supports only integer median results unless folded by fill".into(),
+                        "math median compile-time list median has type float; eBPF supports only integer median results unless folded by metadata-only consumers".into(),
                     ));
                 }
                 _ => unreachable!("median values were validated as integer or finite float"),
@@ -2376,14 +2476,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_math_median(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
-        max_median_len: usize,
+        math: TypedFixedArrayBoundedMath<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayBoundedMath {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+            max_len: max_median_len,
+        } = math;
+
         let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_numeric_list_input(
             "math median",
             input_reg,
@@ -2465,9 +2569,9 @@ impl<'a> HirToMirLowering<'a> {
             || !self.named_args.is_empty()
             || !self.positional_args.is_empty()
         {
-            return Err(CompileError::UnsupportedInstruction(
-                format!("{cmd_name} does not accept arguments in eBPF").into(),
-            ));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept arguments in eBPF"
+            )));
         }
 
         let input_meta = input_reg
@@ -2520,15 +2624,15 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_math_reduce(
+            && self.lower_typed_fixed_array_math_reduce(TypedFixedArrayReduceMath {
                 cmd_name,
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
-            )?
+                input_meta: &input_meta,
+            })?
         {
             return Ok(());
         }
@@ -2733,14 +2837,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_math_reduce(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
+        math: TypedFixedArrayReduceMath<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayReduceMath {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+        } = math;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
         else {
@@ -2966,7 +3074,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "{cmd_name} compile-time list result has type float; eBPF supports only integer sum/product results unless folded by fill"
+            "{cmd_name} compile-time list result has type float; eBPF supports only integer sum/product results unless folded by metadata-only consumers"
         )))
     }
 
@@ -3026,7 +3134,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             nu_protocol::Value::Float { .. } => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} compile-time list result has type float; eBPF supports only integer min/max results unless folded by fill"
+                    "{cmd_name} compile-time list result has type float; eBPF supports only integer min/max results unless folded by metadata-only consumers"
                 )));
             }
             _ => unreachable!("min/max values were validated as integer or finite float"),

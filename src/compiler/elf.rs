@@ -334,6 +334,8 @@ pub enum BpfPinningType {
     ByName = 1,
 }
 
+pub const BPF_F_MMAPABLE: u32 = 1 << 10;
+
 /// Definition of a BPF map (legacy format for libbpf/Aya compatibility)
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
@@ -417,10 +419,15 @@ impl BpfMapDef {
                 )));
             }
             BpfMapType::Arena => {
-                return Err(CompileError::InvalidProgram(format!(
-                    "runtime map '{}' (Arena) is not supported yet; arena map_extra/mmap support is not modeled",
-                    map_name
-                )));
+                self.require_field(map_name, "key_size", self.key_size, 0)?;
+                self.require_field(map_name, "value_size", self.value_size, 0)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+                if self.map_flags & BPF_F_MMAPABLE == 0 {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "runtime map '{}' (Arena) must include BPF_F_MMAPABLE in map_flags",
+                        map_name
+                    )));
+                }
             }
             BpfMapType::Hash
             | BpfMapType::LruHash
@@ -820,6 +827,18 @@ impl BpfMapDef {
             value_size: 0,
             max_entries: size_bytes,
             map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create an arena map definition.
+    pub fn arena(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::Arena as u32,
+            key_size: 0,
+            value_size: 0,
+            max_entries,
+            map_flags: BPF_F_MMAPABLE,
             pinning: BpfPinningType::None,
         }
     }
@@ -3295,6 +3314,8 @@ pub struct EbpfProgramSection {
         HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-extra declarations keyed by map identity
+    pub generic_map_extras: HashMap<MapRef, u64>,
     /// Optional map-in-map inner template declarations keyed by outer map identity
     pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// Optional typed generic map value schemas keyed by map identity
@@ -3454,6 +3475,8 @@ pub struct EbpfProgram {
         HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-extra declarations keyed by map identity
+    pub generic_map_extras: HashMap<MapRef, u64>,
     /// Optional map-in-map inner template declarations keyed by outer map identity
     pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// Optional typed generic map value schemas keyed by map identity

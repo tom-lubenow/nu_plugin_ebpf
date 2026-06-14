@@ -42,10 +42,10 @@ enum ContextWriteTargetSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextWriteAvailability {
-    CgroupSockCreateReleaseOnly,
-    CgroupSockoptSetOnly,
-    CgroupSkbEgressOnly,
-    CgroupSockAddrUnixOnly,
+    SockCreateRelease,
+    SockoptSet,
+    SkbEgress,
+    SockAddrUnix,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,30 +418,26 @@ impl ContextWriteAvailability {
     fn error(&self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         let attach_shape = spec.attach_shape();
         match self {
-            Self::CgroupSockCreateReleaseOnly => {
+            Self::SockCreateRelease => {
                 attach_shape.is_cgroup_sock_post_bind().then(|| {
                     format!(
                     "ctx.{field_name} is only writable on cgroup_sock sock_create/sock_release hooks"
                 )
                 })
             }
-            Self::CgroupSockoptSetOnly => attach_shape.is_cgroup_sockopt_get().then(|| {
+            Self::SockoptSet => attach_shape.is_cgroup_sockopt_get().then(|| {
                 format!("ctx.{field_name} is only writable on cgroup_sockopt:set hooks")
             }),
-            Self::CgroupSkbEgressOnly => attach_shape.is_cgroup_skb_ingress().then(|| {
+            Self::SkbEgress => attach_shape.is_cgroup_skb_ingress().then(|| {
                 format!(
                     "ctx.{field_name} is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
                 )
             }),
-            Self::CgroupSockAddrUnixOnly => attach_shape.cgroup_sock_addr().and_then(
-                |(family, _)| {
-                    (family != ProgramAttachAddressFamily::Unix).then(|| {
-                        format!(
-                            "ctx.{field_name} is only writable on cgroup_sock_addr UNIX hooks"
-                        )
-                    })
-                },
-            ),
+            Self::SockAddrUnix => attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
+                (family != ProgramAttachAddressFamily::Unix).then(|| {
+                    format!("ctx.{field_name} is only writable on cgroup_sock_addr UNIX hooks")
+                })
+            }),
         }
     }
 }
@@ -516,10 +512,10 @@ impl ContextWriteSurfaceSpec {
             return Err(err);
         }
 
-        if let Some(field) = self.field.as_ref() {
-            if let Some(err) = spec.ctx_field_access_error(field) {
-                return Err(err);
-            }
+        if let Some(field) = self.field.as_ref()
+            && let Some(err) = spec.ctx_field_access_error(field)
+        {
+            return Err(err);
         }
 
         let write_target = self.target.resolve(spec, self.field_name, index)?;
@@ -788,7 +784,7 @@ const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::Tstamp,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbTstamp),
     )
-    .with_availability(ContextWriteAvailability::CgroupSkbEgressOnly),
+    .with_availability(ContextWriteAvailability::SkbEgress),
 ];
 
 const CGROUP_SOCK_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
@@ -797,19 +793,19 @@ const CGROUP_SOCK_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::BoundDevIf,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockBoundDevIf),
     )
-    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
+    .with_availability(ContextWriteAvailability::SockCreateRelease),
     ContextWriteSurfaceSpec::store_field(
         "mark",
         CtxField::SockMark,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockMark),
     )
-    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
+    .with_availability(ContextWriteAvailability::SockCreateRelease),
     ContextWriteSurfaceSpec::store_field(
         "priority",
         CtxField::SockPriority,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::CgroupSockPriority),
     )
-    .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
+    .with_availability(ContextWriteAvailability::SockCreateRelease),
 ];
 
 const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
@@ -854,13 +850,13 @@ const CGROUP_SOCKOPT_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::SockoptLevel,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptLevel),
     )
-    .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
+    .with_availability(ContextWriteAvailability::SockoptSet),
     ContextWriteSurfaceSpec::store_field(
         "optname",
         CtxField::SockoptOptname,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptOptname),
     )
-    .with_availability(ContextWriteAvailability::CgroupSockoptSetOnly),
+    .with_availability(ContextWriteAvailability::SockoptSet),
     ContextWriteSurfaceSpec::store_field(
         "optlen",
         CtxField::SockoptOptlen,
@@ -888,7 +884,7 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         "sun_path",
         ContextWriteTargetSpec::CgroupSockAddrSunPath,
     )
-    .with_availability(ContextWriteAvailability::CgroupSockAddrUnixOnly),
+    .with_availability(ContextWriteAvailability::SockAddrUnix),
     ContextWriteSurfaceSpec::store_field(
         "user_ip4",
         CtxField::UserIp4,

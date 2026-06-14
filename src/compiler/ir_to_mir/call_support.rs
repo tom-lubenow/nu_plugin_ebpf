@@ -566,7 +566,7 @@ impl<'a> HirToMirLowering<'a> {
             .collect())
     }
 
-    pub(super) fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
+    pub(super) fn aggregate_call_value_type(ty: &MirType) -> Option<&MirType> {
         match ty {
             MirType::Array { .. } | MirType::Struct { .. } => Some(ty),
             MirType::Ptr {
@@ -848,7 +848,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind_arg} is reserved for user-ringbuf helper surfaces; use helper-call user_ringbuf_drain instead of generic map commands"
             ),
             MapKind::Arena => format!(
-                "{context} --kind {kind_arg} names an arena map; arena map_extra/mmap support is not modeled yet"
+                "{context} --kind {kind_arg} names an arena map; map-define object emission is supported, but generic arena operations and live mmap setup are not modeled yet"
             ),
             MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
                 "{context} --kind {kind_arg} names a deprecated cgroup-storage map; use cgrp-storage local-storage maps instead"
@@ -881,9 +881,15 @@ impl<'a> HirToMirLowering<'a> {
         for map_ref in self.map_max_entries.keys() {
             Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
         }
+        for map_ref in self.map_extras.keys() {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
+        }
         for (outer, inner) in &self.map_inner_templates {
             Self::push_declared_map_ref_for_name(&mut refs, map_name, outer);
             Self::push_declared_map_ref_for_name(&mut refs, map_name, inner);
+        }
+        for map_ref in &self.declared_arena_maps {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
         }
         for map_ref in &self.observed_map_refs {
             Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
@@ -1112,7 +1118,8 @@ impl<'a> HirToMirLowering<'a> {
                     || kind.is_queue_or_stack()
                     || matches!(kind, MapKind::BloomFilter)
                     || kind.is_local_storage()
-                    || kind.is_map_in_map() =>
+                    || kind.is_map_in_map()
+                    || kind == MapKind::Arena =>
             {
                 Ok(kind)
             }
@@ -1647,10 +1654,10 @@ impl<'a> HirToMirLowering<'a> {
         if let Some((arg_idx, message)) = self
             .probe_ctx
             .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
+            && matches!(helper, BpfHelper::Redirect)
+            && arg_idx == 1
         {
-            if matches!(helper, BpfHelper::Redirect) && arg_idx == 1 {
-                return Err(CompileError::UnsupportedInstruction(message.to_string()));
-            }
+            return Err(CompileError::UnsupportedInstruction(message.to_string()));
         }
 
         if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement() {

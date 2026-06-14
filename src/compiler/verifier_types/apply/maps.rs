@@ -152,16 +152,29 @@ pub(super) fn apply_map_update_inst(
     check_map_value_access(val, types, state, errors);
 }
 
-pub(super) fn apply_map_update_dynamic_inst(
-    map_ptr: VReg,
-    inner_map: &MapRef,
-    key: VReg,
-    val: VReg,
-    flags: u64,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct MapUpdateDynamicApply<'a, 'errors> {
+    pub(super) map_ptr: VReg,
+    pub(super) inner_map: &'a MapRef,
+    pub(super) key: VReg,
+    pub(super) val: VReg,
+    pub(super) flags: u64,
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) state: &'a VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_map_update_dynamic_inst(apply: MapUpdateDynamicApply<'_, '_>) {
+    let MapUpdateDynamicApply {
+        map_ptr,
+        inner_map,
+        key,
+        val,
+        flags,
+        types,
+        state,
+        errors,
+    } = apply;
+
     if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
         errors.push(VerifierTypeError::new(
             inner_map

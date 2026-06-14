@@ -885,9 +885,9 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
 fn test_verifier_diff_helper_metadata_matches_rust() {
     let verifier_diff =
         crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
-    let helper_ids_body = nu_const_body(&verifier_diff, "BPF_HELPER_IDS", '[');
+    let helper_ids_bodies = nu_array_bodies(&verifier_diff, "BPF_HELPER_IDS");
     let mut helper_ids = std::collections::BTreeMap::new();
-    for line in helper_ids_body.lines() {
+    for line in helper_ids_bodies.into_iter().flat_map(str::lines) {
         let Some(name) = quoted_field(line, "name") else {
             continue;
         };
@@ -957,8 +957,8 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
         );
     }
 
-    let explicit_body = nu_const_body(&verifier_diff, "HELPER_KERNEL_FEATURES", '[');
-    for line in explicit_body.lines() {
+    let explicit_bodies = nu_array_bodies(&verifier_diff, "HELPER_KERNEL_FEATURES");
+    for line in explicit_bodies.into_iter().flat_map(str::lines) {
         let Some(name) = quoted_field(line, "name") else {
             continue;
         };
@@ -6129,16 +6129,92 @@ fn quoted_kfunc_names(source: &str) -> std::collections::BTreeSet<&str> {
 }
 
 fn nu_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
-    let marker = format!("const {name} = {delimiter}");
-    let start = source
-        .find(&marker)
+    nu_const_body_opt(source, name, delimiter)
         .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
-        + marker.len();
+}
+
+fn nu_const_body_opt<'a>(source: &'a str, name: &str, delimiter: char) -> Option<&'a str> {
+    let marker = format!("const {name} = {delimiter}");
+    let start = source.find(&marker)? + marker.len();
     let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
-    let end = source[start..]
-        .find(&end_marker)
-        .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
-    &source[start..start + end]
+    let end = source[start..].find(&end_marker)?;
+    Some(&source[start..start + end])
+}
+
+fn nu_let_declaration<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+    let marker = format!("let {name} = (");
+    let start = source.find(&marker)? + marker.len();
+    let rest = &source[start..];
+    Some(
+        rest.split_once("\n)")
+            .map(|(declaration, _)| declaration)
+            .unwrap_or(rest),
+    )
+}
+
+fn nu_inline_array_body_opt(declaration: &str) -> Option<&str> {
+    let array_start = declaration.find('[')? + 1;
+    let array_rest = &declaration[array_start..];
+    let end = array_rest
+        .find("\n    ]")
+        .or_else(|| array_rest.find("\n]"))?;
+    Some(&array_rest[..end])
+}
+
+fn nu_let_base_name(declaration: &str) -> Option<&str> {
+    let line = declaration.lines().find(|line| !line.trim().is_empty())?;
+    let name = line.trim().strip_prefix('$')?;
+    name.split_whitespace().next()
+}
+
+fn nu_append_names(declaration: &str) -> Vec<String> {
+    declaration
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("| append $")
+                .map(|name| name.trim().to_string())
+        })
+        .collect()
+}
+
+fn nu_array_bodies<'a>(source: &'a str, name: &str) -> Vec<&'a str> {
+    let mut visited = std::collections::BTreeSet::new();
+    nu_array_bodies_inner(source, name, &mut visited)
+}
+
+fn nu_array_bodies_inner<'a>(
+    source: &'a str,
+    name: &str,
+    visited: &mut std::collections::BTreeSet<String>,
+) -> Vec<&'a str> {
+    assert!(
+        visited.insert(name.to_string()),
+        "cyclic verifier_diff.nu array append chain at {name}"
+    );
+
+    let mut bodies = Vec::new();
+    let append_names = if let Some(body) = nu_const_body_opt(source, name, '[') {
+        bodies.push(body);
+        Vec::new()
+    } else if let Some(declaration) = nu_let_declaration(source, name) {
+        if let Some(base_name) = nu_let_base_name(declaration) {
+            bodies.extend(nu_array_bodies_inner(source, base_name, visited));
+        } else if let Some(body) = nu_inline_array_body_opt(declaration) {
+            bodies.push(body);
+        } else {
+            panic!("expected verifier_diff.nu let array {name} to contain an inline or base array")
+        }
+        nu_append_names(declaration)
+    } else {
+        panic!("expected verifier_diff.nu array {name}")
+    };
+
+    for append_name in append_names {
+        bodies.extend(nu_array_bodies_inner(source, &append_name, visited));
+    }
+    visited.remove(name);
+    bodies
 }
 
 fn quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
@@ -6228,9 +6304,9 @@ fn test_known_kfunc_signatures_have_compatibility_metadata() {
 fn test_verifier_diff_kfunc_metadata_matches_rust() {
     let verifier_diff =
         crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
-    let fallback_body = nu_const_body(&verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
+    let fallback_bodies = nu_array_bodies(&verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS");
     let mut fallback = std::collections::BTreeMap::new();
-    for line in fallback_body.lines() {
+    for line in fallback_bodies.into_iter().flat_map(str::lines) {
         let Some(name) = quoted_field(line, "name") else {
             continue;
         };

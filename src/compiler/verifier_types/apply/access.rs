@@ -129,16 +129,28 @@ pub(super) fn apply_store_inst(
     }
 }
 
-pub(super) fn apply_load_slot_inst(
-    dst: VReg,
-    slot: StackSlotId,
-    offset: i32,
-    ty: &MirType,
-    types: &HashMap<VReg, MirType>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct LoadSlotApply<'a, 'state, 'errors> {
+    pub(super) dst: VReg,
+    pub(super) slot: StackSlotId,
+    pub(super) offset: i32,
+    pub(super) ty: &'a MirType,
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_load_slot_inst(apply: LoadSlotApply<'_, '_, '_>) {
+    let LoadSlotApply {
+        dst,
+        slot,
+        offset,
+        ty,
+        types,
+        slot_sizes,
+        state,
+        errors,
+    } = apply;
     check_slot_access(slot, offset, ty.size(), slot_sizes, "load slot", errors);
     let dst_ty = types
         .get(&dst)
@@ -219,25 +231,37 @@ pub(super) fn apply_list_get_inst(
     state.set(dst, ty);
 }
 
-pub(super) fn apply_load_ctx_field_inst(
-    dst: VReg,
-    field: &CtxField,
-    slot: Option<StackSlotId>,
-    probe_ctx: Option<&ProbeContext>,
-    types: &HashMap<VReg, MirType>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct LoadCtxFieldApply<'a, 'state, 'errors> {
+    pub(super) dst: VReg,
+    pub(super) field: &'a CtxField,
+    pub(super) slot: Option<StackSlotId>,
+    pub(super) probe_ctx: Option<&'a ProbeContext>,
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_load_ctx_field_inst(apply: LoadCtxFieldApply<'_, '_, '_>) {
+    let LoadCtxFieldApply {
+        dst,
+        field,
+        slot,
+        probe_ctx,
+        types,
+        slot_sizes,
+        state,
+        errors,
+    } = apply;
     if let Some(ctx) = probe_ctx {
         if let Err(err) = ctx.validate_load_ctx_field(field) {
             errors.push(VerifierTypeError::new(err.to_string()));
-        } else if let Some(guard) = ctx.ctx_field_load_guard(field) {
-            if !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
+        } else if let Some(guard) = ctx.ctx_field_load_guard(field)
+            && !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
                 guard.allows_value(value)
-            }) {
-                errors.push(VerifierTypeError::new(guard.error(field)));
-            }
+            })
+        {
+            errors.push(VerifierTypeError::new(guard.error(field)));
         }
     }
     let mut ty = state.find_ctx_field_type(field).unwrap_or_else(|| {

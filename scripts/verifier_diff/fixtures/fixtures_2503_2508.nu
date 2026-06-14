@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2503_2508 = [
         error_contains: "str contains requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-contains-rejects-nul-substring"
+        name: "core-string-contains-nul-substring"
         category: "language-core"
-        tags: [string str contains diagnostics reject]
+        tags: [string str contains nul accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str contains "\u{0}"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str contains does not support NUL bytes in the substring in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-contains-rejects-ignore-case-runtime-input"

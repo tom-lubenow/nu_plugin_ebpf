@@ -6,6 +6,80 @@ use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind,
 
 mod numeric_lists;
 
+use super::expr_lowering::TrampolineFieldProjectionLowering;
+use numeric_lists::{
+    ExistingNumericListPathUpdate, MaterializedNumericListPathUpdate,
+    MetadataNumericListPathProjection,
+};
+
+struct RecordFieldMetadataProjection<'a> {
+    src_dst: RegId,
+    source_dst_vreg: VReg,
+    had_source_vreg: bool,
+    record_field: RecordField,
+    remaining_members: &'a [PathMember],
+    path_members: &'a [PathMember],
+    constant_value: Option<Value>,
+}
+
+struct MetadataRecordFieldReplacement<'a> {
+    src_dst: RegId,
+    field_index: usize,
+    updated_field: RecordField,
+    constant_value: Option<Value>,
+    path_desc: &'a str,
+    base_is_materialized_aggregate: bool,
+    action: &'a str,
+}
+
+struct FixedRecordArrayAppendElement<'a> {
+    src_dst: RegId,
+    field_index: usize,
+    existing_field: RecordField,
+    elem_ty: MirType,
+    len: usize,
+    element_vreg: VReg,
+    element_semantics: Option<AnnotatedValueSemantics>,
+    constant_value: Option<Value>,
+    path_desc: &'a str,
+    base_is_materialized_aggregate: bool,
+}
+
+struct FixedRecordArrayAppendValue<'a> {
+    src_dst: RegId,
+    field_index: usize,
+    existing_field: RecordField,
+    elem_ty: MirType,
+    len: usize,
+    new_value: RegId,
+    constant_value: Option<Value>,
+    path_desc: &'a str,
+    base_is_materialized_aggregate: bool,
+}
+
+struct FixedRecordArrayAppendPath<'a> {
+    src_dst: RegId,
+    field_index: usize,
+    existing_field: RecordField,
+    elem_ty: MirType,
+    len: usize,
+    path_members: &'a [PathMember],
+    new_value: RegId,
+    constant_value: Option<Value>,
+    path_desc: &'a str,
+    base_is_materialized_aggregate: bool,
+}
+
+struct ExistingFixedRecordArrayPathCreation<'a> {
+    src_dst: RegId,
+    field_index: usize,
+    path_members: &'a [PathMember],
+    new_value: RegId,
+    constant_value: Option<Value>,
+    path_desc: &'a str,
+    base_is_materialized_aggregate: bool,
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn ctx_field_kernel_btf_root_runtime_type(
         &self,
@@ -613,7 +687,7 @@ impl<'a> HirToMirLowering<'a> {
                 task_vreg,
                 source_ctx_field_name,
             )?;
-            let projected_ty = self.lower_typed_value_projection(
+            self.lower_typed_value_projection(
                 src_dst,
                 dst_vreg,
                 cgroup_vreg,
@@ -623,8 +697,7 @@ impl<'a> HirToMirLowering<'a> {
                 Some(&task_field),
                 true,
                 None,
-            )?;
-            projected_ty
+            )?
         };
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
@@ -645,14 +718,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_record_field_projection_from_metadata(
         &mut self,
-        src_dst: RegId,
-        source_dst_vreg: VReg,
-        had_source_vreg: bool,
-        record_field: RecordField,
-        remaining_members: &[PathMember],
-        path_members: &[PathMember],
-        constant_value: Option<Value>,
+        projection: RecordFieldMetadataProjection<'_>,
     ) -> Result<(), CompileError> {
+        let RecordFieldMetadataProjection {
+            src_dst,
+            source_dst_vreg,
+            had_source_vreg,
+            record_field,
+            remaining_members,
+            path_members,
+            constant_value,
+        } = projection;
+
         let path_desc = Self::typed_value_path_desc(path_members);
         let dst_vreg = if had_source_vreg {
             self.assign_fresh_vreg(src_dst)
@@ -965,13 +1042,15 @@ impl<'a> HirToMirLowering<'a> {
                 let remaining_members: Vec<PathMember> =
                     path.members.iter().skip(1).cloned().collect();
                 return self.lower_record_field_projection_from_metadata(
-                    src_dst,
-                    source_dst_vreg,
-                    had_source_vreg,
-                    record_field,
-                    &remaining_members,
-                    &path.members,
-                    constant_value,
+                    RecordFieldMetadataProjection {
+                        src_dst,
+                        source_dst_vreg,
+                        had_source_vreg,
+                        record_field,
+                        remaining_members: &remaining_members,
+                        path_members: &path.members,
+                        constant_value,
+                    },
                 );
             }
 
@@ -996,13 +1075,15 @@ impl<'a> HirToMirLowering<'a> {
                 let remaining_members: Vec<PathMember> =
                     path.members.iter().skip(1).cloned().collect();
                 return self.lower_record_field_projection_from_metadata(
-                    src_dst,
-                    source_dst_vreg,
-                    had_source_vreg,
-                    record_field,
-                    &remaining_members,
-                    &path.members,
-                    constant_value,
+                    RecordFieldMetadataProjection {
+                        src_dst,
+                        source_dst_vreg,
+                        had_source_vreg,
+                        record_field,
+                        remaining_members: &remaining_members,
+                        path_members: &path.members,
+                        constant_value,
+                    },
                 );
             }
 
@@ -1050,13 +1131,15 @@ impl<'a> HirToMirLowering<'a> {
                         && (!source_is_materialized_aggregate || stack_identity_field))
                 {
                     return self.lower_record_field_projection_from_metadata(
-                        src_dst,
-                        source_dst_vreg,
-                        had_source_vreg,
-                        record_field,
-                        &remaining_members,
-                        &path.members,
-                        constant_value,
+                        RecordFieldMetadataProjection {
+                            src_dst,
+                            source_dst_vreg,
+                            had_source_vreg,
+                            record_field,
+                            remaining_members: &remaining_members,
+                            path_members: &path.members,
+                            constant_value,
+                        },
                     );
                 }
             }
@@ -1139,16 +1222,18 @@ impl<'a> HirToMirLowering<'a> {
                 .get_metadata(src_dst)
                 .is_some_and(|meta| meta.mutable_global_runtime);
             if self.lower_metadata_numeric_list_path_projection(
-                src_dst,
-                dst_vreg,
-                base_vreg,
-                &base_runtime_ty,
-                &path.members,
-                &path_desc,
-                constant_value.clone(),
-                root_ctx_field.as_ref(),
-                base_trusted_btf,
-                base_semantics.as_ref(),
+                MetadataNumericListPathProjection {
+                    dst_reg: src_dst,
+                    dst_vreg,
+                    base_vreg,
+                    base_runtime_ty: &base_runtime_ty,
+                    path_members: &path.members,
+                    path_desc: &path_desc,
+                    constant_value: constant_value.clone(),
+                    root_ctx_field: root_ctx_field.as_ref(),
+                    trusted_btf: base_trusted_btf,
+                    base_semantics: base_semantics.as_ref(),
+                },
             )? {
                 return Ok(());
             }
@@ -1221,14 +1306,12 @@ impl<'a> HirToMirLowering<'a> {
 
         if !remaining_members.is_empty() {
             if let Some(spec) = ctx_projection_spec.as_ref() {
-                if spec.validate_socket_projection {
-                    if let (Some(ctx), Some(PathMember::String { val, .. })) =
+                if spec.validate_socket_projection
+                    && let (Some(ctx), Some(PathMember::String { val, .. })) =
                         (self.probe_ctx, remaining_members.first())
-                    {
-                        if let Some(message) = ctx.socket_projection_access_error(val) {
-                            return Err(CompileError::UnsupportedInstruction(message));
-                        }
-                    }
+                    && let Some(message) = ctx.socket_projection_access_error(val)
+                {
+                    return Err(CompileError::UnsupportedInstruction(message));
                 }
                 let slot = spec.stack_slot_ty.as_ref().map(|stack_slot_ty| {
                     let slot = self.func.alloc_stack_slot(
@@ -1457,15 +1540,16 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     TrampolineValueKind::Scalar => MirType::I64,
                 });
-            let kernel_btf_field_addr = self.lower_trampoline_field_projection(
-                dst_vreg,
-                &ctx_field,
-                spec,
-                &projection,
-                &root_runtime_ty,
-                &projected_ty,
-                &path_desc,
-            )?;
+            let kernel_btf_field_addr =
+                self.lower_trampoline_field_projection(TrampolineFieldProjectionLowering {
+                    dst_vreg,
+                    ctx_field: &ctx_field,
+                    spec,
+                    projection: &projection,
+                    root_runtime_ty: &root_runtime_ty,
+                    projected_ty: &projected_ty,
+                    path_desc: &path_desc,
+                })?;
 
             let projected_ty = projected_ty.clone();
             let root_trusted_btf = ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
@@ -2012,14 +2096,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn replace_metadata_record_field(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        updated_field: RecordField,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
-        action: &str,
+        replacement: MetadataRecordFieldReplacement<'_>,
     ) -> Result<(), CompileError> {
+        let MetadataRecordFieldReplacement {
+            src_dst,
+            field_index,
+            updated_field,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+            action,
+        } = replacement;
+
         let meta = self.get_or_create_metadata(src_dst);
         meta.record_fields[field_index] = updated_field;
         meta.field_type = Self::metadata_record_layout(meta);
@@ -2052,17 +2140,21 @@ impl<'a> HirToMirLowering<'a> {
 
     fn replace_fixed_record_array_with_appended_element(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        existing_field: RecordField,
-        elem_ty: MirType,
-        len: usize,
-        element_vreg: VReg,
-        element_semantics: Option<AnnotatedValueSemantics>,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
+        append: FixedRecordArrayAppendElement<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedRecordArrayAppendElement {
+            src_dst,
+            field_index,
+            existing_field,
+            elem_ty,
+            len,
+            element_vreg,
+            element_semantics,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        } = append;
+
         let new_len = len.checked_add(1).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "cell path update '.{} = ...' fixed-array length overflowed",
@@ -2125,30 +2217,34 @@ impl<'a> HirToMirLowering<'a> {
             root_ctx_field: None,
         };
 
-        self.replace_metadata_record_field(
+        self.replace_metadata_record_field(MetadataRecordFieldReplacement {
             src_dst,
             field_index,
             updated_field,
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-            "appended",
-        )?;
+            action: "appended",
+        })?;
         Ok(true)
     }
 
     fn lower_metadata_fixed_record_array_append_value(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        existing_field: RecordField,
-        elem_ty: MirType,
-        len: usize,
-        new_value: RegId,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
+        append: FixedRecordArrayAppendValue<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedRecordArrayAppendValue {
+            src_dst,
+            field_index,
+            existing_field,
+            elem_ty,
+            len,
+            new_value,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        } = append;
+
         let Some((element_vreg, new_element_ty, element_semantics)) =
             self.materialized_record_array_element_value(new_value, path_desc)?
         else {
@@ -2162,7 +2258,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        self.replace_fixed_record_array_with_appended_element(
+        self.replace_fixed_record_array_with_appended_element(FixedRecordArrayAppendElement {
             src_dst,
             field_index,
             existing_field,
@@ -2173,22 +2269,26 @@ impl<'a> HirToMirLowering<'a> {
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-        )
+        })
     }
 
     fn lower_metadata_fixed_record_array_append_path(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        existing_field: RecordField,
-        elem_ty: MirType,
-        len: usize,
-        path_members: &[PathMember],
-        new_value: RegId,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
+        append: FixedRecordArrayAppendPath<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedRecordArrayAppendPath {
+            src_dst,
+            field_index,
+            existing_field,
+            elem_ty,
+            len,
+            path_members,
+            new_value,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        } = append;
+
         let Some(PathMember::String {
             val: new_field_name,
             ..
@@ -2232,30 +2332,34 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
 
-        self.replace_fixed_record_array_with_appended_element(
+        self.replace_fixed_record_array_with_appended_element(FixedRecordArrayAppendElement {
             src_dst,
             field_index,
             existing_field,
             elem_ty,
             len,
             element_vreg,
-            materialized_element_meta.annotated_semantics,
+            element_semantics: materialized_element_meta.annotated_semantics,
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-        )
+        })
     }
 
     fn lower_metadata_existing_fixed_record_array_path_creation(
         &mut self,
-        src_dst: RegId,
-        field_index: usize,
-        path_members: &[PathMember],
-        new_value: RegId,
-        constant_value: Option<Value>,
-        path_desc: &str,
-        base_is_materialized_aggregate: bool,
+        creation: ExistingFixedRecordArrayPathCreation<'_>,
     ) -> Result<bool, CompileError> {
+        let ExistingFixedRecordArrayPathCreation {
+            src_dst,
+            field_index,
+            path_members,
+            new_value,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        } = creation;
+
         let [
             PathMember::String { .. },
             PathMember::Int {
@@ -2283,29 +2387,33 @@ impl<'a> HirToMirLowering<'a> {
         if *element_index == len {
             if tail.is_empty() {
                 return self.lower_metadata_fixed_record_array_append_value(
-                    src_dst,
-                    field_index,
-                    existing_field,
-                    elem_ty,
-                    len,
-                    new_value,
-                    constant_value,
-                    path_desc,
-                    base_is_materialized_aggregate,
+                    FixedRecordArrayAppendValue {
+                        src_dst,
+                        field_index,
+                        existing_field,
+                        elem_ty,
+                        len,
+                        new_value,
+                        constant_value,
+                        path_desc,
+                        base_is_materialized_aggregate,
+                    },
                 );
             }
             if matches!(tail.first(), Some(PathMember::String { .. })) {
                 return self.lower_metadata_fixed_record_array_append_path(
-                    src_dst,
-                    field_index,
-                    existing_field,
-                    elem_ty,
-                    len,
-                    path_members,
-                    new_value,
-                    constant_value,
-                    path_desc,
-                    base_is_materialized_aggregate,
+                    FixedRecordArrayAppendPath {
+                        src_dst,
+                        field_index,
+                        existing_field,
+                        elem_ty,
+                        len,
+                        path_members,
+                        new_value,
+                        constant_value,
+                        path_desc,
+                        base_is_materialized_aggregate,
+                    },
                 );
             }
             return Ok(false);
@@ -2414,15 +2522,15 @@ impl<'a> HirToMirLowering<'a> {
             root_ctx_field: None,
         };
 
-        self.replace_metadata_record_field(
+        self.replace_metadata_record_field(MetadataRecordFieldReplacement {
             src_dst,
             field_index,
             updated_field,
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-            "expanded",
-        )?;
+            action: "expanded",
+        })?;
         Ok(true)
     }
 
@@ -2541,24 +2649,28 @@ impl<'a> HirToMirLowering<'a> {
         if !first_field_missing && !first_field_empty_record {
             let path_desc = Self::typed_value_path_desc(path_members);
             if self.lower_metadata_existing_numeric_list_path_update(
-                src_dst,
-                existing_index.expect("existing index checked above"),
-                path_members,
-                new_value,
-                constant_value.clone(),
-                &path_desc,
-                base_is_materialized_aggregate,
+                ExistingNumericListPathUpdate {
+                    src_dst,
+                    field_index: existing_index.expect("existing index checked above"),
+                    path_members,
+                    new_value,
+                    constant_value: constant_value.clone(),
+                    path_desc: &path_desc,
+                    base_is_materialized_aggregate,
+                },
             )? {
                 return Ok(true);
             }
             if self.lower_metadata_existing_fixed_record_array_path_creation(
-                src_dst,
-                existing_index.expect("existing index checked above"),
-                path_members,
-                new_value,
-                constant_value,
-                &path_desc,
-                base_is_materialized_aggregate,
+                ExistingFixedRecordArrayPathCreation {
+                    src_dst,
+                    field_index: existing_index.expect("existing index checked above"),
+                    path_members,
+                    new_value,
+                    constant_value,
+                    path_desc: &path_desc,
+                    base_is_materialized_aggregate,
+                },
             )? {
                 return Ok(true);
             }
@@ -2820,12 +2932,7 @@ impl<'a> HirToMirLowering<'a> {
                             path_desc
                         )));
                     };
-                    let index = usize::try_from(*index).map_err(|_| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "cell path update '.{} = ...' requires a non-negative ctx.optval byte index",
-                            path_desc
-                        ))
-                    })?;
+                    let index = *index;
                     self.lower_cgroup_sockopt_optval_byte_update_from_ptr(
                         record_field.value_vreg,
                         index,
@@ -2923,12 +3030,7 @@ impl<'a> HirToMirLowering<'a> {
                     path_desc
                 )));
             };
-            let index = usize::try_from(*index).map_err(|_| {
-                CompileError::UnsupportedInstruction(format!(
-                    "cell path update '.{} = ...' requires a non-negative ctx.optval byte index",
-                    path_desc
-                ))
-            })?;
+            let index = *index;
             self.lower_cgroup_sockopt_optval_byte_update_from_ptr(
                 base_vreg, index, new_value, &path_desc,
             )?;
@@ -2946,15 +3048,15 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        if self.lower_materialized_numeric_list_path_update(
+        if self.lower_materialized_numeric_list_path_update(MaterializedNumericListPathUpdate {
             src_dst,
             base_vreg,
-            pointee.as_ref(),
-            &path.members,
+            pointee_ty: pointee.as_ref(),
+            path_members: &path.members,
             new_value,
-            constant_value.clone(),
-            &path_desc,
-        )? {
+            constant_value: constant_value.clone(),
+            path_desc: &path_desc,
+        })? {
             return Ok(());
         }
 

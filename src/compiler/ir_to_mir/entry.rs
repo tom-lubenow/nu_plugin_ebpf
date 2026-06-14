@@ -15,6 +15,7 @@ pub struct MirLoweringResult {
     pub generic_map_key_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    pub generic_map_extras: HashMap<MapRef, u64>,
     pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     pub generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     pub readonly_globals: Vec<ReadonlyGlobal>,
@@ -340,6 +341,7 @@ fn collect_named_global_predeclarations(
     merged.into_iter().collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     hir: &HirProgram,
     probe_ctx: Option<&ProbeContext>,
@@ -366,6 +368,7 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
     hir: &HirProgram,
     probe_ctx: Option<&ProbeContext>,
@@ -384,14 +387,14 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
     let mutated_capture_vars = collect_mutated_capture_vars(hir, user_functions);
     let forward_named_globals =
         collect_named_global_predeclarations(hir, decl_names, user_functions);
-    let mut lowering = HirToMirLowering::new(
+    let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
         probe_ctx,
         decl_names,
-        &hir.closures,
-        &hir.closure_param_sources,
-        &hir.captures,
-        hir.ctx_param,
-        hir_type_hints.as_ref(),
+        closure_irs: &hir.closures,
+        closure_param_sources: &hir.closure_param_sources,
+        captures: &hir.captures,
+        ctx_param: hir.ctx_param,
+        type_hints: hir_type_hints.as_ref(),
         external_map_key_types,
         external_map_key_semantics,
         external_map_max_entries,
@@ -400,7 +403,7 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
         external_map_value_semantics,
         user_functions,
         decl_signatures,
-    );
+    });
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
     lowering.init_annotated_mut_globals(&hir.annotated_mut_globals)?;
     for (name, predecl) in forward_named_globals {
@@ -426,6 +429,7 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
         generic_map_key_semantics,
         generic_map_value_types,
         generic_map_max_entries,
+        generic_map_extras,
         generic_map_inner_templates,
         generic_map_value_semantics,
         readonly_globals,
@@ -439,6 +443,7 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
         generic_map_key_semantics,
         generic_map_value_types,
         generic_map_max_entries,
+        generic_map_extras,
         generic_map_inner_templates,
         generic_map_value_semantics,
         readonly_globals,

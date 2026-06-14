@@ -14,21 +14,62 @@ pub(super) fn verifier_diff_const_body<'a>(
     name: &str,
     delimiter: char,
 ) -> &'a str {
-    let start_delimiter = format!("const {name} = {delimiter}");
-    let start = source
-        .find(&start_delimiter)
+    verifier_diff_const_body_opt(source, name, delimiter)
         .unwrap_or_else(|| panic!("expected scripts/verifier_diff.nu const {name}"))
-        + start_delimiter.len();
+}
+
+fn verifier_diff_const_body_opt<'a>(
+    source: &'a str,
+    name: &str,
+    delimiter: char,
+) -> Option<&'a str> {
+    let start_delimiter = format!("const {name} = {delimiter}");
+    let start = source.find(&start_delimiter)? + start_delimiter.len();
     let end_delimiter = match delimiter {
         '[' => "\n]",
         '{' => "\n}",
         _ => panic!("unsupported verifier_diff.nu delimiter {delimiter}"),
     };
     let rest = &source[start..];
-    let end = rest.find(end_delimiter).unwrap_or_else(|| {
-        panic!("expected scripts/verifier_diff.nu const {name} to close with {end_delimiter:?}")
-    });
-    &rest[..end]
+    let end = rest.find(end_delimiter)?;
+    Some(&rest[..end])
+}
+
+fn verifier_diff_let_array_body_opt<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+    let start_delimiter = format!("let {name} = (");
+    let start = source.find(&start_delimiter)? + start_delimiter.len();
+    let rest = &source[start..];
+    let array_start = rest.find('[')? + 1;
+    let array_rest = &rest[array_start..];
+    let end = array_rest
+        .find("\n    ]")
+        .or_else(|| array_rest.find("\n]"))?;
+    Some(&array_rest[..end])
+}
+
+fn verifier_diff_array_body<'a>(source: &'a str, name: &str) -> &'a str {
+    verifier_diff_const_body_opt(source, name, '[')
+        .or_else(|| verifier_diff_let_array_body_opt(source, name))
+        .unwrap_or_else(|| panic!("expected scripts/verifier_diff.nu array {name}"))
+}
+
+fn verifier_diff_append_names(source: &str, name: &str) -> Vec<String> {
+    let Some(start) = source.find(&format!("let {name} = (")) else {
+        return Vec::new();
+    };
+    let declaration = &source[start..];
+    let declaration = declaration
+        .split_once("\n)")
+        .map(|(body, _)| body)
+        .unwrap_or(declaration);
+    declaration
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("| append $")
+                .map(|name| name.trim().to_string())
+        })
+        .collect()
 }
 
 pub(super) fn verifier_diff_quoted_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
@@ -121,10 +162,13 @@ pub(super) fn verifier_diff_feature_table_records(
     const_name: &str,
     table_key_field: &str,
 ) -> BTreeMap<String, VerifierDiffFeatureRecord> {
-    let body = verifier_diff_const_body(source, const_name, '[');
+    let mut bodies = vec![verifier_diff_array_body(source, const_name)];
+    for append_name in verifier_diff_append_names(source, const_name) {
+        bodies.push(verifier_diff_array_body(source, &append_name));
+    }
     let mut records = BTreeMap::new();
 
-    for line in body.lines() {
+    for line in bodies.into_iter().flat_map(str::lines) {
         let Some(table_key) = verifier_diff_quoted_field(line, table_key_field) else {
             continue;
         };
@@ -144,10 +188,15 @@ pub(super) fn verifier_diff_feature_table_records(
 pub(super) fn verifier_diff_kfunc_fallback_records(
     source: &str,
 ) -> BTreeMap<String, VerifierDiffFeatureRecord> {
-    let body = verifier_diff_const_body(source, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
+    let fallback_name = "KFUNC_KERNEL_FEATURE_FALLBACKS";
     let mut records = BTreeMap::new();
 
-    for line in body.lines() {
+    let mut bodies = vec![verifier_diff_array_body(source, fallback_name)];
+    for append_name in verifier_diff_append_names(source, fallback_name) {
+        bodies.push(verifier_diff_array_body(source, &append_name));
+    }
+
+    for line in bodies.into_iter().flat_map(str::lines) {
         let Some(name) = verifier_diff_quoted_field(line, "name") else {
             continue;
         };

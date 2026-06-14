@@ -1,0 +1,33 @@
+const HELPER_RUNTIME_OBJECT_KERNEL_FEATURES = [
+    { name: "bpf_ringbuf_output", feature: $KERNEL_FEATURE_BPF_RINGBUF_OUTPUT }
+    { name: "bpf_ringbuf_reserve", feature: $KERNEL_FEATURE_BPF_RINGBUF_RESERVE }
+    { name: "bpf_ringbuf_submit", feature: $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT }
+    { name: "bpf_ringbuf_discard", feature: $KERNEL_FEATURE_BPF_RINGBUF_DISCARD }
+    { name: "bpf_ringbuf_query", feature: $KERNEL_FEATURE_BPF_RINGBUF_QUERY }
+    { name: "bpf_bprm_opts_set", feature: $KERNEL_FEATURE_BPF_BPRM_OPTS_SET }
+    { name: "bpf_spin_lock", feature: $KERNEL_FEATURE_BPF_SPIN_LOCK }
+    { name: "bpf_spin_unlock", feature: $KERNEL_FEATURE_BPF_SPIN_UNLOCK }
+    { name: "bpf_for_each_map_elem", feature: $KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM }
+    { name: "bpf_seq_printf", feature: $KERNEL_FEATURE_BPF_SEQ_PRINTF }
+    { name: "bpf_seq_write", feature: $KERNEL_FEATURE_BPF_SEQ_WRITE }
+    { name: "bpf_sys_bpf", feature: $KERNEL_FEATURE_BPF_SYS_BPF }
+    { name: "bpf_sys_close", feature: $KERNEL_FEATURE_BPF_SYS_CLOSE }
+    { name: "bpf_btf_find_by_name_kind", feature: $KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND }
+    { name: "bpf_get_current_task_btf", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
+    { name: "bpf_task_pt_regs", feature: $KERNEL_FEATURE_BPF_TASK_PT_REGS }
+    { name: "bpf_get_func_ip", feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
+    { name: "bpf_get_attach_cookie", feature: $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE }
+    { name: "bpf_get_func_arg_cnt", feature: $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT }
+    { name: "bpf_timer_init", feature: $KERNEL_FEATURE_BPF_TIMER_INIT }
+    { name: "bpf_timer_set_callback", feature: $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK }
+    { name: "bpf_timer_start", feature: $KERNEL_FEATURE_BPF_TIMER_START }
+    { name: "bpf_timer_cancel", feature: $KERNEL_FEATURE_BPF_TIMER_CANCEL }
+    { name: "bpf_kallsyms_lookup_name", feature: $KERNEL_FEATURE_BPF_KALLSYMS_LOOKUP_NAME }
+    { name: "bpf_loop", feature: $KERNEL_FEATURE_BPF_LOOP }
+    { name: "bpf_kptr_xchg", feature: $KERNEL_FEATURE_BPF_KPTR_XCHG }
+    { name: "bpf_ringbuf_reserve_dynptr", feature: $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR }
+    { name: "bpf_ringbuf_submit_dynptr", feature: $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR }
+    { name: "bpf_ringbuf_discard_dynptr", feature: $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR }
+    { name: "bpf_dynptr_data", feature: $KERNEL_FEATURE_BPF_DYNPTR_DATA }
+    { name: "bpf_user_ringbuf_drain", feature: $KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN }
+]

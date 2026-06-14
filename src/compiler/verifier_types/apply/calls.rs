@@ -41,17 +41,31 @@ fn reject_call_if_kernel_lock_held(
     }
 }
 
-pub(super) fn apply_call_helper_inst(
-    dst: VReg,
-    helper: u32,
-    args: &[MirValue],
-    types: &HashMap<VReg, MirType>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct CallHelperApply<'a, 'state, 'errors> {
+    pub(super) dst: VReg,
+    pub(super) helper: u32,
+    pub(super) args: &'a [MirValue],
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) program: Option<&'a ProgramTypeInfo>,
+    pub(super) probe_ctx: Option<&'a ProbeContext>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_call_helper_inst(apply: CallHelperApply<'_, '_, '_>) {
+    let CallHelperApply {
+        dst,
+        helper,
+        args,
+        types,
+        slot_sizes,
+        program,
+        probe_ctx,
+        state,
+        errors,
+    } = apply;
+
     if helper > i32::MAX as u32 {
         errors.push(VerifierTypeError::new(format!(
             "helper id {} is outside the eBPF call immediate range",
@@ -74,21 +88,20 @@ pub(super) fn apply_call_helper_inst(
         }
     }
 
-    if let Some(helper_kind) = BpfHelper::from_u32(helper) {
-        if helper_kind.requires_callback_subprogram()
-            && !helper_kind.supports_modeled_callback_subprogram()
-        {
-            errors.push(VerifierTypeError::new(format!(
-                "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
-                helper_kind.name()
-            )));
-            let ty = types
-                .get(&dst)
-                .map(verifier_type_from_mir)
-                .unwrap_or(VerifierType::Scalar);
-            state.set_with_range(dst, ty, ValueRange::Unknown);
-            return;
-        }
+    if let Some(helper_kind) = BpfHelper::from_u32(helper)
+        && helper_kind.requires_callback_subprogram()
+        && !helper_kind.supports_modeled_callback_subprogram()
+    {
+        errors.push(VerifierTypeError::new(format!(
+            "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
+            helper_kind.name()
+        )));
+        let ty = types
+            .get(&dst)
+            .map(verifier_type_from_mir)
+            .unwrap_or(VerifierType::Scalar);
+        state.set_with_range(dst, ty, ValueRange::Unknown);
+        return;
     }
 
     if let Some(helper_kind) = BpfHelper::from_u32(helper)
@@ -119,22 +132,29 @@ pub(super) fn apply_call_helper_inst(
             )));
         }
         for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
-            check_helper_arg(
-                helper,
-                idx,
+            check_helper_arg(HelperArgCheck {
+                helper_id: helper,
+                arg_idx: idx,
                 arg,
-                sig.arg_kind(idx),
+                expected: sig.arg_kind(idx),
                 types,
                 state,
                 program,
                 probe_ctx,
                 slot_sizes,
                 errors,
-            );
+            });
         }
-        let helper_kfunc_acquire_kind = apply_helper_semantics(
-            helper, args, types, state, slot_sizes, program, probe_ctx, errors,
-        );
+        let helper_kfunc_acquire_kind = apply_helper_semantics(HelperSemanticsApply {
+            helper_id: helper,
+            args,
+            types,
+            state,
+            slot_sizes,
+            program,
+            probe_ctx,
+            errors,
+        });
         clear_stack_slot_value_ranges_for_helper_args(args, state);
 
         let ty = match sig.ret_kind {
@@ -298,16 +318,29 @@ fn clear_stack_slot_value_ranges_for_vreg_args(args: &[VReg], state: &mut Verifi
     }
 }
 
-pub(super) fn apply_call_kfunc_inst(
-    dst: VReg,
-    kfunc: &str,
-    args: &[VReg],
-    types: &HashMap<VReg, MirType>,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct CallKfuncApply<'a, 'state, 'errors> {
+    pub(super) dst: VReg,
+    pub(super) kfunc: &'a str,
+    pub(super) args: &'a [VReg],
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) program: Option<&'a ProgramTypeInfo>,
+    pub(super) probe_ctx: Option<&'a ProbeContext>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_call_kfunc_inst(apply: CallKfuncApply<'_, '_, '_>) {
+    let CallKfuncApply {
+        dst,
+        kfunc,
+        args,
+        types,
+        program,
+        probe_ctx,
+        state,
+        errors,
+    } = apply;
+
     if !kfunc_allowed_while_lock_held(kfunc) {
         reject_call_if_kernel_lock_held(state, format!("kfunc '{}'", kfunc), errors);
     }
@@ -343,17 +376,17 @@ pub(super) fn apply_call_kfunc_inst(
         ));
     }
     for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
-        check_kfunc_arg(
+        check_kfunc_arg(KfuncArgCheck {
             kfunc,
-            idx,
-            *arg,
-            sig.arg_kind(idx),
+            arg_idx: idx,
+            arg: *arg,
+            expected: sig.arg_kind(idx),
             types,
             state,
             program,
             probe_ctx,
             errors,
-        );
+        });
     }
     check_kfunc_semantics(kfunc, args, types, state, errors);
     apply_kfunc_semantics(kfunc, args, types, state, errors);
@@ -394,17 +427,31 @@ pub(super) fn apply_call_kfunc_inst(
     state.set_with_range(dst, ty, ValueRange::Unknown);
 }
 
-pub(super) fn apply_call_subfn_inst(
-    dst: VReg,
-    subfn: SubfunctionId,
-    args: &[VReg],
-    types: &HashMap<VReg, MirType>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
-    probe_ctx: Option<&ProbeContext>,
-    state: &mut VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(super) struct CallSubfnApply<'a, 'state, 'errors> {
+    pub(super) dst: VReg,
+    pub(super) subfn: SubfunctionId,
+    pub(super) args: &'a [VReg],
+    pub(super) types: &'a HashMap<VReg, MirType>,
+    pub(super) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(super) subfn_summaries: &'a HashMap<SubfunctionId, SubfunctionSummary>,
+    pub(super) probe_ctx: Option<&'a ProbeContext>,
+    pub(super) state: &'state mut VerifierState,
+    pub(super) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(super) fn apply_call_subfn_inst(apply: CallSubfnApply<'_, '_, '_>) {
+    let CallSubfnApply {
+        dst,
+        subfn,
+        args,
+        types,
+        slot_sizes,
+        subfn_summaries,
+        probe_ctx,
+        state,
+        errors,
+    } = apply;
+
     reject_call_if_kernel_lock_held(state, format!("subfunction '{}'", subfn), errors);
 
     if args.len() > 5 {

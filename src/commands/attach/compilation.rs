@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Bound;
 
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use fancy_regex::{NoExpand, Regex as FancyRegex};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
@@ -9,7 +10,7 @@ use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
 use nu_protocol::ast::{
-    Boolean, CellPath, Comparison, Expr, ExternalArgument, ListItem, Math, Operator,
+    Bits, Boolean, CellPath, Comparison, Expr, ExternalArgument, ListItem, Math, Operator,
     RangeInclusion, RecordItem,
 };
 use nu_protocol::casing::Casing;
@@ -18,7 +19,7 @@ use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
     BlockId, Config, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Range,
-    Record, Signature, Span, Spanned, Type, Value, levenshtein_distance,
+    Record, Signals, Signature, Span, Spanned, Type, Value, levenshtein_distance,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -435,6 +436,7 @@ fn eval_supported_constant_value_with_input(
         Expr::BinaryOp(lhs, op_expr, rhs) => {
             eval_supported_constant_binary_op(working_set, lhs, op_expr, rhs, env, expr.span)
         }
+        Expr::Range(range) => eval_supported_constant_range_expr(working_set, range, env, expr.span),
         Expr::FullCellPath(full_cell_path) => {
             let value = eval_supported_constant_value_with_input(
                 working_set,
@@ -590,7 +592,12 @@ fn eval_supported_constant_binary_op(
             let rhs_value = eval_supported_constant_value_with_env(working_set, rhs, env)?;
             eval_supported_constant_math_binary_op(math, lhs_value, rhs_value, span)
         }
-        Operator::Bits(_) | Operator::Assignment(_) => Err(LabeledError::new(
+        Operator::Bits(bits) => {
+            let lhs_value = eval_supported_constant_value_with_env(working_set, lhs, env)?;
+            let rhs_value = eval_supported_constant_value_with_env(working_set, rhs, env)?;
+            eval_supported_constant_bits_op(bits, &lhs_value, &rhs_value, span)
+        }
+        Operator::Assignment(_) => Err(LabeledError::new(
             "Unsupported annotated mutable global initializer",
         )
         .with_label(
@@ -666,14 +673,14 @@ fn eval_supported_constant_comparison_op(
     }
 
     let result = match op {
-        Comparison::Equal => eval_supported_constant_values_equal(&lhs, &rhs),
-        Comparison::NotEqual => {
-            eval_supported_constant_values_equal(&lhs, &rhs).map(|value| !value)
-        }
-        Comparison::LessThan
+        Comparison::Equal
+        | Comparison::NotEqual
+        | Comparison::LessThan
         | Comparison::GreaterThan
         | Comparison::LessThanOrEqual
-        | Comparison::GreaterThanOrEqual => eval_supported_constant_values_compare(op, &lhs, &rhs),
+        | Comparison::GreaterThanOrEqual => {
+            return eval_supported_constant_nushell_comparison_op(op, &lhs, &rhs, span);
+        }
         Comparison::StartsWith | Comparison::NotStartsWith => {
             eval_supported_constant_values_affix(op, &lhs, &rhs).map(|value| {
                 if op == Comparison::NotStartsWith {
@@ -692,6 +699,9 @@ fn eval_supported_constant_comparison_op(
                 }
             })
         }
+        Comparison::RegexMatch | Comparison::NotRegexMatch => {
+            return eval_supported_constant_regex_comparison_op(op, &lhs, &rhs, span);
+        }
         _ => None,
     };
 
@@ -705,6 +715,80 @@ fn eval_supported_constant_comparison_op(
             span,
         )
     })
+}
+
+fn eval_supported_constant_nushell_comparison_op(
+    op: Comparison,
+    lhs: &Value,
+    rhs: &Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let result = match op {
+        Comparison::Equal => lhs.eq(span, rhs, span),
+        Comparison::NotEqual => lhs.ne(span, rhs, span),
+        Comparison::LessThan => lhs.lt(span, rhs, span),
+        Comparison::GreaterThan => lhs.gt(span, rhs, span),
+        Comparison::LessThanOrEqual => lhs.lte(span, rhs, span),
+        Comparison::GreaterThanOrEqual => lhs.gte(span, rhs, span),
+        _ => unreachable!("Nushell comparison op prefiltered"),
+    }
+    .map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "operator `{op}` failed in compile-time global initializer: {}",
+                err
+            ),
+            span,
+        )
+    })?;
+
+    match result {
+        Value::Bool { val, .. } => Ok(Value::bool(val, span)),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `{op}` in a compile-time global initializer produced {}; boolean output is required",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_regex_comparison_op(
+    op: Comparison,
+    lhs: &Value,
+    rhs: &Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let (Value::String { val: lhs, .. }, Value::String { val: rhs, .. }) = (lhs, rhs) else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{op}` requires compile-time string operands in global initializers; got {} and {}",
+                    lhs.get_type(),
+                    rhs.get_type()
+                ),
+                span,
+            ),
+        );
+    };
+    let regex = regex::Regex::new(rhs).map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{op}` pattern is invalid in compile-time global initializers: {err}"),
+            span,
+        )
+    })?;
+    let matches = regex.is_match(lhs);
+    Ok(Value::bool(
+        if op == Comparison::NotRegexMatch {
+            !matches
+        } else {
+            matches
+        },
+        span,
+    ))
 }
 
 fn eval_supported_constant_membership_comparison_op(
@@ -727,60 +811,6 @@ fn eval_supported_constant_membership_comparison_op(
     })
 }
 
-fn eval_supported_constant_values_equal(lhs: &Value, rhs: &Value) -> Option<bool> {
-    match (lhs, rhs) {
-        (Value::Bool { val: lhs, .. }, Value::Bool { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::String { val: lhs, .. }, Value::String { val: rhs, .. })
-        | (Value::String { val: lhs, .. }, Value::Glob { val: rhs, .. })
-        | (Value::Glob { val: lhs, .. }, Value::String { val: rhs, .. })
-        | (Value::Glob { val: lhs, .. }, Value::Glob { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::Binary { val: lhs, .. }, Value::Binary { val: rhs, .. }) => Some(lhs == rhs),
-        (Value::Nothing { .. }, Value::Nothing { .. }) => Some(true),
-        _ => None,
-    }
-}
-
-fn eval_supported_constant_values_compare(
-    op: Comparison,
-    lhs: &Value,
-    rhs: &Value,
-) -> Option<bool> {
-    match (lhs, rhs) {
-        (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
-            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
-        }
-        (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
-            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
-        }
-        (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
-            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
-        }
-        (Value::String { val: lhs, .. }, Value::String { val: rhs, .. })
-        | (Value::String { val: lhs, .. }, Value::Glob { val: rhs, .. })
-        | (Value::Glob { val: lhs, .. }, Value::String { val: rhs, .. })
-        | (Value::Glob { val: lhs, .. }, Value::Glob { val: rhs, .. }) => {
-            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
-        }
-        _ => None,
-    }
-}
-
-fn eval_supported_constant_ord_compare(
-    op: Comparison,
-    ordering: std::cmp::Ordering,
-) -> Option<bool> {
-    match op {
-        Comparison::LessThan => Some(ordering.is_lt()),
-        Comparison::GreaterThan => Some(ordering.is_gt()),
-        Comparison::LessThanOrEqual => Some(!ordering.is_gt()),
-        Comparison::GreaterThanOrEqual => Some(!ordering.is_lt()),
-        _ => None,
-    }
-}
-
 fn eval_supported_constant_values_affix(op: Comparison, lhs: &Value, rhs: &Value) -> Option<bool> {
     let check_start = matches!(op, Comparison::StartsWith | Comparison::NotStartsWith);
     match (lhs, rhs) {
@@ -796,6 +826,45 @@ fn eval_supported_constant_values_affix(op: Comparison, lhs: &Value, rhs: &Value
     }
 }
 
+fn eval_supported_constant_bits_op(
+    op: Bits,
+    lhs: &Value,
+    rhs: &Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let result = match op {
+        Bits::BitAnd => lhs.bit_and(span, rhs, span),
+        Bits::BitOr => lhs.bit_or(span, rhs, span),
+        Bits::BitXor => lhs.bit_xor(span, rhs, span),
+        Bits::ShiftLeft => lhs.bit_shl(span, rhs, span),
+        Bits::ShiftRight => lhs.bit_shr(span, rhs, span),
+    }
+    .map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "operator `{}` failed in compile-time global initializer: {}",
+                op.as_str(),
+                err
+            ),
+            span,
+        )
+    })?;
+
+    match result {
+        Value::Int { val, .. } => Ok(Value::int(val, span)),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `{}` in a compile-time global initializer produced {}; integer output is required",
+                    op.as_str(),
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
 fn eval_supported_constant_math_binary_op(
     op: Math,
     lhs: Value,
@@ -803,60 +872,71 @@ fn eval_supported_constant_math_binary_op(
     span: Span,
 ) -> Result<Value, LabeledError> {
     match op {
-        Math::Add | Math::Subtract | Math::Multiply => {
-            eval_supported_constant_int_math_binary_op(op, lhs, rhs, span)
-        }
+        Math::Add
+        | Math::Subtract
+        | Math::Multiply
+        | Math::Divide
+        | Math::FloorDivide
+        | Math::Modulo
+        | Math::Pow => eval_supported_constant_scalar_math_binary_op(op, &lhs, &rhs, span),
         Math::Concatenate => eval_supported_constant_concatenate_binary_op(lhs, rhs, span),
-        Math::Divide | Math::FloorDivide | Math::Modulo | Math::Pow => Err(LabeledError::new(
-            "Unsupported annotated mutable global initializer",
-        )
-        .with_label(
-            format!(
-                "operator `{}` is not supported in compile-time global initializers",
-                op.as_str()
-            ),
-            span,
-        )),
     }
 }
 
-fn eval_supported_constant_int_math_binary_op(
+fn eval_supported_constant_scalar_math_binary_op(
     op: Math,
-    lhs: Value,
-    rhs: Value,
+    lhs: &Value,
+    rhs: &Value,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) = (&lhs, &rhs) else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "operator `{}` requires compile-time integer operands in global initializers; got {} and {}",
-                    op.as_str(),
-                    lhs.get_type(),
-                    rhs.get_type()
-                ),
-                span,
-            ),
-        );
-    };
-
-    let output = match op {
-        Math::Add => lhs.checked_add(*rhs),
-        Math::Subtract => lhs.checked_sub(*rhs),
-        Math::Multiply => lhs.checked_mul(*rhs),
-        _ => unreachable!("integer math op prefiltered"),
+    let result = match op {
+        Math::Add => lhs.add(span, rhs, span),
+        Math::Subtract => lhs.sub(span, rhs, span),
+        Math::Multiply => lhs.mul(span, rhs, span),
+        Math::Divide => lhs.div(span, rhs, span),
+        Math::FloorDivide => lhs.floor_div(span, rhs, span),
+        Math::Modulo => lhs.modulo(span, rhs, span),
+        Math::Pow => lhs.pow(span, rhs, span),
+        _ => unreachable!("scalar math op prefiltered"),
     }
-    .ok_or_else(|| {
+    .map_err(|err| {
         LabeledError::new("Unsupported annotated mutable global initializer").with_label(
             format!(
-                "operator `{}` overflows i64 in compile-time global initializers",
-                op.as_str()
+                "operator `{}` failed in compile-time global initializer: {}",
+                op.as_str(),
+                err
             ),
             span,
         )
     })?;
 
-    Ok(Value::int(output, span))
+    match result {
+        Value::Float { val, .. } if val.is_finite() => Ok(Value::float(val, span)),
+        Value::Float { .. } => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `{}` produced a non-finite float in a compile-time global initializer",
+                    op.as_str()
+                ),
+                span,
+            ),
+        ),
+        Value::Int { val, .. } => Ok(Value::int(val, span)),
+        Value::Filesize { val, .. } => Ok(Value::filesize(val, span)),
+        Value::Duration { val, .. } => Ok(Value::duration(val, span)),
+        Value::String { val, .. } => Ok(Value::string(val, span)),
+        Value::Date { val, .. } => Ok(Value::date(val, span)),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `{}` in a compile-time global initializer produced {}; scalar output is required",
+                    op.as_str(),
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
 }
 
 fn eval_supported_constant_concatenate_binary_op(
@@ -903,6 +983,41 @@ fn eval_supported_constant_bare_token(token: &str, span: Span) -> Value {
         "null" | "nothing" => Value::nothing(span),
         _ => Value::glob(token, false, span),
     }
+}
+
+fn eval_supported_constant_range_expr(
+    working_set: &StateWorkingSet,
+    range: &nu_protocol::ast::Range,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let from = range
+        .from
+        .as_ref()
+        .map(|expr| eval_supported_constant_value_with_env(working_set, expr, env))
+        .transpose()?
+        .unwrap_or_else(|| Value::nothing(span));
+    let next = range
+        .next
+        .as_ref()
+        .map(|expr| eval_supported_constant_value_with_env(working_set, expr, env))
+        .transpose()?
+        .unwrap_or_else(|| Value::nothing(span));
+    let to = range
+        .to
+        .as_ref()
+        .map(|expr| eval_supported_constant_value_with_env(working_set, expr, env))
+        .transpose()?
+        .unwrap_or_else(|| Value::nothing(span));
+
+    Range::new(from, next, to, range.operator.inclusion, span)
+        .map(|range| Value::range(range, span))
+        .map_err(|err| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("range failed in compile-time global initializer: {err}"),
+                span,
+            )
+        })
 }
 
 fn eval_supported_constant_block(
@@ -1006,9 +1121,36 @@ fn eval_supported_constant_call(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let cmd_name = working_set.get_decl(call.decl_id).name();
+    let decl_name = working_set.get_decl(call.decl_id).name();
+    let call_head = String::from_utf8_lossy(working_set.get_span_contents(call.head));
+    let cmd_name = match (decl_name, call_head.as_ref()) {
+        ("seq", "seq char") => "seq char",
+        ("seq", "seq date") => "seq date",
+        _ => decl_name,
+    };
 
     match cmd_name {
+        "seq" => eval_supported_constant_seq_call(
+            working_set,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
+        "seq char" => eval_supported_constant_seq_char_call(
+            working_set,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
+        "seq date" => eval_supported_constant_seq_date_call(
+            working_set,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
         "first" | "last" => eval_supported_constant_list_first_or_last_call(
             working_set,
             cmd_name,
@@ -1055,6 +1197,10 @@ fn eval_supported_constant_call(
         "length" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_length(input, span)
+        }
+        "describe" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_describe(input, span)
         }
         "is-empty" | "is-not-empty" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
@@ -1426,6 +1572,10 @@ fn eval_supported_constant_external_call(
     };
 
     match cmd_name {
+        "seq" => eval_supported_constant_seq_external_call(working_set, input, args, env, span),
+        "seq char" => {
+            eval_supported_constant_seq_char_external_call(working_set, input, args, env, span)
+        }
         "first" | "last" => {
             for arg in args {
                 if let ExternalArgument::Spread(expr) = arg {
@@ -1513,40 +1663,54 @@ fn eval_supported_constant_external_call(
             )
         }
         "sort" => {
-            let mut reverse = false;
-            if let Some(first_arg) = args.first() {
-                let ExternalArgument::Regular(first_expr) = first_arg else {
+            let mut options = ConstantSortOptions::default();
+            for arg in args {
+                let ExternalArgument::Regular(expr) = arg else {
                     return Err(LabeledError::new("Unsupported annotated mutable global initializer")
                         .with_label(
                             "`sort` arguments cannot use spread syntax in compile-time global initializers",
-                            first_arg.expr().span,
+                            arg.expr().span,
                         ));
                 };
-                let first_value =
-                    eval_supported_constant_value_with_env(working_set, first_expr, env)?;
-                if matches!(
-                    first_value,
-                    Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--reverse"
-                ) {
-                    reverse = true;
-                    if args.len() > 1 {
-                        return Err(
-                            LabeledError::new("Unsupported annotated mutable global initializer")
-                                .with_label(
-                                    "`sort` does not accept arguments in compile-time global initializers",
-                                    span,
-                                ),
-                        );
-                    }
-                } else {
-                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+                let flag = match value {
+                    Value::String { val, .. } | Value::Glob { val, .. } => val,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
                         .with_label(
-                            "`sort` does not accept arguments in compile-time global initializers",
+                            "`sort` accepts only string flags in compile-time global initializers",
+                            expr.span,
+                        ));
+                    }
+                };
+                match flag.as_str() {
+                    "--reverse" => options.reverse = true,
+                    "--natural" => options.natural = true,
+                    "--ignore-case" => options.ignore_case = true,
+                    "--values" => options.values = true,
+                    _ if flag.starts_with("--") => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`sort` accepts only --reverse, --natural, --ignore-case, and --values flags in compile-time global initializers",
+                            expr.span,
+                        ));
+                    }
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`sort` does not accept positional arguments in compile-time global initializers",
                             span,
                         ));
+                    }
                 }
             }
-            eval_supported_constant_list_sort(input, reverse, span)
+            eval_supported_constant_list_sort(input, options, span)
         }
         "find" => {
             let [needle_arg] = args else {
@@ -1574,6 +1738,10 @@ fn eval_supported_constant_external_call(
         "length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_length(input, span)
+        }
+        "describe" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_describe(input, span)
         }
         "is-empty" | "is-not-empty" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -2052,6 +2220,1269 @@ fn eval_supported_constant_external_call(
     }
 }
 
+#[derive(Clone, Copy)]
+enum ConstantSeqNumericArg {
+    Int(i64),
+    Float(f64),
+}
+
+impl ConstantSeqNumericArg {
+    fn as_f64(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+        }
+    }
+}
+
+fn eval_supported_constant_seq_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if let Some((first, rest)) = args.split_first()
+        && let nu_protocol::ast::Argument::Positional(expr)
+        | nu_protocol::ast::Argument::Unknown(expr) = first
+    {
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        if matches!(value, Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "date")
+        {
+            return eval_supported_constant_seq_date_call(working_set, input, rest, env, span);
+        }
+    }
+
+    let values =
+        eval_supported_constant_seq_call_values(working_set, "seq", args, env, input, span)?;
+    eval_supported_constant_seq_values(&values, span)
+}
+
+fn eval_supported_constant_seq_char_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let values =
+        eval_supported_constant_seq_call_values(working_set, "seq char", args, env, input, span)?;
+    eval_supported_constant_seq_char_values(&values, span)
+}
+
+fn eval_supported_constant_seq_call_values(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Vec<(Value, Span)>, LabeledError> {
+    if input.is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` does not accept pipeline input in compile-time global initializers"),
+                span,
+            ),
+        );
+    }
+
+    let mut values = Vec::new();
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                values.push((
+                    eval_supported_constant_value_with_env(working_set, expr, env)?,
+                    expr.span,
+                ));
+            }
+            nu_protocol::ast::Argument::Named(_) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept named flags or arguments in compile-time global initializers"
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let values =
+        eval_supported_constant_seq_external_values(working_set, "seq", args, env, input, span)?;
+    if values
+        .first()
+        .and_then(|(value, _)| match value {
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "char" => Some(()),
+            _ => None,
+        })
+        .is_some()
+    {
+        return eval_supported_constant_seq_char_values(&values[1..], span);
+    }
+    if values
+        .first()
+        .and_then(|(value, _)| match value {
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "date" => Some(()),
+            _ => None,
+        })
+        .is_some()
+    {
+        return eval_supported_constant_seq_date_external_values(&values[1..], span);
+    }
+    eval_supported_constant_seq_values(&values, span)
+}
+
+fn eval_supported_constant_seq_char_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let values = eval_supported_constant_seq_external_values(
+        working_set,
+        "seq char",
+        args,
+        env,
+        input,
+        span,
+    )?;
+    eval_supported_constant_seq_char_values(&values, span)
+}
+
+fn eval_supported_constant_seq_external_values(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Vec<(Value, Span)>, LabeledError> {
+    if input.is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` does not accept pipeline input in compile-time global initializers"),
+                span,
+            ),
+        );
+    }
+
+    let mut values = Vec::new();
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+        values.push((
+            eval_supported_constant_value_with_env(working_set, expr, env)?,
+            expr.span,
+        ));
+    }
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_values(
+    args: &[(Value, Span)],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    const MAX_SEQ_LIST_CAPACITY: usize = 60;
+
+    if !(1..=3).contains(&args.len()) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq` supports one to three numeric arguments in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let numeric_args = args
+        .iter()
+        .map(|(value, value_span)| eval_supported_constant_seq_numeric_arg(value, *value_span))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if numeric_args
+        .iter()
+        .any(|arg| matches!(arg, ConstantSeqNumericArg::Float(_)))
+    {
+        let values = match numeric_args.as_slice() {
+            [value] => vec![Value::float(value.as_f64(), Span::unknown())],
+            [start, end] => eval_supported_constant_seq_float_values(
+                start.as_f64(),
+                1.0,
+                end.as_f64(),
+                MAX_SEQ_LIST_CAPACITY,
+            )?,
+            [start, step, end] => eval_supported_constant_seq_float_values(
+                start.as_f64(),
+                step.as_f64(),
+                end.as_f64(),
+                MAX_SEQ_LIST_CAPACITY,
+            )?,
+            _ => unreachable!("seq argument count was validated"),
+        };
+        return Ok(Value::list(values, span));
+    }
+
+    let int_args = numeric_args
+        .iter()
+        .map(|arg| match arg {
+            ConstantSeqNumericArg::Int(value) => *value,
+            ConstantSeqNumericArg::Float(_) => unreachable!("float args were handled above"),
+        })
+        .collect::<Vec<_>>();
+    let values = match int_args.as_slice() {
+        [value] => vec![Value::int(*value, Span::unknown())],
+        [start, end] => {
+            eval_supported_constant_seq_integer_values(*start, 1, *end, MAX_SEQ_LIST_CAPACITY)?
+        }
+        [start, step, end] => {
+            eval_supported_constant_seq_integer_values(*start, *step, *end, MAX_SEQ_LIST_CAPACITY)?
+        }
+        _ => unreachable!("seq argument count was validated"),
+    };
+    Ok(Value::list(values, span))
+}
+
+fn eval_supported_constant_seq_numeric_arg(
+    value: &Value,
+    span: Span,
+) -> Result<ConstantSeqNumericArg, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(ConstantSeqNumericArg::Int(*val)),
+        Value::Float { val, .. } => Ok(ConstantSeqNumericArg::Float(*val)),
+        Value::String { val, .. } | Value::Glob { val, .. } => val
+            .parse::<i64>()
+            .map(ConstantSeqNumericArg::Int)
+            .or_else(|_| val.parse::<f64>().map(ConstantSeqNumericArg::Float))
+            .map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`seq` arguments must be compile-time known integers or floats in global initializers; got '{}'",
+                        val
+                    ),
+                    span,
+                )
+            }),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`seq` arguments must be compile-time known integers or floats in global initializers; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_seq_integer_values(
+    start: i64,
+    step: i64,
+    end: i64,
+    max_len: usize,
+) -> Result<Vec<Value>, LabeledError> {
+    if step == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut values = Vec::new();
+    let mut current = start;
+    loop {
+        let in_range = if step > 0 {
+            current <= end
+        } else {
+            current >= end
+        };
+        if !in_range {
+            break;
+        }
+        if values.len() >= max_len {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`seq` output exceeds fixed list capacity {max_len} in compile-time global initializers"),
+                    Span::unknown(),
+                ),
+            );
+        }
+        values.push(Value::int(current, Span::unknown()));
+
+        let next = (current as i128) + (step as i128);
+        let next_is_in_range = if step > 0 {
+            next <= end as i128
+        } else {
+            next >= end as i128
+        };
+        if !next_is_in_range {
+            break;
+        }
+        current = i64::try_from(next).map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq` overflows i64 in compile-time global initializers",
+                Span::unknown(),
+            )
+        })?;
+    }
+
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_float_values(
+    start: f64,
+    step: f64,
+    end: f64,
+    max_len: usize,
+) -> Result<Vec<Value>, LabeledError> {
+    if step == 0.0 {
+        return Ok(Vec::new());
+    }
+    if !start.is_finite() || !step.is_finite() || !end.is_finite() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq` float arguments must be finite in compile-time global initializers",
+                Span::unknown(),
+            ),
+        );
+    }
+
+    let mut values = Vec::new();
+    let mut current = start;
+    loop {
+        let in_range = if step > 0.0 {
+            current <= end
+        } else {
+            current >= end
+        };
+        if !in_range {
+            break;
+        }
+        if values.len() >= max_len {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`seq` output exceeds fixed list capacity {max_len} in compile-time global initializers"),
+                    Span::unknown(),
+                ),
+            );
+        }
+        values.push(Value::float(current, Span::unknown()));
+
+        let next = current + step;
+        let next_is_in_range = if step > 0.0 { next <= end } else { next >= end };
+        if !next_is_in_range {
+            break;
+        }
+        current = next;
+    }
+
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_char_values(
+    args: &[(Value, Span)],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    const MAX_SEQ_STRING_LIST_CAPACITY: usize = 60;
+
+    if args.len() != 2 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq char` supports exactly two ASCII character arguments in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let start = eval_supported_constant_seq_char_arg(&args[0].0, args[0].1)?;
+    let end = eval_supported_constant_seq_char_arg(&args[1].0, args[1].1)?;
+    let len = usize::from(start.abs_diff(end)) + 1;
+    if len > MAX_SEQ_STRING_LIST_CAPACITY {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`seq char` output exceeds fixed string-list capacity {MAX_SEQ_STRING_LIST_CAPACITY}"),
+                span,
+            ),
+        );
+    }
+
+    let values = if start <= end {
+        (start..=end).collect::<Vec<_>>()
+    } else {
+        (end..=start).rev().collect::<Vec<_>>()
+    }
+    .into_iter()
+    .map(|byte| Value::string(char::from(byte).to_string(), Span::unknown()))
+    .collect::<Vec<_>>();
+
+    Ok(Value::list(values, span))
+}
+
+fn eval_supported_constant_seq_char_arg(value: &Value, span: Span) -> Result<u8, LabeledError> {
+    let raw = match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => val,
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`seq char` requires individual ASCII character arguments in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    span,
+                ),
+            );
+        }
+    };
+    let bytes = raw.as_bytes();
+    if bytes.len() == 1 && bytes[0].is_ascii() {
+        Ok(bytes[0])
+    } else {
+        Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq char` requires individual ASCII character arguments in global initializers",
+                span,
+            ),
+        )
+    }
+}
+
+#[derive(Default)]
+struct ConstantSeqDateArgs {
+    begin_date: Option<(String, Span)>,
+    end_date: Option<(String, Span)>,
+    increment: Option<(Value, Span)>,
+    days: Option<(i64, Span)>,
+    periods: Option<(i64, Span)>,
+    input_format: Option<(String, Span)>,
+    output_format: Option<(String, Span)>,
+    reverse: bool,
+}
+
+fn eval_supported_constant_seq_date_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if input.is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date` does not accept pipeline input in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let mut parsed = ConstantSeqDateArgs::default();
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                let name = named.0.item.as_str();
+                match name {
+                    "reverse" | "r" => {
+                        if named.2.is_some() {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                "`seq date --reverse` cannot receive a value in compile-time global initializers",
+                                arg.span(),
+                            ));
+                        }
+                        parsed.reverse = true;
+                    }
+                    "begin-date" | "b" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --begin-date",
+                            arg.span(),
+                        )?;
+                        parsed.begin_date = Some((
+                            eval_supported_constant_seq_date_string_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --begin-date",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    "end-date" | "e" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --end-date",
+                            arg.span(),
+                        )?;
+                        parsed.end_date = Some((
+                            eval_supported_constant_seq_date_string_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --end-date",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    "increment" | "n" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --increment",
+                            arg.span(),
+                        )?;
+                        parsed.increment = Some((
+                            eval_supported_constant_value_with_env(working_set, expr, env)?,
+                            expr.span,
+                        ));
+                    }
+                    "days" | "d" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --days",
+                            arg.span(),
+                        )?;
+                        parsed.days = Some((
+                            eval_supported_constant_seq_date_integer_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --days",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    "periods" | "p" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --periods",
+                            arg.span(),
+                        )?;
+                        parsed.periods = Some((
+                            eval_supported_constant_seq_date_integer_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --periods",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    "input-format" | "i" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --input-format",
+                            arg.span(),
+                        )?;
+                        parsed.input_format = Some((
+                            eval_supported_constant_seq_date_string_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --input-format",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    "output-format" | "o" => {
+                        let expr = eval_supported_constant_seq_date_named_value(
+                            named.2.as_ref(),
+                            "seq date --output-format",
+                            arg.span(),
+                        )?;
+                        parsed.output_format = Some((
+                            eval_supported_constant_seq_date_string_value(
+                                working_set,
+                                expr,
+                                env,
+                                "seq date --output-format",
+                            )?,
+                            expr.span,
+                        ));
+                    }
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!("`seq date --{name}` is not supported in compile-time global initializers"),
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`seq date` does not accept positional arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`seq date` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_seq_date_values(parsed, span)
+}
+
+fn eval_supported_constant_seq_date_external_values(
+    args: &[(Value, Span)],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut parsed = ConstantSeqDateArgs::default();
+    let mut index = 0;
+
+    while index < args.len() {
+        let (token_value, token_span) = &args[index];
+        let raw_token = eval_supported_constant_seq_date_string_from_value(
+            token_value,
+            *token_span,
+            "seq date",
+        )?;
+        let (name, inline_value) =
+            eval_supported_constant_seq_date_external_flag(&raw_token, *token_span)?;
+
+        match name {
+            "reverse" | "r" => {
+                if inline_value.is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`seq date --reverse` cannot receive a value in compile-time global initializers",
+                        *token_span,
+                    ));
+                }
+                parsed.reverse = true;
+                index += 1;
+            }
+            "begin-date" | "b" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --begin-date",
+                    )?;
+                parsed.begin_date = Some((
+                    eval_supported_constant_seq_date_string_from_value(
+                        &value,
+                        value_span,
+                        "seq date --begin-date",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            "end-date" | "e" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --end-date",
+                    )?;
+                parsed.end_date = Some((
+                    eval_supported_constant_seq_date_string_from_value(
+                        &value,
+                        value_span,
+                        "seq date --end-date",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            "increment" | "n" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --increment",
+                    )?;
+                parsed.increment = Some((value, value_span));
+                index += consumed;
+            }
+            "days" | "d" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --days",
+                    )?;
+                parsed.days = Some((
+                    eval_supported_constant_seq_date_integer_from_value(
+                        &value,
+                        value_span,
+                        "seq date --days",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            "periods" | "p" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --periods",
+                    )?;
+                parsed.periods = Some((
+                    eval_supported_constant_seq_date_integer_from_value(
+                        &value,
+                        value_span,
+                        "seq date --periods",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            "input-format" | "i" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --input-format",
+                    )?;
+                parsed.input_format = Some((
+                    eval_supported_constant_seq_date_string_from_value(
+                        &value,
+                        value_span,
+                        "seq date --input-format",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            "output-format" | "o" => {
+                let (value, value_span, consumed) =
+                    eval_supported_constant_seq_date_external_flag_value(
+                        args,
+                        index,
+                        inline_value,
+                        "seq date --output-format",
+                    )?;
+                parsed.output_format = Some((
+                    eval_supported_constant_seq_date_string_from_value(
+                        &value,
+                        value_span,
+                        "seq date --output-format",
+                    )?,
+                    value_span,
+                ));
+                index += consumed;
+            }
+            _ => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`seq date --{name}` is not supported in compile-time global initializers"
+                            ),
+                            *token_span,
+                        ),
+                );
+            }
+        }
+    }
+
+    eval_supported_constant_seq_date_values(parsed, span)
+}
+
+fn eval_supported_constant_seq_date_external_flag(
+    raw: &str,
+    span: Span,
+) -> Result<(&str, Option<&str>), LabeledError> {
+    let (flag, value) = raw
+        .split_once('=')
+        .map_or((raw, None), |(flag, value)| (flag, Some(value)));
+    let name = if let Some(name) = flag.strip_prefix("--") {
+        name
+    } else if let Some(name) = flag.strip_prefix('-') {
+        name
+    } else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date` external-style arguments must be flags in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    if name.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date` external-style arguments must be flags in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    Ok((name, value))
+}
+
+fn eval_supported_constant_seq_date_external_flag_value(
+    args: &[(Value, Span)],
+    index: usize,
+    inline_value: Option<&str>,
+    context: &str,
+) -> Result<(Value, Span, usize), LabeledError> {
+    let flag_span = args[index].1;
+    if let Some(value) = inline_value {
+        return Ok((Value::string(value, flag_span), flag_span, 1));
+    }
+
+    args.get(index + 1)
+        .map(|(value, value_span)| (value.clone(), *value_span, 2))
+        .ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{context}` requires a value in compile-time global initializers"),
+                flag_span,
+            )
+        })
+}
+
+fn eval_supported_constant_seq_date_named_value<'a>(
+    value: Option<&'a nu_protocol::ast::Expression>,
+    context: &str,
+    span: Span,
+) -> Result<&'a nu_protocol::ast::Expression, LabeledError> {
+    value.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{context}` requires a value in compile-time global initializers"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_seq_date_string_value(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    context: &str,
+) -> Result<String, LabeledError> {
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    eval_supported_constant_seq_date_string_from_value(&value, expr.span, context)
+}
+
+fn eval_supported_constant_seq_date_string_from_value(
+    value: &Value,
+    span: Span,
+    context: &str,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val.clone()),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{context}` requires a compile-time string literal, got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_seq_date_integer_value(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    context: &str,
+) -> Result<i64, LabeledError> {
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    eval_supported_constant_seq_date_integer_from_value(&value, expr.span, context)
+}
+
+fn eval_supported_constant_seq_date_integer_from_value(
+    value: &Value,
+    span: Span,
+    context: &str,
+) -> Result<i64, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(*val),
+        Value::String { val, .. } | Value::Glob { val, .. } => val.parse::<i64>().map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{context}` requires a compile-time integer, got '{val}'"),
+                span,
+            )
+        }),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{context}` requires a compile-time integer, got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_seq_date_values(
+    args: ConstantSeqDateArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    const MAX_SEQ_DATE_LIST_CAPACITY: usize = 60;
+
+    let input_format = args
+        .input_format
+        .as_ref()
+        .map(|(value, _)| value.as_str())
+        .unwrap_or("%Y-%m-%d");
+    let output_format = args
+        .output_format
+        .as_ref()
+        .map(|(value, _)| value.as_str())
+        .unwrap_or("%Y-%m-%d");
+    let (begin_raw, begin_span) = args.begin_date.as_ref().ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`seq date` requires explicit --begin-date in compile-time global initializers",
+            span,
+        )
+    })?;
+    let begin = eval_supported_constant_seq_date_parse_with_format(
+        begin_raw,
+        "begin-date",
+        input_format,
+        *begin_span,
+    )?;
+    let step = args
+        .increment
+        .as_ref()
+        .map(|(value, value_span)| eval_supported_constant_seq_date_increment(value, *value_span))
+        .transpose()?
+        .unwrap_or_else(|| ChronoDuration::days(1));
+    if step <= ChronoDuration::zero() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date --increment` requires a positive duration in compile-time global initializers",
+                args.increment.map(|(_, value_span)| value_span).unwrap_or(span),
+            ),
+        );
+    }
+
+    let values = if let Some((periods, periods_span)) = args.periods {
+        let count =
+            eval_supported_constant_seq_date_positive_count(periods, "periods", periods_span)?;
+        let count = if args.reverse {
+            count.checked_add(2).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date --periods` is too large to model in compile-time global initializers",
+                    periods_span,
+                )
+            })?
+        } else {
+            count
+        };
+        if count > MAX_SEQ_DATE_LIST_CAPACITY {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`seq date` output exceeds fixed string-list capacity {MAX_SEQ_DATE_LIST_CAPACITY}"),
+                    periods_span,
+                ),
+            );
+        }
+        eval_supported_constant_seq_date_values_for_count(
+            begin,
+            if args.reverse { -step } else { step },
+            count,
+            MAX_SEQ_DATE_LIST_CAPACITY,
+            output_format,
+            span,
+        )?
+    } else if let Some((days, days_span)) = args.days {
+        let _day_count = eval_supported_constant_seq_date_positive_count(days, "days", days_span)?;
+        let end_offset = if args.reverse {
+            days.checked_add(1)
+                .and_then(|days| days.checked_neg())
+                .ok_or_else(|| {
+                    LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                        "`seq date --days` is too large to model in compile-time global initializers",
+                        days_span,
+                    )
+                })?
+        } else {
+            days.checked_sub(1).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date --days` requires a positive integer in compile-time global initializers",
+                    days_span,
+                )
+            })?
+        };
+        let end = begin
+            .checked_add_signed(ChronoDuration::try_days(end_offset).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date --days` is too large to model in compile-time global initializers",
+                    days_span,
+                )
+            })?)
+            .ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date` overflows in compile-time global initializers",
+                    days_span,
+                )
+            })?;
+        eval_supported_constant_seq_date_values_between(
+            begin,
+            end,
+            step,
+            MAX_SEQ_DATE_LIST_CAPACITY,
+            output_format,
+            span,
+        )?
+    } else {
+        let (end_raw, end_span) = args.end_date.as_ref().ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date` requires explicit --end-date, --days, or --periods in compile-time global initializers",
+                span,
+            )
+        })?;
+        let end = eval_supported_constant_seq_date_parse_with_format(
+            end_raw,
+            "end-date",
+            input_format,
+            *end_span,
+        )?;
+        eval_supported_constant_seq_date_values_between(
+            begin,
+            end,
+            step,
+            MAX_SEQ_DATE_LIST_CAPACITY,
+            output_format,
+            span,
+        )?
+    };
+
+    Ok(Value::list(
+        values
+            .into_iter()
+            .map(|value| Value::string(value, Span::unknown()))
+            .collect(),
+        span,
+    ))
+}
+
+fn eval_supported_constant_seq_date_increment(
+    value: &Value,
+    span: Span,
+) -> Result<ChronoDuration, LabeledError> {
+    match value {
+        Value::Duration { val, .. } => Ok(ChronoDuration::nanoseconds(*val)),
+        Value::Int { val, .. } => ChronoDuration::try_days(*val).ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date --increment` is too large to model in compile-time global initializers",
+                span,
+            )
+        }),
+        Value::String { val, .. } | Value::Glob { val, .. } => {
+            let days = val.parse::<i64>().map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`seq date --increment` requires an integer day count or duration, got '{val}'"),
+                    span,
+                )
+            })?;
+            ChronoDuration::try_days(days).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date --increment` is too large to model in compile-time global initializers",
+                    span,
+                )
+            })
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`seq date --increment` requires an integer day count or duration, got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_seq_date_positive_count(
+    raw: i64,
+    arg_name: &str,
+    span: Span,
+) -> Result<usize, LabeledError> {
+    if raw <= 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`seq date --{arg_name}` requires a positive integer in compile-time global initializers"),
+                span,
+            ),
+        );
+    }
+    usize::try_from(raw).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`seq date --{arg_name}` is too large to model in compile-time global initializers"
+            ),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_seq_date_parse_with_format(
+    raw: &str,
+    arg_name: &str,
+    input_format: &str,
+    span: Span,
+) -> Result<NaiveDateTime, LabeledError> {
+    if let Ok(timestamp) = NaiveDateTime::parse_from_str(raw, input_format) {
+        return Ok(timestamp);
+    }
+    let date = NaiveDate::parse_from_str(raw, input_format).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`seq date --{arg_name}` does not match --input-format '{input_format}' in compile-time global initializers"),
+            span,
+        )
+    })?;
+    date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`seq date` overflows in compile-time global initializers",
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_seq_date_values_between(
+    begin: NaiveDateTime,
+    end: NaiveDateTime,
+    step: ChronoDuration,
+    max_len: usize,
+    output_format: &str,
+    span: Span,
+) -> Result<Vec<String>, LabeledError> {
+    let ascending = begin <= end;
+    let delta = if ascending { step } else { -step };
+    let mut date = begin;
+    let mut values = Vec::new();
+    loop {
+        if values.len() >= max_len {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`seq date` output exceeds fixed string-list capacity {max_len}"),
+                    span,
+                ),
+            );
+        }
+        values.push(eval_supported_constant_seq_date_format_value(
+            date,
+            output_format,
+            span,
+        )?);
+        if date == end {
+            break;
+        }
+
+        let next = date.checked_add_signed(delta).ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`seq date` overflows in compile-time global initializers",
+                span,
+            )
+        })?;
+        if (ascending && next > end) || (!ascending && next < end) {
+            break;
+        }
+        date = next;
+    }
+
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_date_values_for_count(
+    begin: NaiveDateTime,
+    step: ChronoDuration,
+    count: usize,
+    max_len: usize,
+    output_format: &str,
+    span: Span,
+) -> Result<Vec<String>, LabeledError> {
+    if count > max_len {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`seq date` output exceeds fixed string-list capacity {max_len}"),
+                span,
+            ),
+        );
+    }
+    let mut date = begin;
+    let mut values = Vec::with_capacity(count);
+    for index in 0..count {
+        if index > 0 {
+            date = date.checked_add_signed(step).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`seq date` overflows in compile-time global initializers",
+                    span,
+                )
+            })?;
+        }
+        values.push(eval_supported_constant_seq_date_format_value(
+            date,
+            output_format,
+            span,
+        )?);
+    }
+
+    Ok(values)
+}
+
+fn eval_supported_constant_seq_date_format_value(
+    timestamp: NaiveDateTime,
+    output_format: &str,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let output = timestamp.format(output_format).to_string();
+    if output.len().saturating_add(1) > MAX_STRING_SIZE {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`seq date --output-format` produced {} bytes; eBPF lowering supports at most {} bytes",
+                    output.len(),
+                    MAX_STRING_SIZE - 1
+                ),
+                span,
+            ),
+        );
+    }
+    Ok(output)
+}
+
 fn eval_supported_constant_get_call(
     working_set: &StateWorkingSet,
     cmd_name: &str,
@@ -2073,6 +3504,14 @@ fn eval_supported_constant_get_call(
             .with_label(format!("`{cmd_name}` requires a cell path argument"), span)
     })?;
     let path = eval_supported_constant_cell_path(working_set, path_expr, env)?;
+    let value = match value {
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            Value::list(vals, value_span)
+        }
+        value => value,
+    };
 
     value
         .follow_cell_path(&path.members)
@@ -2141,23 +3580,8 @@ fn eval_supported_constant_list_first_or_last(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            format!(
-                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
-            ),
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, input, span)?;
 
     let Some(count_expr) = count_expr else {
         if vals.is_empty() {
@@ -2216,23 +3640,8 @@ fn eval_supported_constant_list_reverse_or_uniq(
     input: Option<Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            format!(
-                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
-            ),
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, input, span)?;
 
     let transformed = if cmd_name == "reverse" {
         vals.into_iter().rev().collect()
@@ -2323,21 +3732,8 @@ fn eval_supported_constant_list_compact(
     columns: Vec<String>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            "`compact` in a compile-time global initializer must receive pipeline input",
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`compact` in a compile-time global initializer requires list input",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("compact", input, span)?;
     if !columns.is_empty()
         && !vals
             .iter()
@@ -2394,7 +3790,7 @@ fn eval_supported_constant_no_argument_call(
     cmd_name: &str,
     args: &[nu_protocol::ast::Argument],
 ) -> Result<(), LabeledError> {
-    for arg in args {
+    if let Some(arg) = args.first() {
         match arg {
             nu_protocol::ast::Argument::Named(named) => {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -2482,10 +3878,16 @@ fn eval_supported_constant_length(input: Option<Value>, span: Span) -> Result<Va
         Value::Nothing { .. } => 0,
         Value::List { ref vals, .. } => vals.len(),
         Value::Binary { ref val, .. } => val.len(),
+        Value::Record { ref val, .. } => val.len(),
+        value @ Value::Range { .. } => {
+            let (vals, _) =
+                eval_supported_constant_list_or_bounded_range_input("length", Some(value), span)?;
+            vals.len()
+        }
         _ => {
             return Err(
                 LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                    "`length` in a compile-time global initializer requires list, binary, or null input",
+                    "`length` in a compile-time global initializer requires list, bounded range, record, binary, or null input",
                     span,
                 ),
             );
@@ -2493,6 +3895,30 @@ fn eval_supported_constant_length(input: Option<Value>, span: Span) -> Result<Va
     };
 
     Ok(Value::int(len as i64, span))
+}
+
+fn eval_supported_constant_describe(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let description = input
+        .as_ref()
+        .map(|value| value.get_type().to_string())
+        .unwrap_or_else(|| "nothing".to_string());
+    if description.len().saturating_add(1) > MAX_STRING_SIZE {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`describe` output is {} bytes; eBPF lowering supports at most {} bytes",
+                    description.len(),
+                    MAX_STRING_SIZE - 1
+                ),
+                span,
+            ),
+        );
+    }
+
+    Ok(Value::string(description, span))
 }
 
 fn eval_supported_constant_empty_predicate(
@@ -2507,6 +3933,11 @@ fn eval_supported_constant_empty_predicate(
         Value::Binary { ref val, .. } => val.is_empty(),
         Value::List { ref vals, .. } => vals.is_empty(),
         Value::Record { ref val, .. } => val.is_empty(),
+        value @ Value::Range { .. } => {
+            let (vals, _) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            vals.is_empty()
+        }
         Value::Bool { .. }
         | Value::Int { .. }
         | Value::Float { .. }
@@ -3268,10 +4699,10 @@ fn eval_supported_constant_bytes_collect(
                 ),
             );
         };
-        if index > 0 {
-            if let Some(separator) = &separator {
-                output.extend(separator);
-            }
+        if index > 0
+            && let Some(separator) = &separator
+        {
+            output.extend(separator);
         }
         output.extend(val);
     }
@@ -4791,6 +6222,11 @@ fn eval_supported_constant_bits_binary(
             value_span,
             span,
         ),
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            eval_supported_constant_bits_binary_list(cmd_name, vals, args, value_span, span)
+        }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
@@ -5216,6 +6652,14 @@ fn eval_supported_constant_bits_not(
             ))
         }
         Value::List { vals, .. } => {
+            eval_supported_constant_bits_not_list(vals, mode, value_span, span)
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) = eval_supported_constant_list_or_bounded_range_input(
+                "bits not",
+                Some(value),
+                span,
+            )?;
             eval_supported_constant_bits_not_list(vals, mode, value_span, span)
         }
         other => Err(
@@ -5858,6 +7302,11 @@ fn eval_supported_constant_bits_shift_rotate(
         Value::List { vals, .. } => {
             eval_supported_constant_bits_shift_rotate_list(cmd_name, vals, args, value_span, span)
         }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            eval_supported_constant_bits_shift_rotate_list(cmd_name, vals, args, value_span, span)
+        }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
@@ -6284,39 +7733,11 @@ fn eval_supported_constant_math_abs(
                 span,
             ),
         ),
-        Value::List { vals, .. } => {
-            let output = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    match value {
-                        Value::Int { val, .. } => Ok(Value::int(val.wrapping_abs(), value_span)),
-                        Value::Float { val, .. } if val.is_finite() => {
-                            Ok(Value::float(val.abs(), value_span))
-                        }
-                        Value::Float { val, .. } => Err(LabeledError::new(
-                            "Unsupported annotated mutable global initializer",
-                        )
-                        .with_label(
-                            format!(
-                                "`math abs` requires finite float list items in compile-time global initializers; item {index} is {val}"
-                            ),
-                            span,
-                        )),
-                        other => Err(LabeledError::new(
-                            "Unsupported annotated mutable global initializer",
-                        )
-                        .with_label(
-                            format!(
-                                "`math abs` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
-                                other.get_type()
-                            ),
-                            span,
-                        )),
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::list(output, value_span))
+        Value::List { vals, .. } => eval_supported_constant_math_abs_list(vals, value_span, span),
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input("math abs", Some(value), span)?;
+            eval_supported_constant_math_abs_list(vals, value_span, span)
         }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
@@ -6328,6 +7749,39 @@ fn eval_supported_constant_math_abs(
             ),
         ),
     }
+}
+
+fn eval_supported_constant_math_abs_list(
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| match value {
+            Value::Int { val, .. } => Ok(Value::int(val.wrapping_abs(), value_span)),
+            Value::Float { val, .. } if val.is_finite() => Ok(Value::float(val.abs(), value_span)),
+            Value::Float { val, .. } => Err(LabeledError::new(
+                "Unsupported annotated mutable global initializer",
+            )
+            .with_label(
+                format!(
+                    "`math abs` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                ),
+                span,
+            )),
+            other => Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`math abs` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                        other.get_type()
+                    ),
+                    span,
+                )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -6378,16 +7832,8 @@ fn eval_supported_constant_math_avg(
     input: Option<Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input("math avg", input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math avg` in a compile-time global initializer requires non-empty numeric list input",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("math avg", input, span)?;
 
     if vals.is_empty() {
         return Err(
@@ -6508,18 +7954,8 @@ fn eval_supported_constant_math_int_reduce(
     input: Option<Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "`{cmd_name}` in a compile-time global initializer requires non-empty list<int> input"
-                ),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, input, span)?;
 
     if vals.is_empty() {
         return Err(
@@ -6820,16 +8256,8 @@ fn eval_supported_constant_math_median(
     input: Option<Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input("math median", input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math median` in a compile-time global initializer requires non-empty numeric list input",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("math median", input, span)?;
 
     if vals.is_empty() {
         return Err(
@@ -6963,16 +8391,8 @@ fn eval_supported_constant_math_mode(
 ) -> Result<Value, LabeledError> {
     const MAX_MODE_STACK_LIST_CAPACITY: usize = 60;
 
-    let value = eval_supported_constant_required_pipeline_input("math mode", input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math mode` in a compile-time global initializer requires list<int> input",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("math mode", input, span)?;
 
     let mut counts = BTreeMap::<i64, usize>::new();
     for (index, value) in vals.into_iter().enumerate() {
@@ -7111,18 +8531,8 @@ fn eval_supported_constant_math_variance_stddev(
     sample: bool,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "`{cmd_name}` in a compile-time global initializer requires non-empty numeric list input"
-                ),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, input, span)?;
 
     if vals.is_empty() {
         return Err(
@@ -7426,20 +8836,12 @@ fn eval_supported_constant_math_rounding(
             eval_supported_constant_math_rounding_value(cmd_name, value, None, mode, span)
         }
         Value::List { vals, .. } => {
-            let output = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    eval_supported_constant_math_rounding_value(
-                        cmd_name,
-                        value,
-                        Some(index),
-                        mode,
-                        span,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::list(output, value_span))
+            eval_supported_constant_math_rounding_list(cmd_name, vals, value_span, mode, span)
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            eval_supported_constant_math_rounding_list(cmd_name, vals, value_span, mode, span)
         }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
@@ -7451,6 +8853,23 @@ fn eval_supported_constant_math_rounding(
             ),
         ),
     }
+}
+
+fn eval_supported_constant_math_rounding_list(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    value_span: Span,
+    mode: ConstantMathRoundingMode,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            eval_supported_constant_math_rounding_value(cmd_name, value, Some(index), mode, span)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
 }
 
 fn eval_supported_constant_math_rounding_value(
@@ -7714,20 +9133,16 @@ fn eval_supported_constant_math_float_unary(
             eval_supported_constant_math_float_unary_value(cmd_name, value, None, degrees, span)
         }
         Value::List { vals, .. } => {
-            let output = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    eval_supported_constant_math_float_unary_value(
-                        cmd_name,
-                        value,
-                        Some(index),
-                        degrees,
-                        span,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::list(output, value_span))
+            eval_supported_constant_math_float_unary_list(
+                cmd_name, vals, value_span, degrees, span,
+            )
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+            eval_supported_constant_math_float_unary_list(
+                cmd_name, vals, value_span, degrees, span,
+            )
         }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
@@ -7739,6 +9154,29 @@ fn eval_supported_constant_math_float_unary(
             ),
         ),
     }
+}
+
+fn eval_supported_constant_math_float_unary_list(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    value_span: Span,
+    degrees: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            eval_supported_constant_math_float_unary_value(
+                cmd_name,
+                value,
+                Some(index),
+                degrees,
+                span,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
 }
 
 fn eval_supported_constant_math_float_unary_value(
@@ -8104,17 +9542,31 @@ fn eval_supported_constant_math_log(
     let value_span = value.span();
     match value {
         Value::List { vals, .. } => {
-            let output = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    eval_supported_constant_math_log_value(value, base, Some(index), span)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::list(output, value_span))
+            eval_supported_constant_math_log_list(vals, value_span, base, span)
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input("math log", Some(value), span)?;
+            eval_supported_constant_math_log_list(vals, value_span, base, span)
         }
         value => eval_supported_constant_math_log_value(value, base, None, span),
     }
+}
+
+fn eval_supported_constant_math_log_list(
+    vals: Vec<Value>,
+    value_span: Span,
+    base: f64,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            eval_supported_constant_math_log_value(value, base, Some(index), span)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
 }
 
 fn eval_supported_constant_math_log_value(
@@ -8390,6 +9842,7 @@ enum ConstantCharMode {
     Named,
     Unicode,
     Integer,
+    List,
 }
 
 enum ConstantCharArg {
@@ -8398,12 +9851,128 @@ enum ConstantCharArg {
     Other { span: Span },
 }
 
+const CONSTANT_NAMED_CHAR_HEX: &[(&str, &str)] = &[
+    ("nul", "0"),
+    ("null_byte", "0"),
+    ("zero_byte", "0"),
+    ("newline", "a"),
+    ("enter", "a"),
+    ("nl", "a"),
+    ("line_feed", "a"),
+    ("lf", "a"),
+    ("carriage_return", "d"),
+    ("cr", "d"),
+    ("crlf", "d a"),
+    ("tab", "9"),
+    ("sp", "20"),
+    ("space", "20"),
+    ("pipe", "7c"),
+    ("left_brace", "7b"),
+    ("lbrace", "7b"),
+    ("right_brace", "7d"),
+    ("rbrace", "7d"),
+    ("left_paren", "28"),
+    ("lp", "28"),
+    ("lparen", "28"),
+    ("right_paren", "29"),
+    ("rparen", "29"),
+    ("rp", "29"),
+    ("left_bracket", "5b"),
+    ("lbracket", "5b"),
+    ("right_bracket", "5d"),
+    ("rbracket", "5d"),
+    ("single_quote", "27"),
+    ("squote", "27"),
+    ("sq", "27"),
+    ("double_quote", "22"),
+    ("dquote", "22"),
+    ("dq", "22"),
+    ("path_sep", "2f"),
+    ("psep", "2f"),
+    ("separator", "2f"),
+    ("eol", "a"),
+    ("lsep", "a"),
+    ("line_sep", "a"),
+    ("esep", "3a"),
+    ("env_sep", "3a"),
+    ("tilde", "7e"),
+    ("twiddle", "7e"),
+    ("squiggly", "7e"),
+    ("home", "7e"),
+    ("hash", "23"),
+    ("hashtag", "23"),
+    ("pound_sign", "23"),
+    ("sharp", "23"),
+    ("root", "23"),
+    ("nf_branch", "e0a0"),
+    ("nf_segment", "e0b0"),
+    ("nf_left_segment", "e0b0"),
+    ("nf_left_segment_thin", "e0b1"),
+    ("nf_right_segment", "e0b2"),
+    ("nf_right_segment_thin", "e0b3"),
+    ("nf_git", "f1d3"),
+    ("nf_git_branch", "e709 e0a0"),
+    ("nf_folder1", "f07c"),
+    ("nf_folder2", "f115"),
+    ("nf_house1", "f015"),
+    ("nf_house2", "f7db"),
+    ("identical_to", "2261"),
+    ("hamburger", "2261"),
+    ("not_identical_to", "2262"),
+    ("branch_untracked", "2262"),
+    ("strictly_equivalent_to", "2263"),
+    ("branch_identical", "2263"),
+    ("upwards_arrow", "2191"),
+    ("branch_ahead", "2191"),
+    ("downwards_arrow", "2193"),
+    ("branch_behind", "2193"),
+    ("up_down_arrow", "2195"),
+    ("branch_ahead_behind", "2195"),
+    ("black_right_pointing_triangle", "25b6"),
+    ("prompt", "25b6"),
+    ("vector_or_cross_product", "2a2f"),
+    ("failed", "2a2f"),
+    ("high_voltage_sign", "26a1"),
+    ("elevated", "26a1"),
+    ("sun", "2600 fe0f"),
+    ("sunny", "2600 fe0f"),
+    ("sunrise", "2600 fe0f"),
+    ("moon", "1f31b"),
+    ("cloudy", "2601 fe0f"),
+    ("cloud", "2601 fe0f"),
+    ("clouds", "2601 fe0f"),
+    ("rainy", "1f326 fe0f"),
+    ("rain", "1f326 fe0f"),
+    ("foggy", "1f32b fe0f"),
+    ("fog", "1f32b fe0f"),
+    ("mist", "2591"),
+    ("haze", "2591"),
+    ("snowy", "2744 fe0f"),
+    ("snow", "2744 fe0f"),
+    ("thunderstorm", "1f329 fe0f"),
+    ("thunder", "1f329 fe0f"),
+    ("bel", "7"),
+    ("backspace", "8"),
+    ("file_separator", "1c"),
+    ("file_sep", "1c"),
+    ("fs", "1c"),
+    ("group_separator", "1d"),
+    ("group_sep", "1d"),
+    ("gs", "1d"),
+    ("record_separator", "1e"),
+    ("record_sep", "1e"),
+    ("rs", "1e"),
+    ("unit_separator", "1f"),
+    ("unit_sep", "1f"),
+    ("us", "1f"),
+];
+
 fn eval_supported_constant_char_call_args(
     working_set: &StateWorkingSet,
     args: &[nu_protocol::ast::Argument],
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
-) -> Result<String, LabeledError> {
+) -> Result<Value, LabeledError> {
     let mut positional = Vec::new();
     let mut unicode = false;
     let mut integer = false;
@@ -8434,7 +10003,7 @@ fn eval_supported_constant_char_call_args(
                             "Unsupported annotated mutable global initializer",
                         )
                         .with_label(
-                            "`char` supports only --unicode and --integer in compile-time global initializers",
+                            "`char` supports only --unicode, --integer, and --list in compile-time global initializers",
                             arg.span(),
                         ));
                     }
@@ -8459,7 +10028,7 @@ fn eval_supported_constant_char_external_args(
     args: &[ExternalArgument],
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
-) -> Result<String, LabeledError> {
+) -> Result<Value, LabeledError> {
     let mut positional = Vec::new();
     let mut unicode = false;
     let mut integer = false;
@@ -8485,7 +10054,7 @@ fn eval_supported_constant_char_external_args(
                         "Unsupported annotated mutable global initializer",
                     )
                     .with_label(
-                        "`char` supports only --unicode and --integer in compile-time global initializers",
+                        "`char` supports only --unicode, --integer, and --list in compile-time global initializers",
                         expr.span,
                     ));
                 }
@@ -8532,12 +10101,7 @@ fn eval_supported_constant_char_mode(
     span: Span,
 ) -> Result<ConstantCharMode, LabeledError> {
     if list {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`char --list` produces a table and is not supported in compile-time global initializers",
-                span,
-            ),
-        );
+        return Ok(ConstantCharMode::List);
     }
     if unicode && integer {
         return Err(
@@ -8560,7 +10124,11 @@ fn eval_supported_constant_char_output(
     mode: ConstantCharMode,
     args: &[ConstantCharArg],
     span: Span,
-) -> Result<String, LabeledError> {
+) -> Result<Value, LabeledError> {
+    if matches!(mode, ConstantCharMode::List) {
+        return eval_supported_constant_named_char_list_value(span);
+    }
+
     if args.is_empty() {
         return Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
@@ -8574,16 +10142,9 @@ fn eval_supported_constant_char_output(
         ConstantCharMode::Named => eval_supported_constant_named_char_output(args, span)?,
         ConstantCharMode::Unicode => eval_supported_constant_unicode_char_output(args)?,
         ConstantCharMode::Integer => eval_supported_constant_integer_char_output(args)?,
+        ConstantCharMode::List => unreachable!("list mode is handled before positional checks"),
     };
-    if output.as_bytes().contains(&0) {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`char` output containing NUL bytes is not supported in compile-time global initializers",
-                span,
-            ),
-        );
-    }
-    Ok(output)
+    Ok(Value::string(output, span))
 }
 
 fn eval_supported_constant_named_char_output(
@@ -8682,63 +10243,25 @@ fn eval_supported_constant_integer_char_output(
 }
 
 fn eval_supported_constant_known_named_char(name: &str) -> Option<String> {
-    let hex = match name {
-        "nul" | "null_byte" | "zero_byte" => "0",
-        "newline" | "enter" | "nl" | "line_feed" | "lf" | "eol" | "lsep" | "line_sep" => "a",
-        "carriage_return" | "cr" => "d",
-        "crlf" => "d a",
-        "tab" => "9",
-        "sp" | "space" => "20",
-        "pipe" => "7c",
-        "left_brace" | "lbrace" => "7b",
-        "right_brace" | "rbrace" => "7d",
-        "left_paren" | "lp" | "lparen" => "28",
-        "right_paren" | "rparen" | "rp" => "29",
-        "left_bracket" | "lbracket" => "5b",
-        "right_bracket" | "rbracket" => "5d",
-        "single_quote" | "squote" | "sq" => "27",
-        "double_quote" | "dquote" | "dq" => "22",
-        "path_sep" | "psep" | "separator" => "2f",
-        "esep" | "env_sep" => "3a",
-        "tilde" | "twiddle" | "squiggly" | "home" => "7e",
-        "hash" | "hashtag" | "pound_sign" | "sharp" | "root" => "23",
-        "nf_branch" => "e0a0",
-        "nf_segment" | "nf_left_segment" => "e0b0",
-        "nf_left_segment_thin" => "e0b1",
-        "nf_right_segment" => "e0b2",
-        "nf_right_segment_thin" => "e0b3",
-        "nf_git" => "f1d3",
-        "nf_git_branch" => "e709 e0a0",
-        "nf_folder1" => "f07c",
-        "nf_folder2" => "f115",
-        "nf_house1" => "f015",
-        "nf_house2" => "f7db",
-        "identical_to" | "hamburger" => "2261",
-        "not_identical_to" | "branch_untracked" => "2262",
-        "strictly_equivalent_to" | "branch_identical" => "2263",
-        "upwards_arrow" | "branch_ahead" => "2191",
-        "downwards_arrow" | "branch_behind" => "2193",
-        "up_down_arrow" | "branch_ahead_behind" => "2195",
-        "black_right_pointing_triangle" | "prompt" => "25b6",
-        "vector_or_cross_product" | "failed" => "2a2f",
-        "high_voltage_sign" | "elevated" => "26a1",
-        "sun" | "sunny" | "sunrise" => "2600 fe0f",
-        "moon" => "1f31b",
-        "cloudy" | "cloud" | "clouds" => "2601 fe0f",
-        "rainy" | "rain" => "1f326 fe0f",
-        "foggy" | "fog" => "1f32b fe0f",
-        "mist" | "haze" => "2591",
-        "snowy" | "snow" => "2744 fe0f",
-        "thunderstorm" | "thunder" => "1f329 fe0f",
-        "bel" => "7",
-        "backspace" => "8",
-        "file_separator" | "file_sep" | "fs" => "1c",
-        "group_separator" | "group_sep" | "gs" => "1d",
-        "record_separator" | "record_sep" | "rs" => "1e",
-        "unit_separator" | "unit_sep" | "us" => "1f",
-        _ => return None,
-    };
+    let hex = CONSTANT_NAMED_CHAR_HEX
+        .iter()
+        .find_map(|(known_name, hex)| (*known_name == name).then_some(*hex))?;
     eval_supported_constant_chars_from_hex_sequence(hex).ok()
+}
+
+fn eval_supported_constant_named_char_list_value(span: Span) -> Result<Value, LabeledError> {
+    let mut rows = Vec::with_capacity(CONSTANT_NAMED_CHAR_HEX.len());
+    for (name, hex) in CONSTANT_NAMED_CHAR_HEX {
+        let mut record = Record::new();
+        record.push("name", Value::string(*name, span));
+        record.push(
+            "character",
+            Value::string(eval_supported_constant_chars_from_hex_sequence(hex)?, span),
+        );
+        record.push("unicode", Value::string(*hex, span));
+        rows.push(Value::record(record, span));
+    }
+    Ok(Value::list(rows, span))
 }
 
 fn eval_supported_constant_chars_from_hex_sequence(hex: &str) -> Result<String, LabeledError> {
@@ -8774,7 +10297,7 @@ fn eval_supported_constant_char_from_codepoint(
 
 fn eval_supported_constant_char(
     input: Option<Value>,
-    output: String,
+    output: Value,
     span: Span,
 ) -> Result<Value, LabeledError> {
     if input.is_some() {
@@ -8785,7 +10308,7 @@ fn eval_supported_constant_char(
             ),
         );
     }
-    Ok(Value::string(output, span))
+    Ok(output)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -9018,11 +10541,6 @@ fn eval_supported_constant_fill_set_option(
                 env,
                 "fill --character",
             )?;
-            eval_supported_constant_reject_nul_string_argument(
-                "fill --character",
-                &value,
-                value_expr.span,
-            )?;
             if character.replace(value).is_some() {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
                     .with_label(
@@ -9054,18 +10572,12 @@ fn eval_supported_constant_fill(
     let value_span = value.span();
     match value {
         Value::List { vals, .. } => {
-            let values = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    let text = eval_supported_constant_fill_value_text(value, Some(index), span)?;
-                    Ok(Value::string(
-                        eval_supported_constant_fill_known_string(&text, &args),
-                        value_span,
-                    ))
-                })
-                .collect::<Result<Vec<_>, LabeledError>>()?;
-            Ok(Value::list(values, value_span))
+            eval_supported_constant_fill_list(vals, value_span, &args, span)
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input("fill", Some(value), span)?;
+            eval_supported_constant_fill_list(vals, value_span, &args, span)
         }
         value => {
             let text = eval_supported_constant_fill_value_text(value, None, span)?;
@@ -9075,6 +10587,26 @@ fn eval_supported_constant_fill(
             ))
         }
     }
+}
+
+fn eval_supported_constant_fill_list(
+    vals: Vec<Value>,
+    value_span: Span,
+    args: &ConstantFillArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let values = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let text = eval_supported_constant_fill_value_text(value, Some(index), span)?;
+            Ok(Value::string(
+                eval_supported_constant_fill_known_string(&text, args),
+                value_span,
+            ))
+        })
+        .collect::<Result<Vec<_>, LabeledError>>()?;
+    Ok(Value::list(values, value_span))
 }
 
 fn eval_supported_constant_fill_value_text(
@@ -9133,6 +10665,7 @@ enum ConstantStringLengthMode {
     Utf8Bytes,
     Chars,
     GraphemeClusters,
+    UnicodeWidth,
 }
 
 fn eval_supported_constant_str_length_mode_call(
@@ -9153,7 +10686,7 @@ fn eval_supported_constant_str_length_mode_call(
                     .ok_or_else(|| {
                         LabeledError::new("Unsupported annotated mutable global initializer")
                             .with_label(
-                                "`str length` supports only --utf-8-bytes, --chars, and --grapheme-clusters in compile-time global initializers",
+                                "`str length` supports only --utf-8-bytes, --chars, --grapheme-clusters, and --unicode-width in compile-time global initializers",
                                 arg.span(),
                             )
                     })?;
@@ -9230,11 +10763,11 @@ fn eval_supported_constant_str_length_mode_external_args(
         };
         let next = eval_supported_constant_str_length_mode_flag(flag).ok_or_else(|| {
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "`{cmd_name}` supports only --utf-8-bytes, --chars, and --grapheme-clusters in compile-time global initializers"
-                ),
-                expr.span,
-            )
+                    format!(
+                        "`{cmd_name}` supports only --utf-8-bytes, --chars, --grapheme-clusters, and --unicode-width in compile-time global initializers"
+                    ),
+                    expr.span,
+                )
         })?;
         if mode.replace(next).is_some() {
             return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -9255,6 +10788,7 @@ fn eval_supported_constant_str_length_mode_flag(flag: &str) -> Option<ConstantSt
         "utf-8-bytes" => Some(ConstantStringLengthMode::Utf8Bytes),
         "chars" => Some(ConstantStringLengthMode::Chars),
         "grapheme-clusters" => Some(ConstantStringLengthMode::GraphemeClusters),
+        "unicode-width" => Some(ConstantStringLengthMode::UnicodeWidth),
         _ => None,
     }
 }
@@ -9323,6 +10857,9 @@ fn eval_supported_constant_known_string_length(input: &str, mode: ConstantString
         ConstantStringLengthMode::GraphemeClusters => {
             UnicodeSegmentation::graphemes(input, true).count() as i64
         }
+        ConstantStringLengthMode::UnicodeWidth => {
+            eval_supported_constant_str_stats_unicode_width(input) as i64
+        }
     }
 }
 
@@ -9388,7 +10925,6 @@ fn eval_supported_constant_str_predicate_call_args(
         );
     };
     let needle = eval_supported_constant_string_argument(working_set, needle_expr, env, cmd_name)?;
-    eval_supported_constant_reject_nul_string_argument(cmd_name, &needle, needle_expr.span)?;
 
     Ok(ConstantStringPredicateArgs {
         needle,
@@ -9403,7 +10939,7 @@ fn eval_supported_constant_str_predicate_external_args(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<ConstantStringPredicateArgs, LabeledError> {
-    let mut needle_expr = None;
+    let mut needle = None;
     let mut ignore_case = false;
     for arg in args {
         let ExternalArgument::Regular(expr) = arg else {
@@ -9421,7 +10957,7 @@ fn eval_supported_constant_str_predicate_external_args(
                 ignore_case = true;
             }
             Value::String { val, .. } | Value::Glob { val, .. } => {
-                if needle_expr.replace((expr, val)).is_some() {
+                if needle.replace(val).is_some() {
                     return Err(LabeledError::new("Unsupported annotated mutable global initializer")
                         .with_label(
                             format!(
@@ -9443,7 +10979,7 @@ fn eval_supported_constant_str_predicate_external_args(
         }
     }
 
-    let Some((needle_expr, needle)) = needle_expr else {
+    let Some(needle) = needle else {
         return Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
@@ -9453,7 +10989,6 @@ fn eval_supported_constant_str_predicate_external_args(
             ),
         );
     };
-    eval_supported_constant_reject_nul_string_argument(cmd_name, &needle, needle_expr.span)?;
 
     Ok(ConstantStringPredicateArgs {
         needle,
@@ -9478,24 +11013,6 @@ fn eval_supported_constant_string_argument(
             ),
         ),
     }
-}
-
-fn eval_supported_constant_reject_nul_string_argument(
-    cmd_name: &str,
-    value: &str,
-    span: Span,
-) -> Result<(), LabeledError> {
-    if value.as_bytes().contains(&0) {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "`{cmd_name}` does not support NUL bytes in compile-time global initializers"
-                ),
-                span,
-            ),
-        );
-    }
-    Ok(())
 }
 
 fn eval_supported_constant_str_predicate(
@@ -9684,7 +11201,6 @@ fn eval_supported_constant_str_index_of_call_args(
     };
     let needle =
         eval_supported_constant_string_argument(working_set, needle_expr, env, "str index-of")?;
-    eval_supported_constant_reject_nul_string_argument("str index-of", &needle, needle_expr.span)?;
     let use_grapheme_clusters = eval_supported_constant_str_indexing_validate_modes(
         "str index-of",
         use_utf8_bytes,
@@ -9706,7 +11222,6 @@ fn eval_supported_constant_str_index_of_external_args(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<ConstantStrIndexOfArgs, LabeledError> {
-    let mut needle_expr = None;
     let mut needle = None;
     let mut search_from_end = false;
     let mut range = None;
@@ -9734,7 +11249,6 @@ fn eval_supported_constant_str_index_of_external_args(
                             expr.span,
                         ));
                     }
-                    needle_expr = Some(expr);
                     continue;
                 };
                 match flag {
@@ -9807,11 +11321,6 @@ fn eval_supported_constant_str_index_of_external_args(
             ),
         );
     };
-    eval_supported_constant_reject_nul_string_argument(
-        "str index-of",
-        &needle,
-        needle_expr.map(|expr| expr.span).unwrap_or(span),
-    )?;
     let use_grapheme_clusters = eval_supported_constant_str_indexing_validate_modes(
         "str index-of",
         use_utf8_bytes,
@@ -10224,25 +11733,37 @@ fn eval_supported_constant_str_join(
     let value_span = value.span();
     match value {
         Value::List { vals, .. } => {
-            let items = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    eval_supported_constant_str_join_item_value(value, index, span)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let joined = if let Some(separator) = separator {
-                items.join(&separator)
-            } else {
-                items.concat()
-            };
-            Ok(Value::string(joined, value_span))
+            eval_supported_constant_str_join_list(vals, value_span, separator, span)
+        }
+        value @ Value::Range { .. } => {
+            let (vals, value_span) =
+                eval_supported_constant_list_or_bounded_range_input("str join", Some(value), span)?;
+            eval_supported_constant_str_join_list(vals, value_span, separator, span)
         }
         value => {
             let input = eval_supported_constant_exact_string_value(value, "str join", span)?;
             Ok(Value::string(input, value_span))
         }
     }
+}
+
+fn eval_supported_constant_str_join_list(
+    vals: Vec<Value>,
+    value_span: Span,
+    separator: Option<String>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let items = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| eval_supported_constant_str_join_item_value(value, index, span))
+        .collect::<Result<Vec<_>, _>>()?;
+    let joined = if let Some(separator) = separator {
+        items.join(&separator)
+    } else {
+        items.concat()
+    };
+    Ok(Value::string(joined, value_span))
 }
 
 fn eval_supported_constant_str_join_item_value(
@@ -10634,10 +12155,10 @@ fn eval_supported_constant_str_expand_find_matching_brace(
     Err(eval_supported_constant_str_expand_balanced_error(span))
 }
 
-fn eval_supported_constant_str_expand_split_commas<'a>(
-    input: &'a str,
+fn eval_supported_constant_str_expand_split_commas(
+    input: &str,
     span: Span,
-) -> Result<Option<Vec<&'a str>>, LabeledError> {
+) -> Result<Option<Vec<&str>>, LabeledError> {
     let mut escaped = false;
     let mut depth = 0usize;
     let mut start = 0usize;
@@ -12410,16 +13931,8 @@ fn eval_supported_constant_split_list(
     args: ConstantSplitListArgs,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input("split list", input, span)?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`split list` requires a compile-time known list pipeline input in global initializers",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("split list", input, span)?;
 
     let regex = if args.use_regex {
         Some(eval_supported_constant_split_list_regex(
@@ -13432,23 +14945,47 @@ enum ConstantSortKey {
     String(String),
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct ConstantSortOptions {
+    reverse: bool,
+    natural: bool,
+    ignore_case: bool,
+    values: bool,
+}
+
 fn eval_supported_constant_list_sort_call(
     input: Option<Value>,
     args: &[nu_protocol::ast::Argument],
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let mut reverse = false;
+    let mut options = ConstantSortOptions::default();
     for arg in args {
         match arg {
             nu_protocol::ast::Argument::Named(named) => {
-                if named.0.item != "reverse" || named.2.is_some() {
-                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                if named.2.is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`sort` flags cannot receive values in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+                match named.0.item.as_str() {
+                    "reverse" => options.reverse = true,
+                    "natural" => options.natural = true,
+                    "ignore-case" => options.ignore_case = true,
+                    "values" => options.values = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
                         .with_label(
-                            "`sort` accepts only the --reverse flag in compile-time global initializers",
+                            "`sort` accepts only --reverse, --natural, --ignore-case, and --values flags in compile-time global initializers",
                             arg.span(),
                         ));
+                    }
                 }
-                reverse = true;
             }
             nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
                 return Err(
@@ -13469,29 +15006,20 @@ fn eval_supported_constant_list_sort_call(
         }
     }
 
-    eval_supported_constant_list_sort(input, reverse, span)
+    eval_supported_constant_list_sort(input, options, span)
 }
 
 fn eval_supported_constant_list_sort(
     input: Option<Value>,
-    reverse: bool,
+    options: ConstantSortOptions,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            "`sort` in a compile-time global initializer must receive pipeline input",
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`sort` in a compile-time global initializer requires list input",
-                span,
-            ),
-        );
-    };
+    let value = eval_supported_constant_required_pipeline_input("sort", input, span)?;
+    if options.values && matches!(value, Value::Record { .. }) {
+        return eval_supported_constant_record_sort_values(value, options, span);
+    }
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("sort", Some(value), span)?;
 
     let keys = vals
         .iter()
@@ -13515,17 +15043,117 @@ fn eval_supported_constant_list_sort(
             ),
         );
     }
+    if options.natural
+        && keys
+            .iter()
+            .any(|key| !eval_supported_constant_sort_key_supports_natural(key))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --natural` is supported only for numeric or string compile-time lists",
+                span,
+            ),
+        );
+    }
+    if options.ignore_case
+        && keys
+            .iter()
+            .any(|key| !eval_supported_constant_sort_key_supports_ignore_case(key))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --ignore-case` is supported only for numeric or string compile-time lists",
+                span,
+            ),
+        );
+    }
 
     let mut indexed = keys.into_iter().zip(vals).collect::<Vec<_>>();
     indexed.sort_by(|(left_key, _), (right_key, _)| {
-        let ord = left_key.cmp(right_key);
-        if reverse { ord.reverse() } else { ord }
+        let ord = eval_supported_constant_compare_sort_keys(left_key, right_key, options);
+        if options.reverse { ord.reverse() } else { ord }
     });
     let vals = indexed
         .into_iter()
         .map(|(_, value)| value)
         .collect::<Vec<_>>();
     Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_record_sort_values(
+    value: Value,
+    options: ConstantSortOptions,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --values` in a compile-time global initializer requires record input",
+                span,
+            ),
+        );
+    };
+    let record = val.into_owned();
+    let mut keyed = record
+        .iter()
+        .map(|(name, value)| {
+            eval_supported_constant_sort_key(value).map(|key| (key, name.clone(), value.clone()))
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --values` supports compile-time records with boolean, integer, finite float, binary, or string values",
+                span,
+            )
+        })?;
+    if let Some((first, rest)) = keyed.split_first()
+        && rest
+            .iter()
+            .any(|(key, _, _)| std::mem::discriminant(key) != std::mem::discriminant(&first.0))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --values` requires compile-time record values with one comparable type",
+                span,
+            ),
+        );
+    }
+    if options.natural
+        && keyed
+            .iter()
+            .any(|(key, _, _)| !eval_supported_constant_sort_key_supports_natural(key))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --values --natural` is supported only for numeric or string compile-time record values",
+                span,
+            ),
+        );
+    }
+    if options.ignore_case
+        && keyed
+            .iter()
+            .any(|(key, _, _)| !eval_supported_constant_sort_key_supports_ignore_case(key))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort --values --ignore-case` is supported only for numeric or string compile-time record values",
+                span,
+            ),
+        );
+    }
+
+    keyed.sort_by(|(left_key, left_name, _), (right_key, right_name, _)| {
+        let ord = eval_supported_constant_compare_sort_keys(left_key, right_key, options)
+            .then_with(|| left_name.cmp(right_name));
+        if options.reverse { ord.reverse() } else { ord }
+    });
+    let mut out = Record::new();
+    for (_, name, value) in keyed {
+        out.push(name, value);
+    }
+    Ok(Value::record(out, value_span))
 }
 
 fn eval_supported_constant_sort_key(value: &Value) -> Option<ConstantSortKey> {
@@ -13541,6 +15169,135 @@ fn eval_supported_constant_sort_key(value: &Value) -> Option<ConstantSortKey> {
         }
         _ => None,
     }
+}
+
+fn eval_supported_constant_sort_key_supports_natural(key: &ConstantSortKey) -> bool {
+    matches!(
+        key,
+        ConstantSortKey::Int(_) | ConstantSortKey::Float(_) | ConstantSortKey::String(_)
+    )
+}
+
+fn eval_supported_constant_sort_key_supports_ignore_case(key: &ConstantSortKey) -> bool {
+    matches!(
+        key,
+        ConstantSortKey::Int(_) | ConstantSortKey::Float(_) | ConstantSortKey::String(_)
+    )
+}
+
+fn eval_supported_constant_compare_sort_keys(
+    left: &ConstantSortKey,
+    right: &ConstantSortKey,
+    options: ConstantSortOptions,
+) -> std::cmp::Ordering {
+    match (left, right) {
+        (ConstantSortKey::String(left), ConstantSortKey::String(right)) => {
+            if options.natural {
+                eval_supported_constant_natural_string_cmp(left, right, options.ignore_case)
+            } else if options.ignore_case {
+                left.to_lowercase().cmp(&right.to_lowercase())
+            } else {
+                left.cmp(right)
+            }
+        }
+        _ => left.cmp(right),
+    }
+}
+
+fn eval_supported_constant_natural_string_cmp(
+    left: &str,
+    right: &str,
+    ignore_case: bool,
+) -> std::cmp::Ordering {
+    let left = if ignore_case {
+        std::borrow::Cow::Owned(left.to_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(left)
+    };
+    let right = if ignore_case {
+        std::borrow::Cow::Owned(right.to_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(right)
+    };
+    eval_supported_constant_natural_string_cmp_normalized(&left, &right)
+}
+
+fn eval_supported_constant_natural_string_cmp_normalized(
+    left: &str,
+    right: &str,
+) -> std::cmp::Ordering {
+    let mut left_chars = left.char_indices().peekable();
+    let mut right_chars = right.char_indices().peekable();
+    loop {
+        match (left_chars.peek().copied(), right_chars.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some((_, left_ch)), Some((_, right_ch)))
+                if left_ch.is_ascii_digit() && right_ch.is_ascii_digit() =>
+            {
+                let left_digits =
+                    eval_supported_constant_take_ascii_digit_run(left, &mut left_chars);
+                let right_digits =
+                    eval_supported_constant_take_ascii_digit_run(right, &mut right_chars);
+                let ord =
+                    eval_supported_constant_compare_natural_digit_runs(left_digits, right_digits);
+                if !ord.is_eq() {
+                    return ord;
+                }
+            }
+            (Some((_, left_ch)), Some((_, right_ch))) => {
+                left_chars.next();
+                right_chars.next();
+                let ord = left_ch.cmp(&right_ch);
+                if !ord.is_eq() {
+                    return ord;
+                }
+            }
+        }
+    }
+}
+
+fn eval_supported_constant_take_ascii_digit_run<'s>(
+    source: &'s str,
+    chars: &mut std::iter::Peekable<std::str::CharIndices<'s>>,
+) -> &'s str {
+    let start = chars
+        .peek()
+        .map(|(index, _)| *index)
+        .expect("digit run requires a current character");
+    let mut end = source.len();
+    while let Some((index, ch)) = chars.peek().copied() {
+        if !ch.is_ascii_digit() {
+            end = index;
+            break;
+        }
+        chars.next();
+    }
+    &source[start..end]
+}
+
+fn eval_supported_constant_compare_natural_digit_runs(
+    left: &str,
+    right: &str,
+) -> std::cmp::Ordering {
+    let left_trimmed = left.trim_start_matches('0');
+    let right_trimmed = right.trim_start_matches('0');
+    let left_numeric = if left_trimmed.is_empty() {
+        "0"
+    } else {
+        left_trimmed
+    };
+    let right_numeric = if right_trimmed.is_empty() {
+        "0"
+    } else {
+        right_trimmed
+    };
+    left_numeric
+        .len()
+        .cmp(&right_numeric.len())
+        .then_with(|| left_numeric.cmp(right_numeric))
+        .then_with(|| left.len().cmp(&right.len()))
 }
 
 fn eval_supported_constant_list_find_call(
@@ -13603,27 +15360,76 @@ fn eval_supported_constant_list_find(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            "`find` in a compile-time global initializer must receive pipeline input",
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`find` in a compile-time global initializer requires list input",
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input("find", input, span)?;
     let needle = eval_supported_constant_value_with_env(working_set, needle_expr, env)?;
     let vals = vals
         .into_iter()
         .filter(|value| value == &needle)
         .collect::<Vec<_>>();
     Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_list_or_bounded_range_input(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<(Vec<Value>, Span), LabeledError> {
+    const MAX_CONSTANT_RANGE_LIST_CAPACITY: usize = 60;
+
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    let value_span = value.span();
+
+    match value {
+        Value::List { vals, .. } => Ok((vals, value_span)),
+        Value::Range { val, .. } => {
+            if !val.is_bounded() {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` cannot materialize an open-ended range in compile-time global initializers"
+                            ),
+                            span,
+                        ),
+                );
+            }
+
+            let vals = val
+                .into_range_iter(value_span, Signals::empty())
+                .take(MAX_CONSTANT_RANGE_LIST_CAPACITY + 1)
+                .collect::<Vec<_>>();
+            if vals.len() > MAX_CONSTANT_RANGE_LIST_CAPACITY {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` range input exceeds fixed list capacity {MAX_CONSTANT_RANGE_LIST_CAPACITY} in compile-time global initializers"
+                            ),
+                            span,
+                        ),
+                );
+            }
+
+            Ok((vals, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires list or bounded range input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
 }
 
 fn eval_supported_constant_list_take_skip_or_drop_call(
@@ -13691,23 +15497,8 @@ fn eval_supported_constant_list_take_skip_or_drop(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = input.ok_or_else(|| {
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            format!(
-                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
-            ),
-            span,
-        )
-    })?;
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, input, span)?;
 
     let raw_count = if let Some(count_expr) = count_expr {
         let count_value = eval_supported_constant_value_with_env(working_set, count_expr, env)?;
@@ -13782,15 +15573,8 @@ fn eval_supported_constant_list_mutation_call(
     })?;
     let item = eval_supported_constant_value_with_env(working_set, item_expr, env)?;
 
-    let value_span = value.span();
-    let Value::List { vals, .. } = value else {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
-                span,
-            ),
-        );
-    };
+    let (vals, value_span) =
+        eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
 
     let updated = match cmd_name {
         "append" => vals.into_iter().chain(std::iter::once(item)).collect(),
@@ -14533,6 +16317,17 @@ fn eval_supported_constant_default(
 
     let default_value = eval_supported_constant_value_with_env(working_set, default_expr, env)?;
     if column_exprs.is_empty() {
+        let value = match value {
+            value @ Value::Range { .. } => {
+                let (vals, value_span) = eval_supported_constant_list_or_bounded_range_input(
+                    "default",
+                    Some(value),
+                    span,
+                )?;
+                Value::list(vals, value_span)
+            }
+            value => value,
+        };
         return if eval_supported_constant_default_should_replace_value(&value, replace_empty) {
             Ok(default_value)
         } else {
@@ -14612,6 +16407,11 @@ fn eval_supported_constant_path_mutation_call(
     })?;
     let path = eval_supported_constant_cell_path(working_set, path_expr, env)?;
     let new_value = eval_supported_constant_value_with_env(working_set, new_value_expr, env)?;
+    if matches!(value, Value::Range { .. }) {
+        let (vals, value_span) =
+            eval_supported_constant_list_or_bounded_range_input(cmd_name, Some(value), span)?;
+        value = Value::list(vals, value_span);
+    }
 
     match cmd_name {
         "insert" => value
@@ -15519,6 +17319,7 @@ pub(super) fn compile_closure_with_context(
         generic_map_key_semantics: _,
         generic_map_value_types,
         generic_map_max_entries: _,
+        generic_map_extras: _,
         generic_map_inner_templates: _,
         generic_map_value_semantics,
         readonly_globals,

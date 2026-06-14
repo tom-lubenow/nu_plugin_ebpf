@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
@@ -1099,6 +1101,185 @@ fn make_seq_join_then_starts_with_program(
         args: HirCallArgs {
             positional: vec![separator_reg],
             pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+    });
+
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(join_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_describe_then_starts_with_program(
+    seq_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    seq_args: &[HirLiteral],
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let describe_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+    });
+
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_math_mode_join_then_starts_with_program(
+    seq_decl: DeclId,
+    mode_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    seq_args: &[HirLiteral],
+    separator: &str,
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mode_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: mode_decl,
+        src_dst: mode_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::String(separator.as_bytes().to_vec()),
+    });
+
+    let join_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: join_reg,
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(mode_reg),
             ..HirCallArgs::default()
         },
     });
@@ -2441,6 +2622,40 @@ fn make_float_literal_list_builder_find_consumer_program(
     program
 }
 
+fn make_float_literal_list_builder_find_two_consumers_program(
+    find_decl: DeclId,
+    needle: f64,
+    first_consumer_decl: DeclId,
+    second_consumer_decl: DeclId,
+    values: &[f64],
+) -> HirProgram {
+    let mut program = make_float_literal_list_builder_find_consumer_program(
+        find_decl,
+        needle,
+        first_consumer_decl,
+        values,
+    );
+
+    let block = &mut program.main.blocks[0];
+    let previous_result = match block.terminator {
+        HirTerminator::Return { src } => src,
+        _ => unreachable!("test helper creates a return terminator"),
+    };
+    let second_result = RegId::new(program.main.register_count);
+    program.main.register_count += 1;
+    block.stmts.push(HirStmt::Call {
+        decl_id: second_consumer_decl,
+        src_dst: second_result,
+        args: HirCallArgs {
+            pipeline_input: Some(previous_result),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: second_result };
+
+    program
+}
+
 fn make_float_literal_list_builder_transform_join_then_starts_with_program(
     transform_decl: DeclId,
     join_decl: DeclId,
@@ -2638,6 +2853,107 @@ fn make_float_literal_list_builder_two_item_transforms_join_then_starts_with_pro
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_literal_list_builder_two_item_transforms_two_consumers_program(
+    transform_decl: DeclId,
+    first_consumer_decl: DeclId,
+    second_consumer_decl: DeclId,
+    values: &[f64],
+    first_item: f64,
+    second_item: f64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let first_item_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: first_item_reg,
+        lit: HirLiteral::Float(first_item),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![first_item_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let second_item_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: second_item_reg,
+        lit: HirLiteral::Float(second_item),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![second_item_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let first_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: first_consumer_decl,
+        src_dst: first_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let second_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: second_consumer_decl,
+        src_dst: second_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(first_consumer_result),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: second_consumer_result,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_float_literal_list_builder_split_list_length_program(
     split_decl: DeclId,
     length_decl: DeclId,
@@ -2697,6 +3013,90 @@ fn make_float_literal_list_builder_split_list_length_program(
             id: HirBlockId(0),
             stmts,
             terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_float_literal_list_builder_split_list_two_consumers_program(
+    split_decl: DeclId,
+    first_consumer_decl: DeclId,
+    second_consumer_decl: DeclId,
+    values: &[f64],
+    separator: f64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::Float(separator),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let first_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: first_consumer_decl,
+        src_dst: first_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let second_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: second_consumer_decl,
+        src_dst: second_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(first_consumer_result),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: second_consumer_result,
+            },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
@@ -2808,6 +3208,108 @@ fn make_float_literal_list_builder_split_list_get_join_then_starts_with_program(
             id: HirBlockId(0),
             stmts,
             terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_float_literal_list_builder_split_list_get_two_consumers_program(
+    split_decl: DeclId,
+    get_decl: DeclId,
+    first_consumer_decl: DeclId,
+    second_consumer_decl: DeclId,
+    values: &[f64],
+    separator: f64,
+    group_index: i64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::Float(separator),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let group_index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: group_index_reg,
+        lit: HirLiteral::Int(group_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![group_index_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let first_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: first_consumer_decl,
+        src_dst: first_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let second_consumer_result = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: second_consumer_decl,
+        src_dst: second_consumer_result,
+        args: HirCallArgs {
+            pipeline_input: Some(first_consumer_result),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: second_consumer_result,
+            },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
@@ -3745,6 +4247,149 @@ fn make_split_string_list_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_string_list_consumer_program(
+    split_decl: DeclId,
+    consumer_decl: DeclId,
+    input: &[&str],
+    flags: Vec<Vec<u8>>,
+    min_word_length: Option<i64>,
+) -> HirProgram {
+    let values = input
+        .iter()
+        .map(|item| Value::string((*item).to_string(), Span::test_data()))
+        .collect();
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(values, Span::test_data())),
+    }];
+    let mut named = Vec::new();
+    let mut next_reg = 2;
+    if let Some(min_word_length) = min_word_length {
+        stmts.push(HirStmt::LoadValue {
+            dst: RegId::new(next_reg),
+            val: Box::new(Value::int(min_word_length, Span::test_data())),
+        });
+        named.push((b"min-word-length".to_vec(), RegId::new(next_reg)));
+        next_reg += 1;
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named,
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let consumer_reg = RegId::new(next_reg);
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_split_string_list_describe_starts_with_program(
+    split_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &[&str],
+    flags: Vec<Vec<u8>>,
+    min_word_length: Option<i64>,
+    prefix: &str,
+) -> HirProgram {
+    let values = input
+        .iter()
+        .map(|item| Value::string((*item).to_string(), Span::test_data()))
+        .collect();
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(values, Span::test_data())),
+    }];
+    let mut named = Vec::new();
+    let mut next_reg = 2;
+    if let Some(min_word_length) = min_word_length {
+        stmts.push(HirStmt::LoadValue {
+            dst: RegId::new(next_reg),
+            val: Box::new(Value::int(min_word_length, Span::test_data())),
+        });
+        named.push((b"min-word-length".to_vec(), RegId::new(next_reg)));
+        next_reg += 1;
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named,
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let describe_reg = RegId::new(next_reg);
+    let prefix_reg = RegId::new(next_reg + 1);
+    let starts_with_reg = RegId::new(next_reg + 2);
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_constant_list_join_then_starts_with_program(
     join_decl: DeclId,
     starts_with_decl: DeclId,
@@ -4372,6 +5017,108 @@ fn make_split_list_string_get_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_list_string_describe_starts_with_program(
+    split_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    separator: &str,
+    flags: Vec<&str>,
+    split_mode: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let mut next_reg = 2u32;
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            values
+                .iter()
+                .map(|value| Value::string(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string(separator, Span::test_data())),
+    });
+
+    let mut named = Vec::new();
+    if let Some(split_mode) = split_mode {
+        let split_mode_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: split_mode_reg,
+            val: Box::new(Value::string(split_mode, Span::test_data())),
+        });
+        named.push((b"split".to_vec(), split_mode_reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            named,
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let describe_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_split_list_string_program(
     split_decl: DeclId,
     values: &[&str],
@@ -4541,6 +5288,110 @@ fn make_string_list_builder_item_access_then_starts_with_program(
         src_dst: RegId::new(1),
         args: HirCallArgs {
             positional: index_reg.into_iter().collect(),
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_string_list_builder_runtime_get_then_starts_with_program(
+    get_decl: DeclId,
+    random_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    range_start: i64,
+    range_end: i64,
+    prefix: &str,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let start_reg = RegId::new(value_count_u32 + 2);
+    let step_reg = RegId::new(value_count_u32 + 3);
+    let end_reg = RegId::new(value_count_u32 + 4);
+    let range_reg = RegId::new(value_count_u32 + 5);
+    let index_reg = RegId::new(value_count_u32 + 6);
+    let prefix_reg = RegId::new(value_count_u32 + 7);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: start_reg,
+        lit: HirLiteral::Int(range_start),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: end_reg,
+        lit: HirLiteral::Int(range_end),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: start_reg,
+            step: step_reg,
+            end: end_reg,
+            inclusion: RangeInclusion::Inclusive,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: index_reg,
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![index_reg],
             pipeline_input: Some(RegId::new(0)),
             ..HirCallArgs::default()
         },
@@ -5016,6 +5867,581 @@ fn make_ctx_pid_fill_then_starts_with_program(
         None,
         "0",
     )
+}
+
+fn make_ctx_pid_bool_fill_then_starts_with_program(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(0),
+            op: Operator::Comparison(Comparison::GreaterThan),
+            rhs: RegId::new(4),
+        },
+    ];
+
+    let mut next_reg = 5u32;
+    let mut named = Vec::new();
+    if let Some(width) = width {
+        let width_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: width_reg,
+            lit: HirLiteral::Int(width),
+        });
+        named.push((b"width".to_vec(), width_reg));
+    }
+    if let Some(alignment) = alignment {
+        let alignment_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: alignment_reg,
+            val: Box::new(Value::string(alignment, Span::test_data())),
+        });
+        named.push((b"alignment".to_vec(), alignment_reg));
+    }
+    if let Some(character) = character {
+        let character_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: character_reg,
+            val: Box::new(Value::string(character, Span::test_data())),
+        });
+        named.push((b"character".to_vec(), character_reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: fill_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_ctx_pid_bool_double_fill_then_starts_with_program(
+    first_fill_decl: DeclId,
+    second_fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    prefix: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(0),
+            op: Operator::Comparison(Comparison::GreaterThan),
+            rhs: RegId::new(4),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(8),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(6),
+            val: Box::new(Value::string("right", Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(7),
+            val: Box::new(Value::string("ab", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: first_fill_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                named: vec![
+                    (b"width".to_vec(), RegId::new(5)),
+                    (b"alignment".to_vec(), RegId::new(6)),
+                    (b"character".to_vec(), RegId::new(7)),
+                ],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(11),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(9),
+            val: Box::new(Value::string("right", Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(10),
+            val: Box::new(Value::string("0", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: second_fill_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                named: vec![
+                    (b"width".to_vec(), RegId::new(8)),
+                    (b"alignment".to_vec(), RegId::new(9)),
+                    (b"character".to_vec(), RegId::new(10)),
+                ],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(11),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(12),
+            args: HirCallArgs {
+                positional: vec![RegId::new(11)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: RegId::new(12),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 13,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_random_int_range_fill_then_starts_with_program(
+    random_decl: DeclId,
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    range_start: i64,
+    range_end: i64,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(range_start),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(range_end),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Range {
+                start: RegId::new(0),
+                step: RegId::new(1),
+                end: RegId::new(2),
+                inclusion: RangeInclusion::Inclusive,
+            },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut next_reg = 5u32;
+    let mut named = Vec::new();
+    if let Some(width) = width {
+        let width_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: width_reg,
+            lit: HirLiteral::Int(width),
+        });
+        named.push((b"width".to_vec(), width_reg));
+    }
+    if let Some(alignment) = alignment {
+        let alignment_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: alignment_reg,
+            val: Box::new(Value::string(alignment, Span::test_data())),
+        });
+        named.push((b"alignment".to_vec(), alignment_reg));
+    }
+    if let Some(character) = character {
+        let character_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: character_reg,
+            val: Box::new(Value::string(character, Span::test_data())),
+        });
+        named.push((b"character".to_vec(), character_reg));
+    }
+
+    let fill_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: fill_decl,
+        src_dst: fill_reg,
+        args: HirCallArgs {
+            named,
+            pipeline_input: Some(RegId::new(4)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(fill_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_random_int_range_double_fill_then_starts_with_program(
+    random_decl: DeclId,
+    first_fill_decl: DeclId,
+    second_fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    prefix: &str,
+) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(9),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Range {
+                start: RegId::new(0),
+                step: RegId::new(1),
+                end: RegId::new(2),
+                inclusion: RangeInclusion::Inclusive,
+            },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(5),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(6),
+            val: Box::new(Value::string("right", Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(7),
+            val: Box::new(Value::string("ab", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: first_fill_decl,
+            src_dst: RegId::new(8),
+            args: HirCallArgs {
+                named: vec![
+                    (b"width".to_vec(), RegId::new(5)),
+                    (b"alignment".to_vec(), RegId::new(6)),
+                    (b"character".to_vec(), RegId::new(7)),
+                ],
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(9),
+            lit: HirLiteral::Int(9),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(10),
+            val: Box::new(Value::string("right", Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(11),
+            val: Box::new(Value::string("0", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: second_fill_decl,
+            src_dst: RegId::new(12),
+            args: HirCallArgs {
+                named: vec![
+                    (b"width".to_vec(), RegId::new(9)),
+                    (b"alignment".to_vec(), RegId::new(10)),
+                    (b"character".to_vec(), RegId::new(11)),
+                ],
+                pipeline_input: Some(RegId::new(8)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(13),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(14),
+            args: HirCallArgs {
+                positional: vec![RegId::new(13)],
+                pipeline_input: Some(RegId::new(12)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: RegId::new(14),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 15,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_ctx_pid_double_fill_then_starts_with_program(
+    first_fill_decl: DeclId,
+    second_fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    second_width: Option<i64>,
+    second_alignment: Option<&str>,
+    second_character: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::Call {
+            decl_id: first_fill_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut next_reg = 3u32;
+    let mut named = Vec::new();
+    if let Some(width) = second_width {
+        let width_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: width_reg,
+            lit: HirLiteral::Int(width),
+        });
+        named.push((b"width".to_vec(), width_reg));
+    }
+    if let Some(alignment) = second_alignment {
+        let alignment_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: alignment_reg,
+            val: Box::new(Value::string(alignment, Span::test_data())),
+        });
+        named.push((b"alignment".to_vec(), alignment_reg));
+    }
+    if let Some(character) = second_character {
+        let character_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: character_reg,
+            val: Box::new(Value::string(character, Span::test_data())),
+        });
+        named.push((b"character".to_vec(), character_reg));
+    }
+
+    let second_fill_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: second_fill_decl,
+        src_dst: second_fill_reg,
+        args: HirCallArgs {
+            named,
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(second_fill_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
 fn make_ctx_pid_fill_then_starts_with_program_with_options(
@@ -5868,6 +7294,145 @@ fn make_char_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_char_list_length_program(
+    char_decl: DeclId,
+    length_decl: DeclId,
+    flags: Vec<Vec<u8>>,
+    args: &[CharTestArg<'_>],
+) -> HirProgram {
+    let mut next_reg = 0u32;
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    for arg in args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        match arg {
+            CharTestArg::String(value) => stmts.push(HirStmt::LoadValue {
+                dst: reg,
+                val: Box::new(Value::string(*value, Span::test_data())),
+            }),
+            CharTestArg::Int(value) => stmts.push(HirStmt::LoadLiteral {
+                dst: reg,
+                lit: HirLiteral::Int(*value),
+            }),
+        }
+        positional.push(reg);
+    }
+
+    let char_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: char_decl,
+        src_dst: char_result_reg,
+        args: HirCallArgs {
+            positional,
+            flags,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(char_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_char_list_get_field_starts_with_program(
+    char_decl: DeclId,
+    get_row_decl: DeclId,
+    get_field_decl: DeclId,
+    starts_with_decl: DeclId,
+    index: i64,
+    field: &str,
+    prefix: &str,
+) -> HirProgram {
+    let stmts = vec![
+        HirStmt::Call {
+            decl_id: char_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                flags: vec![b"list".to_vec()],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(index),
+        },
+        HirStmt::Call {
+            decl_id: get_row_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(3),
+            val: Box::new(Value::string(field, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: get_field_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(5),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                positional: vec![RegId::new(5)],
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_substring_then_starts_with_program(
     substring_decl: DeclId,
     starts_with_decl: DeclId,
@@ -6634,6 +8199,10 @@ fn make_record_values_then_get_program(
             dst: RegId::new(0),
             val: Box::new(Value::record(record, Span::test_data())),
         },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(get_index),
+        },
         HirStmt::Call {
             decl_id: values_decl,
             src_dst: RegId::new(1),
@@ -6641,10 +8210,6 @@ fn make_record_values_then_get_program(
                 pipeline_input: Some(RegId::new(0)),
                 ..HirCallArgs::default()
             },
-        },
-        HirStmt::LoadLiteral {
-            dst: RegId::new(2),
-            lit: HirLiteral::Int(get_index),
         },
         HirStmt::Call {
             decl_id: get_decl,
@@ -6668,6 +8233,154 @@ fn make_record_values_then_get_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_values_then_direct_consumer_program(
+    values_decl: DeclId,
+    consumer_decl: DeclId,
+    reverse_decl: Option<DeclId>,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let (consumer_input, consumer_dst, register_count) = if let Some(reverse_decl) = reverse_decl {
+        stmts.push(HirStmt::Call {
+            decl_id: reverse_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        });
+        (RegId::new(2), RegId::new(3), 4)
+    } else {
+        (RegId::new(1), RegId::new(2), 3)
+    };
+
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_dst,
+        args: HirCallArgs {
+            pipeline_input: Some(consumer_input),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_dst },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_source_record_sort_values_then_values_get_program(
+    sort_decl: DeclId,
+    values_decl: DeclId,
+    get_decl: DeclId,
+) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 2 },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"pid".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(7),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"cpu".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(2),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::Call {
+            decl_id: sort_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                flags: vec![b"values".to_vec()],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                positional: vec![RegId::new(5)],
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -6748,6 +8461,188 @@ fn make_record_mixed_values_length_program(values_decl: DeclId, length_decl: Dec
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_describe_length_program(
+    values_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_transform_describe_length_program(
+    values_decl: DeclId,
+    transform_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_math_mode_join_program(
+    values_decl: DeclId,
+    mode_decl: DeclId,
+    join_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: mode_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(3),
+            val: Box::new(Value::string(",", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: join_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -6930,6 +8825,78 @@ fn make_record_mixed_values_count_transform_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_mixed_values_count_transform_describe_length_program(
+    values_decl: DeclId,
+    transform_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+    count: i64,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(count),
+        },
+        HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_mixed_values_find_length_program(
     values_decl: DeclId,
     find_decl: DeclId,
@@ -6987,6 +8954,77 @@ fn make_record_mixed_values_find_length_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_find_describe_length_program(
+    values_decl: DeclId,
+    find_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: find_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -7289,6 +9327,316 @@ fn make_record_mixed_values_split_list_length_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_split_list_describe_length_program(
+    values_decl: DeclId,
+    split_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_split_list_get_describe_length_program(
+    values_decl: DeclId,
+    split_decl: DeclId,
+    get_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+    group_index: i64,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(group_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(5)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(7),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(6)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_split_list_get_consumer_program(
+    values_decl: DeclId,
+    split_decl: DeclId,
+    get_decl: DeclId,
+    consumer_decl: DeclId,
+    group_index: i64,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(group_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(5)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_split_list_consumer_describe_length_program(
+    values_decl: DeclId,
+    split_decl: DeclId,
+    consumer_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: describe_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(5)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -7720,6 +10068,98 @@ fn make_record_columns_transform_join_starts_with_program(
             stmts,
             terminator: HirTerminator::Return {
                 src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_columns_transform_describe_length_program(
+    columns_decl: DeclId,
+    transform_decl: DeclId,
+    describe_decl: DeclId,
+    length_decl: DeclId,
+    transform_arg: Option<Value>,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: columns_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut next_reg = 2;
+    let transform_positional = if let Some(arg) = transform_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: arg_reg,
+            val: Box::new(arg),
+        });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+
+    let transform_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transform_result_reg,
+        args: HirCallArgs {
+            positional: transform_positional,
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let describe_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transform_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(describe_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: length_result_reg,
             },
         }],
         entry: HirBlockId(0),
@@ -10045,6 +12485,92 @@ fn test_lower_list_transforms_on_float_literal_list_builder_feed_metadata_consum
 }
 
 #[test]
+fn test_lower_list_transforms_on_float_literal_list_builder_feed_metadata_only_describe() {
+    for (offset, command_name, count, values) in [
+        (0, "take", Some(1), &[2.5, 1.5][..]),
+        (1, "skip", Some(1), &[2.5, 1.5][..]),
+        (2, "drop", Some(1), &[2.5, 1.5][..]),
+        (3, "reverse", None, &[2.5, 1.5][..]),
+        (4, "first", Some(1), &[2.5, 1.5][..]),
+        (5, "last", Some(1), &[2.5, 1.5][..]),
+        (6, "uniq", None, &[2.5, 1.5, 2.5][..]),
+        (7, "sort", None, &[2.5, 1.5, 2.0][..]),
+        (8, "compact", None, &[2.5, 1.5][..]),
+    ] {
+        let transform_decl = DeclId::new(81230 + offset * 3);
+        let describe_decl = DeclId::new(81231 + offset * 3);
+        let length_decl = DeclId::new(81232 + offset * 3);
+        let hir = make_float_literal_list_builder_transform_two_consumers_program(
+            transform_decl,
+            count,
+            describe_decl,
+            length_decl,
+            values,
+        );
+        let decl_names = HashMap::from([
+            (transform_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should feed metadata-only float-list describe: {err}")
+        });
+
+        let label = format!("float-list builder {command_name} describe");
+        assert_describe_literal_prefix(&result.program, b"list<float>\0", &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} float-list describe should compile: {err}")
+            });
+    }
+
+    let find_decl = DeclId::new(81260);
+    let describe_decl = DeclId::new(81261);
+    let length_decl = DeclId::new(81262);
+    let hir = make_float_literal_list_builder_find_two_consumers_program(
+        find_decl,
+        1.5,
+        describe_decl,
+        length_decl,
+        &[2.5, 1.5],
+    );
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find should feed metadata-only float-list describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<float>\0",
+        "float-list builder find describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "float-list builder find describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find float-list describe should compile");
+}
+
+#[test]
 fn test_lower_scalar_first_last_on_float_literal_list_builder_feed_describe() {
     for (offset, command_name) in [(0, "first"), (1, "last")] {
         let transform_decl = DeclId::new(289 + offset);
@@ -10654,6 +13180,43 @@ fn test_lower_chained_append_prepend_on_float_literal_list_builder_feed_metadata
             .unwrap_or_else(|err| {
                 panic!("chained {command_name} float-list output should compile: {err}")
             });
+
+        let describe_transform_decl = DeclId::new(81270 + index * 3);
+        let describe_decl = DeclId::new(81271 + index * 3);
+        let length_decl = DeclId::new(81272 + index * 3);
+        let hir = make_float_literal_list_builder_two_item_transforms_two_consumers_program(
+            describe_transform_decl,
+            describe_decl,
+            length_decl,
+            &[2.5],
+            first_item,
+            second_item,
+        );
+        let decl_names = HashMap::from([
+            (describe_transform_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("chained {command_name} should feed metadata-only float-list describe: {err}")
+        });
+
+        let label = format!("float-list builder chained {command_name} describe");
+        assert_describe_literal_prefix(&result.program, b"list<float>\0", &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("chained {command_name} float-list describe should compile: {err}")
+            });
     }
 }
 
@@ -10685,6 +13248,75 @@ fn test_lower_split_list_on_float_literal_list_builder_feed_metadata_consumers()
     assert_no_runtime_list_operations(&result.program, "float-list split length");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("float-list split length should compile");
+
+    let split_decl = DeclId::new(81280);
+    let describe_decl = DeclId::new(81281);
+    let length_decl = DeclId::new(81282);
+    let hir = make_float_literal_list_builder_split_list_two_consumers_program(
+        split_decl,
+        describe_decl,
+        length_decl,
+        &[2.5, 1.5, 3.5, 1.5, 4.5],
+        1.5,
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float-list split output should feed metadata-only describe");
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<list<float>>",
+        "float-list split describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "float-list split describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float-list split describe should compile");
+
+    for (offset, predicate_name, expected) in [(0, "is-empty", 0), (1, "is-not-empty", 1)] {
+        let split_decl = DeclId::new(81290 + offset * 2);
+        let predicate_decl = DeclId::new(81291 + offset * 2);
+        let hir = make_float_literal_list_builder_split_list_length_program(
+            split_decl,
+            predicate_decl,
+            &[2.5, 1.5, 3.5, 1.5, 4.5],
+            1.5,
+        );
+        let decl_names = HashMap::from([
+            (split_decl, "split list".to_string()),
+            (predicate_decl, predicate_name.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("float-list split output should feed {predicate_name}: {err}")
+        });
+
+        let label = format!("float-list split {predicate_name}");
+        assert_program_returns_constant(&result.program, expected, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("float-list split {predicate_name} should compile: {err}")
+            });
+    }
 
     let split_decl = DeclId::new(321);
     let get_decl = DeclId::new(322);
@@ -10735,6 +13367,101 @@ fn test_lower_split_list_on_float_literal_list_builder_feed_metadata_consumers()
     assert_no_runtime_list_operations(&result.program, "float-list split get join");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("float-list split group str join should compile");
+
+    let split_decl = DeclId::new(81300);
+    let get_decl = DeclId::new(81301);
+    let describe_decl = DeclId::new(81302);
+    let length_decl = DeclId::new(81303);
+    let hir = make_float_literal_list_builder_split_list_get_two_consumers_program(
+        split_decl,
+        get_decl,
+        describe_decl,
+        length_decl,
+        &[2.5, 1.5, 3.5, 4.5, 1.5, 5.5],
+        1.5,
+        1,
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float-list split group should feed metadata-only describe");
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<float>\0",
+        "float-list split get describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "float-list split get describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float-list split group describe should compile");
+
+    for (offset, command_name) in [(0, "first"), (1, "last")] {
+        let split_decl = DeclId::new(81310 + offset * 4);
+        let group_decl = DeclId::new(81311 + offset * 4);
+        let describe_decl = DeclId::new(81312 + offset * 4);
+        let length_decl = DeclId::new(81313 + offset * 4);
+        let mut hir = make_float_literal_list_builder_split_list_two_consumers_program(
+            split_decl,
+            group_decl,
+            describe_decl,
+            &[2.5, 1.5, 3.5, 4.5, 1.5, 5.5],
+            1.5,
+        );
+        let block = &mut hir.main.blocks[0];
+        let describe_result = match block.terminator {
+            HirTerminator::Return { src } => src,
+            _ => unreachable!("test helper creates a return terminator"),
+        };
+        let length_result = RegId::new(hir.main.register_count);
+        hir.main.register_count += 1;
+        block.stmts.push(HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: length_result,
+            args: HirCallArgs {
+                pipeline_input: Some(describe_result),
+                ..HirCallArgs::default()
+            },
+        });
+        block.terminator = HirTerminator::Return { src: length_result };
+
+        let decl_names = HashMap::from([
+            (split_decl, "split list".to_string()),
+            (group_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("float-list split {command_name} group should feed describe: {err}")
+        });
+
+        let label = format!("float-list split {command_name} describe");
+        assert_describe_literal_prefix(&result.program, b"list<float>\0", &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("float-list split {command_name} describe should compile: {err}")
+            });
+    }
 }
 
 #[test]
@@ -10791,6 +13518,113 @@ fn test_lower_get_on_string_list_builder_materializes_item_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("get string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_on_string_list_builder_accepts_range_proven_runtime_index() {
+    let get_decl = DeclId::new(115000);
+    let random_decl = DeclId::new(115001);
+    let starts_with_decl = DeclId::new(115002);
+    let hir = make_string_list_builder_runtime_get_then_starts_with_program(
+        get_decl,
+        random_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        0,
+        1,
+        "a",
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (random_decl, "random int".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("range-proven runtime get should consume compile-time string-list builders");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected range-proven string-list get to branch-select the item"
+    );
+    for expected in [b"ab\0".as_slice(), b"cd\0".as_slice()] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(expected)
+            )),
+            "expected range-proven string-list get to append {:?}",
+            std::str::from_utf8(expected).unwrap_or("<non-utf8>")
+        );
+    }
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. } | MirInst::ListLen { .. })),
+        "expected range-proven string-list get not to materialize a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("range-proven string-list get result should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_on_string_list_builder_rejects_out_of_bounds_runtime_index_range() {
+    let get_decl = DeclId::new(115003);
+    let random_decl = DeclId::new(115004);
+    let starts_with_decl = DeclId::new(115005);
+    let hir = make_string_list_builder_runtime_get_then_starts_with_program(
+        get_decl,
+        random_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        0,
+        2,
+        "a",
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (random_decl, "random int".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime get should reject out-of-bounds string-list index ranges");
+
+    assert!(
+        err.to_string().contains(
+            "get runtime index range 0..=2 is out of bounds for compile-time known fixed list with length 2"
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -11528,11 +14362,26 @@ fn test_lower_record_list_builder_compact_empty_column_uses_constant_length() {
 #[test]
 fn test_lower_string_list_builder_sort_join_constant_values() {
     let scenarios = [
-        (Vec::new(), "aa-ab-cd"),
-        (vec![b"reverse".to_vec()], "cd-ab-aa"),
+        (&["cd", "aa", "ab"][..], Vec::new(), "aa-ab-cd"),
+        (
+            &["cd", "aa", "ab"][..],
+            vec![b"reverse".to_vec()],
+            "cd-ab-aa",
+        ),
+        (
+            &["item10", "item2", "item1"][..],
+            vec![b"natural".to_vec()],
+            "item1-item2-item10",
+        ),
+        (&["B", "a", "A"][..], vec![b"ignore-case".to_vec()], "a-A-B"),
+        (
+            &["a10", "a2", "A1"][..],
+            vec![b"natural".to_vec(), b"ignore-case".to_vec()],
+            "A1-a2-a10",
+        ),
     ];
 
-    for (index, (flags, expected)) in scenarios.into_iter().enumerate() {
+    for (index, (values, flags, expected)) in scenarios.into_iter().enumerate() {
         let base_decl = 339 + index * 3;
         let sort_decl = DeclId::new(base_decl);
         let join_decl = DeclId::new(base_decl + 1);
@@ -11541,7 +14390,7 @@ fn test_lower_string_list_builder_sort_join_constant_values() {
             sort_decl,
             join_decl,
             starts_with_decl,
-            &["cd", "aa", "ab"],
+            values,
             None,
             flags,
             expected,
@@ -11710,6 +14559,31 @@ fn test_lower_str_length_chars_on_known_string_materializes_count() {
 }
 
 #[test]
+fn test_lower_str_length_unicode_width_on_known_string_materializes_count() {
+    let str_length_decl = DeclId::new(16_206);
+    let hir = make_string_pipeline_call_program_with_flags(
+        str_length_decl,
+        "字\r\n字",
+        vec![b"unicode-width".to_vec()],
+    );
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --unicode-width should lower on compile-time known strings");
+
+    assert_program_returns_constant(&result.program, 5, "str length --unicode-width");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str length --unicode-width should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_length_on_known_string_list_materializes_numeric_lengths() {
     let str_length_decl = DeclId::new(402);
     let sum_decl = DeclId::new(403);
@@ -11856,6 +14730,56 @@ fn test_lower_str_length_chars_on_known_string_list_materializes_numeric_lengths
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str length --chars string-list result consumed by math sum should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_length_unicode_width_on_known_string_list_materializes_numeric_lengths() {
+    let str_length_decl = DeclId::new(16_207);
+    let sum_decl = DeclId::new(16_208);
+    let hir = make_string_list_str_length_sum_program(
+        str_length_decl,
+        sum_decl,
+        &["字", "\r\n", "abc"],
+        vec![b"unicode-width".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --unicode-width should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::StringAppend { .. })),
+        "expected compile-time str length --unicode-width string-list input not to materialize runtime strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected math sum to consume the unicode-width numeric-list result"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --unicode-width string-list result consumed by math sum should compile through codegen",
     );
 }
 
@@ -12924,6 +15848,38 @@ fn test_lower_split_chars_on_known_string_list_feeds_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_split_chars_on_known_string_list_feeds_metadata_only_length() {
+    let split_decl = DeclId::new(7932);
+    let length_decl = DeclId::new(7933);
+    let hir = make_split_string_list_consumer_program(
+        split_decl,
+        length_decl,
+        &["ab", "cd"],
+        Vec::new(),
+        None,
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split chars".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split chars should lower string-list input when consumed by length");
+
+    assert_program_returns_constant(&result.program, 2, "split chars string-list length");
+    assert_no_runtime_list_operations(&result.program, "split chars string-list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split chars string-list output consumed by length should compile");
+}
+
+#[test]
 fn test_lower_split_words_on_known_string_materializes_word_list() {
     let split_decl = DeclId::new(475);
     let join_decl = DeclId::new(476);
@@ -13074,6 +16030,130 @@ fn test_lower_split_words_on_known_string_list_feeds_metadata_only_str_join() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("split words string-list output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_words_on_known_string_list_feeds_metadata_only_length() {
+    let split_decl = DeclId::new(7934);
+    let length_decl = DeclId::new(7935);
+    let hir = make_split_string_list_consumer_program(
+        split_decl,
+        length_decl,
+        &["a b", "c d e"],
+        Vec::new(),
+        None,
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split words".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split words should lower string-list input when consumed by length");
+
+    assert_program_returns_constant(&result.program, 2, "split words string-list length");
+    assert_no_runtime_list_operations(&result.program, "split words string-list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split words string-list output consumed by length should compile");
+}
+
+#[test]
+fn test_lower_string_list_split_results_feed_metadata_only_empty_predicates() {
+    for (case_offset, split_name, input) in [
+        (0, "split chars", vec!["ab", "cd"]),
+        (10, "split words", vec!["a b", "c d e"]),
+    ] {
+        for (predicate_offset, predicate_name, expected) in
+            [(0, "is-empty", 0), (1, "is-not-empty", 1)]
+        {
+            let split_decl = DeclId::new(7936 + case_offset + predicate_offset * 2);
+            let predicate_decl = DeclId::new(7937 + case_offset + predicate_offset * 2);
+            let hir = make_split_string_list_consumer_program(
+                split_decl,
+                predicate_decl,
+                &input,
+                Vec::new(),
+                None,
+            );
+            let decl_names = HashMap::from([
+                (split_decl, split_name.to_string()),
+                (predicate_decl, predicate_name.to_string()),
+            ]);
+
+            let result = lower_hir_to_mir_with_hints(
+                &hir,
+                None,
+                &decl_names,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|err| {
+                panic!("{split_name} string-list output should feed {predicate_name}: {err}")
+            });
+
+            let label = format!("{split_name} string-list {predicate_name}");
+            assert_program_returns_constant(&result.program, expected, &label);
+            assert_no_runtime_list_operations(&result.program, &label);
+            compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                .unwrap_or_else(|err| {
+                    panic!("{split_name} string-list {predicate_name} should compile: {err}")
+                });
+        }
+    }
+}
+
+#[test]
+fn test_lower_string_list_split_results_feed_metadata_only_describe() {
+    for (case_offset, split_name, input) in [
+        (0, "split chars", vec!["ab", "cd"]),
+        (10, "split words", vec!["a b", "c d e"]),
+    ] {
+        let split_decl = DeclId::new(81200 + case_offset);
+        let describe_decl = DeclId::new(81201 + case_offset);
+        let starts_with_decl = DeclId::new(81202 + case_offset);
+        let hir = make_split_string_list_describe_starts_with_program(
+            split_decl,
+            describe_decl,
+            starts_with_decl,
+            &input,
+            Vec::new(),
+            None,
+            "list<list<string>>",
+        );
+        let decl_names = HashMap::from([
+            (split_decl, split_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{split_name} string-list output should feed describe: {err}")
+        });
+
+        let label = format!("{split_name} string-list describe");
+        assert_describe_literal_prefix(&result.program, b"list<list<string>>", &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{split_name} string-list describe should compile: {err}")
+            });
+    }
 }
 
 #[test]
@@ -15311,6 +18391,96 @@ fn test_lower_char_named_character_ignores_extra_string_args() {
 }
 
 #[test]
+fn test_lower_char_list_feeds_length() {
+    let char_decl = DeclId::new(524);
+    let length_decl = DeclId::new(525);
+    let hir = make_char_list_length_program(
+        char_decl,
+        length_decl,
+        vec![b"list".to_vec(), b"unicode".to_vec(), b"integer".to_vec()],
+        &[CharTestArg::String("prompt")],
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char --list should feed metadata-only length");
+
+    assert_program_returns_constant(&result.program, 113, "char --list length");
+    assert_no_runtime_list_operations(&result.program, "char --list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char --list length should compile through codegen");
+}
+
+#[test]
+fn test_lower_char_list_gets_ordered_record_fields() {
+    let char_decl = DeclId::new(526);
+    let get_row_decl = DeclId::new(527);
+    let get_field_decl = DeclId::new(528);
+    let starts_with_decl = DeclId::new(529);
+    let hir = make_char_list_get_field_starts_with_program(
+        char_decl,
+        get_row_decl,
+        get_field_decl,
+        starts_with_decl,
+        10,
+        "unicode",
+        "d a",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (get_row_decl, "get".to_string()),
+        (get_field_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char --list should feed constant-index row and field projections");
+
+    let return_value = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::Return { val: Some(value) } => Some(value),
+            _ => None,
+        })
+        .expect("expected char --list projection predicate to return a value");
+    match return_value {
+        MirValue::Const(value) => assert_eq!(
+            *value, 1,
+            "expected char --list projection predicate to fold to true"
+        ),
+        MirValue::VReg(vreg) => assert_eq!(
+            result.type_hints.main.get(vreg),
+            Some(&MirType::Bool),
+            "expected char --list projection predicate to return a bool vreg"
+        ),
+        other => panic!("expected bool-like return value, got {other:?}"),
+    }
+    assert_no_runtime_list_operations(&result.program, "char --list get unicode");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char --list row projection should compile through codegen");
+}
+
+#[test]
 fn test_lower_char_named_character_rejects_non_string_extra_args() {
     let char_decl = DeclId::new(514);
     let starts_with_decl = DeclId::new(515);
@@ -15441,7 +18611,7 @@ fn test_lower_char_integer_codepoints_materialize_literal() {
 }
 
 #[test]
-fn test_lower_char_rejects_nul_output() {
+fn test_lower_char_integer_nul_materializes_exact_length_literal() {
     let char_decl = DeclId::new(510);
     let starts_with_decl = DeclId::new(511);
     let hir = make_char_then_starts_with_program(
@@ -15456,7 +18626,7 @@ fn test_lower_char_rejects_nul_output() {
         (starts_with_decl, "str starts-with".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -15464,13 +18634,26 @@ fn test_lower_char_rejects_nul_output() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("char should reject NUL output until string lowering supports embedded NUL");
+    .expect("char should support NUL output with exact string length tracking");
 
     assert!(
-        err.to_string()
-            .contains("char output containing NUL bytes is not supported"),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::LiteralExact { bytes, len },
+                    ..
+                } if *len == 1 && bytes.starts_with(b"\0\0")
+            )),
+        "expected char --integer 0 to materialize a one-byte NUL string"
     );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char NUL output should compile through codegen");
 }
 
 #[test]
@@ -15570,6 +18753,54 @@ fn test_lower_fill_right_on_known_int_materializes_padded_literal() {
 }
 
 #[test]
+fn test_lower_fill_right_on_known_bool_materializes_padded_literal() {
+    let fill_decl = DeclId::new(2529);
+    let starts_with_decl = DeclId::new(2530);
+    let hir = make_fill_value_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Value::bool(true, Span::test_data()),
+        "00true",
+        Some(6),
+        Some("right"),
+        Some("0"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known bool input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"00true\0")
+            )),
+        "expected fill to materialize the padded bool string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill bool result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
 fn test_lower_fill_on_runtime_unsigned_int_materializes_tracked_string() {
     let fill_decl = DeclId::new(507);
     let starts_with_decl = DeclId::new(508);
@@ -15618,6 +18849,596 @@ fn test_lower_fill_on_runtime_unsigned_int_materializes_tracked_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime integer fill result consumed by str starts-with should compile");
+}
+
+#[test]
+fn test_lower_fill_on_runtime_bool_materializes_tracked_string_without_padding() {
+    let fill_decl = DeclId::new(2531);
+    let starts_with_decl = DeclId::new(2532);
+    let hir = make_ctx_pid_bool_fill_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        None,
+        None,
+        None,
+        "t",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for runtime bool input when no padding is needed");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"true"
+            )),
+        "expected runtime bool fill to append the true literal"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"false"
+            )),
+        "expected runtime bool fill to append the false literal"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected runtime bool fill output to remain a tracked string consumed by str starts-with"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime bool fill result consumed by str starts-with should compile");
+}
+
+#[test]
+fn test_lower_fill_width_right_on_runtime_bool_materializes_padded_tracked_string() {
+    let fill_decl = DeclId::new(2533);
+    let starts_with_decl = DeclId::new(2534);
+    let hir = make_ctx_pid_bool_fill_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Some(6),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower bounded runtime bool padding");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"0"
+            ))
+            .count()
+            >= 3,
+        "expected runtime bool fill to emit branch-specific padding"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"true"
+            )),
+        "expected runtime bool fill to append the true literal"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"false"
+            )),
+        "expected runtime bool fill to append the false literal"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected padded runtime bool fill output to remain a tracked string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("padded runtime bool fill result consumed by str starts-with should compile");
+}
+
+#[test]
+fn test_lower_fill_runtime_bool_multichar_padding_proves_second_fill_passthrough() {
+    let first_fill_decl = DeclId::new(12_700);
+    let second_fill_decl = DeclId::new(12_701);
+    let starts_with_decl = DeclId::new(12_702);
+    let hir = make_ctx_pid_bool_double_fill_then_starts_with_program(
+        first_fill_decl,
+        second_fill_decl,
+        starts_with_decl,
+        "ab",
+    );
+    let decl_names = HashMap::from([
+        (first_fill_decl, "fill".to_string()),
+        (second_fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("second fill should pass through when multichar padding already proves width");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"ab"
+            )),
+        "expected first fill to emit multi-character padding"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"0"
+            )),
+        "expected second fill to pass through instead of appending extra padding"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
+        "expected final tracked string to feed the prefix check"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime bool multichar fill passthrough should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_width_rejects_runtime_bool_when_padded_output_exceeds_buffer() {
+    let fill_decl = DeclId::new(2535);
+    let starts_with_decl = DeclId::new(2536);
+    let hir = make_ctx_pid_bool_fill_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Some(128),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime bool padding beyond the tracked string buffer should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_fill_right_on_nonnegative_runtime_signed_int_materializes_tracked_string() {
+    let random_decl = DeclId::new(2537);
+    let fill_decl = DeclId::new(2538);
+    let starts_with_decl = DeclId::new(2539);
+    let hir = make_random_int_range_fill_then_starts_with_program(
+        random_decl,
+        fill_decl,
+        starts_with_decl,
+        0,
+        9,
+        Some(2),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for runtime signed integer input proven non-negative");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Integer,
+                    ..
+                }
+            )),
+        "expected runtime signed integer fill to format the input through StringAppend::Integer"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"0"
+            )),
+        "expected runtime signed integer fill to emit right-alignment padding"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("nonnegative runtime signed integer fill should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_runtime_integer_multichar_padding_proves_second_fill_passthrough() {
+    let random_decl = DeclId::new(12_710);
+    let first_fill_decl = DeclId::new(12_711);
+    let second_fill_decl = DeclId::new(12_712);
+    let starts_with_decl = DeclId::new(12_713);
+    let hir = make_random_int_range_double_fill_then_starts_with_program(
+        random_decl,
+        first_fill_decl,
+        second_fill_decl,
+        starts_with_decl,
+        "ab",
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (first_fill_decl, "fill".to_string()),
+        (second_fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("second fill should pass through when bounded multichar integer padding proves width");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"ab"
+            )),
+        "expected first integer fill to emit multi-character padding"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"0"
+            )),
+        "expected second fill to pass through instead of appending extra padding"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
+        "expected final tracked string to feed the prefix check"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer multichar fill passthrough should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_rejects_possibly_negative_runtime_signed_int() {
+    let random_decl = DeclId::new(2540);
+    let fill_decl = DeclId::new(2541);
+    let starts_with_decl = DeclId::new(2542);
+    let hir = make_random_int_range_fill_then_starts_with_program(
+        random_decl,
+        fill_decl,
+        starts_with_decl,
+        -1,
+        9,
+        None,
+        None,
+        None,
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill should reject possibly negative runtime signed integer input");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_fill_passthrough_on_tracked_runtime_string_when_padding_impossible() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (offset, second_width, second_alignment, second_character, context) in [
+        (0, None, None, Some(""), "empty fill character"),
+        (1, Some(0), Some("right"), Some("0"), "zero width"),
+        (
+            2,
+            None,
+            None,
+            None,
+            "default width with proven non-empty input",
+        ),
+    ] {
+        let first_fill_decl = DeclId::new(2543 + offset * 3);
+        let second_fill_decl = DeclId::new(2544 + offset * 3);
+        let starts_with_decl = DeclId::new(2545 + offset * 3);
+        let hir = make_ctx_pid_double_fill_then_starts_with_program(
+            first_fill_decl,
+            second_fill_decl,
+            starts_with_decl,
+            second_width,
+            second_alignment,
+            second_character,
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (first_fill_decl, "fill".to_string()),
+            (second_fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("tracked runtime string fill passthrough should lower for {context}: {err}")
+        });
+
+        assert!(
+            !result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::StringSlot { .. },
+                        ..
+                    }
+                )),
+            "expected tracked runtime string fill passthrough to avoid string-slot appends for {context}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Integer,
+                        ..
+                    }
+                )),
+            "expected the first fill to materialize the runtime integer string for {context}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+            "expected second fill output to remain tracked for str starts-with in {context}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("tracked string passthrough should compile for {context}: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_fill_rejects_padded_tracked_runtime_string() {
+    let first_fill_decl = DeclId::new(2552);
+    let second_fill_decl = DeclId::new(2553);
+    let starts_with_decl = DeclId::new(2554);
+    let hir = make_ctx_pid_double_fill_then_starts_with_program(
+        first_fill_decl,
+        second_fill_decl,
+        starts_with_decl,
+        Some(2),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (first_fill_decl, "fill".to_string()),
+        (second_fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("padded fill on tracked runtime strings should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -15732,7 +19553,7 @@ fn test_lower_starts_with_operator_prefix_beyond_runtime_capacity_is_constant() 
 }
 
 #[test]
-fn test_lower_ends_with_operator_on_runtime_tracked_string() {
+fn test_lower_ends_with_operator_supports_nul_suffix_on_runtime_tracked_string() {
     let fill_decl = DeclId::new(513);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
@@ -15740,7 +19561,7 @@ fn test_lower_ends_with_operator_on_runtime_tracked_string() {
         (Comparison::EndsWith, "ends-with"),
         (Comparison::NotEndsWith, "not ends-with"),
     ] {
-        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "0", op);
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "\0", op);
         let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
 
         let result = lower_hir_to_mir_with_hints(
@@ -15843,12 +19664,12 @@ fn test_lower_ends_with_operator_suffix_beyond_runtime_capacity_is_constant() {
 }
 
 #[test]
-fn test_lower_in_operator_on_runtime_tracked_string() {
+fn test_lower_in_operator_supports_nul_needle_on_runtime_tracked_string() {
     let fill_decl = DeclId::new(515);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
     for (op, context) in [(Comparison::In, "in"), (Comparison::NotIn, "not-in")] {
-        let hir = make_ctx_pid_fill_then_string_in_operator_program(fill_decl, "0", op);
+        let hir = make_ctx_pid_fill_then_string_in_operator_program(fill_decl, "\0", op);
         let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
 
         let result = lower_hir_to_mir_with_hints(
@@ -16141,12 +19962,12 @@ fn test_lower_in_operator_needle_beyond_runtime_capacity_is_constant() {
 }
 
 #[test]
-fn test_lower_has_operator_on_runtime_tracked_string() {
+fn test_lower_has_operator_supports_nul_needle_on_runtime_tracked_string() {
     let fill_decl = DeclId::new(517);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
     for (op, context) in [(Comparison::Has, "has"), (Comparison::NotHas, "not-has")] {
-        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "0", op);
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "\0", op);
         let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
 
         let result = lower_hir_to_mir_with_hints(
@@ -16367,7 +20188,7 @@ fn test_lower_regex_operator_rejects_runtime_tracked_string() {
 }
 
 #[test]
-fn test_lower_fill_rejects_nul_character() {
+fn test_lower_fill_supports_nul_character() {
     let fill_decl = DeclId::new(2541);
     let starts_with_decl = DeclId::new(2542);
     let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
@@ -16384,7 +20205,7 @@ fn test_lower_fill_rejects_nul_character() {
     ]);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &decl_names,
@@ -16392,13 +20213,26 @@ fn test_lower_fill_rejects_nul_character() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --character should reject NUL bytes in eBPF");
+    .expect("fill --character should support NUL bytes with exact literal length tracking");
 
     assert!(
-        err.to_string()
-            .contains("fill --character does not support NUL bytes"),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::LiteralExact { bytes, len },
+                    ..
+                } if *len == 1 && bytes.starts_with(b"\0")
+            )),
+        "expected fill --character NUL to use exact-length literal append"
     );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill --character NUL should compile through codegen");
 }
 
 #[test]
@@ -17306,17 +21140,87 @@ fn test_lower_fill_width_64_right_with_multibyte_character_on_runtime_unsigned_i
         DeclId::new(2544),
         Some(64),
         Some("right"),
-        Some("__"),
-        "_",
-        "fill --width 64 --alignment right --character __ should lower for runtime unsigned integer input",
+        Some("é"),
+        "é",
+        "fill --width 64 --alignment right --character é should lower for runtime unsigned integer input",
     );
 
     assert_runtime_integer_fill_padding_shape(
         &result,
         &[10, 1_000_000_000],
-        b"__",
+        "é".as_bytes(),
         63,
-        "runtime integer right fill --width 64 --character __",
+        "runtime integer right fill --width 64 --character é",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_64_left_with_multi_character_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2561);
+    let starts_with_decl = DeclId::new(2562);
+    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        Some(64),
+        None,
+        Some("__"),
+        "_",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 64 --character __ should reject runtime integer trailing padding");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_fill_width_four_center_with_multibyte_character_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2563);
+    let starts_with_decl = DeclId::new(2564);
+    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        Some(4),
+        Some("center"),
+        Some("é"),
+        "é",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 4 --alignment center --character é should reject runtime integer trailing padding");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
     );
 }
 
@@ -18691,6 +22595,56 @@ fn test_lower_seq_negative_step_integer_range_feeds_math_sum() {
 }
 
 #[test]
+fn test_lower_seq_integer_range_feeds_metadata_only_str_join() {
+    let seq_decl = DeclId::new(518);
+    let join_decl = DeclId::new(519);
+    let starts_with_decl = DeclId::new(520);
+    let hir = make_seq_join_then_starts_with_program(
+        seq_decl,
+        join_decl,
+        starts_with_decl,
+        &[HirLiteral::Int(1), HirLiteral::Int(3)],
+        ",",
+        "1,2,3",
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("integer seq should fold into metadata-only str join");
+
+    assert_no_runtime_list_operations(&result.program, "metadata-only integer seq");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"1,2,3\0")
+            )),
+        "expected integer seq to feed str join with Nushell integer display text"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("integer seq str join should compile through codegen");
+}
+
+#[test]
 fn test_lower_seq_float_range_feeds_metadata_only_str_join() {
     let seq_decl = DeclId::new(711);
     let join_decl = DeclId::new(712);
@@ -18745,6 +22699,88 @@ fn test_lower_seq_float_range_feeds_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_seq_float_range_feeds_metadata_only_math_mode_str_join() {
+    let seq_decl = DeclId::new(7909);
+    let mode_decl = DeclId::new(7910);
+    let join_decl = DeclId::new(7911);
+    let starts_with_decl = DeclId::new(7912);
+    let hir = make_seq_math_mode_join_then_starts_with_program(
+        seq_decl,
+        mode_decl,
+        join_decl,
+        starts_with_decl,
+        &[
+            HirLiteral::Float(1.0),
+            HirLiteral::Float(0.5),
+            HirLiteral::Float(2.0),
+        ],
+        ",",
+        "1.0,1.5,2.0",
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (mode_decl, "math mode".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float seq should feed metadata-only math mode and str join");
+
+    assert_no_runtime_list_operations(&result.program, "metadata-only float seq math mode");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float seq math mode str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_mixed_numeric_range_feeds_metadata_only_math_mode_str_join() {
+    let seq_decl = DeclId::new(7913);
+    let mode_decl = DeclId::new(7914);
+    let join_decl = DeclId::new(7915);
+    let starts_with_decl = DeclId::new(7916);
+    let hir = make_seq_math_mode_join_then_starts_with_program(
+        seq_decl,
+        mode_decl,
+        join_decl,
+        starts_with_decl,
+        &[
+            HirLiteral::Int(1),
+            HirLiteral::Float(0.5),
+            HirLiteral::Int(2),
+        ],
+        ",",
+        "1.0,1.5,2.0",
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (mode_decl, "math mode".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed numeric seq should feed metadata-only math mode and str join");
+
+    assert_no_runtime_list_operations(&result.program, "metadata-only mixed seq math mode");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed numeric seq math mode str join should compile through codegen");
+}
+
+#[test]
 fn test_lower_seq_mixed_numeric_range_feeds_metadata_only_str_join() {
     let seq_decl = DeclId::new(714);
     let join_decl = DeclId::new(715);
@@ -18780,6 +22816,81 @@ fn test_lower_seq_mixed_numeric_range_feeds_metadata_only_str_join() {
     assert_no_runtime_list_operations(&result.program, "metadata-only mixed numeric seq");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed numeric seq str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_ranges_feed_metadata_only_describe() {
+    let scenarios = [
+        (
+            "integer seq",
+            "seq",
+            vec![HirLiteral::Int(1), HirLiteral::Int(3)],
+            "list<int>",
+        ),
+        (
+            "float seq",
+            "seq",
+            vec![
+                HirLiteral::Float(1.0),
+                HirLiteral::Float(0.5),
+                HirLiteral::Float(2.0),
+            ],
+            "list<float>",
+        ),
+        (
+            "mixed numeric seq",
+            "seq",
+            vec![
+                HirLiteral::Int(1),
+                HirLiteral::Float(0.5),
+                HirLiteral::Int(2),
+            ],
+            "list<float>",
+        ),
+        (
+            "seq char",
+            "seq char",
+            vec![
+                HirLiteral::String(b"a".to_vec()),
+                HirLiteral::String(b"c".to_vec()),
+            ],
+            "list<string>",
+        ),
+    ];
+
+    for (offset, (context, command_name, seq_args, expected_prefix)) in
+        scenarios.into_iter().enumerate()
+    {
+        let seq_decl = DeclId::new(81100 + offset * 3);
+        let describe_decl = DeclId::new(81101 + offset * 3);
+        let starts_with_decl = DeclId::new(81102 + offset * 3);
+        let hir = make_seq_describe_then_starts_with_program(
+            seq_decl,
+            describe_decl,
+            starts_with_decl,
+            &seq_args,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (seq_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} should feed metadata-only describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} describe should compile: {err}"));
+    }
 }
 
 #[test]
@@ -19009,6 +23120,10 @@ fn test_lower_seq_char_range_feeds_str_join() {
                 )),
             "expected seq char {context} range to feed str join with {expected}"
         );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("metadata-only seq char {context} range"),
+        );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("seq char {context} range should compile: {err}"));
     }
@@ -19188,6 +23303,58 @@ fn test_lower_seq_date_range_feeds_str_join() {
             "2020-01-01 00:00:00,2020-01-01 06:00:00,2020-01-01 12:00:00,2020-01-01 18:00:00,2020-01-02 00:00:00",
         ),
         (
+            "negative integer increment ascending endpoint",
+            "2020-01-01",
+            Some("2020-01-05"),
+            None,
+            None,
+            Some(HirLiteral::Int(-2)),
+            None,
+            None,
+            false,
+            ",",
+            "2020-01-01,2020-01-03,2020-01-05",
+        ),
+        (
+            "negative duration increment descending endpoint",
+            "2020-01-05",
+            Some("2020-01-01"),
+            None,
+            None,
+            Some(HirLiteral::Duration(-2 * 24 * 60 * 60 * 1_000_000_000)),
+            None,
+            None,
+            false,
+            ",",
+            "2020-01-05,2020-01-03,2020-01-01",
+        ),
+        (
+            "negative increment periods",
+            "2020-01-05",
+            None,
+            None,
+            Some(3),
+            Some(HirLiteral::Int(-1)),
+            None,
+            None,
+            false,
+            ",",
+            "2020-01-05,2020-01-06,2020-01-07",
+        ),
+        (
+            "reverse negative increment periods",
+            "2020-01-05",
+            None,
+            None,
+            Some(3),
+            Some(HirLiteral::Int(-1)),
+            None,
+            None,
+            true,
+            ",",
+            "2020-01-05,2020-01-04,2020-01-03,2020-01-02,2020-01-01",
+        ),
+        (
             "datetime input format duration increment",
             "2020-01-01 00:00:00",
             Some("2020-01-01 00:10:00"),
@@ -19315,6 +23482,64 @@ fn test_lower_seq_date_range_feeds_str_join() {
 }
 
 #[test]
+fn test_lower_seq_date_output_format_allows_nul_bytes() {
+    let seq_date_decl = DeclId::new(803);
+    let join_decl = DeclId::new(804);
+    let starts_with_decl = DeclId::new(805);
+    let expected = concat!("2020", "\0", "01", "\0", "01");
+    let hir = make_seq_date_join_then_starts_with_program(
+        seq_date_decl,
+        join_decl,
+        starts_with_decl,
+        "2020-01-01",
+        None,
+        None,
+        Some(1),
+        None,
+        None,
+        Some("%Y\0%m\0%d"),
+        false,
+        ",",
+        expected,
+    );
+    let decl_names = HashMap::from([
+        (seq_date_decl, "seq date".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("seq date output format should support embedded NUL bytes");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::LiteralExact { bytes, len },
+                    ..
+                } if *len == expected.len() && bytes.starts_with(expected.as_bytes())
+            )),
+        "expected seq date NUL output to use exact-length literal append"
+    );
+    assert_no_runtime_list_operations(&result.program, "seq date NUL output format");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("seq date NUL output should compile through codegen");
+}
+
+#[test]
 fn test_lower_seq_date_rejects_unsupported_forms() {
     let scenarios = [
         (
@@ -19366,17 +23591,7 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
                 ("increment", HirLiteral::Int(0)),
             ],
             Vec::new(),
-            "seq date --increment requires a positive duration",
-        ),
-        (
-            "negative duration increment",
-            vec![
-                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
-                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
-                ("increment", HirLiteral::Duration(-1_000_000_000)),
-            ],
-            Vec::new(),
-            "seq date --increment requires a positive duration",
+            "seq date --increment requires a non-zero duration",
         ),
         (
             "zero days",
@@ -19441,7 +23656,7 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
 }
 
 #[test]
-fn test_lower_seq_zero_step_returns_empty_numeric_list() {
+fn test_lower_seq_zero_step_feeds_metadata_only_length() {
     let seq_decl = DeclId::new(516);
     let length_decl = DeclId::new(517);
     let hir = make_seq_pipeline_call_program(seq_decl, length_decl, &[1, 0, 5]);
@@ -19458,18 +23673,10 @@ fn test_lower_seq_zero_step_returns_empty_numeric_list() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("seq zero-step range should materialize an empty numeric list");
+    .expect("seq zero-step range should feed metadata-only length");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
-        "expected seq zero-step range to allocate an empty numeric list"
-    );
+    assert_program_returns_constant(&result.program, 0, "zero-step seq length");
+    assert_no_runtime_list_operations(&result.program, "metadata-only zero-step seq");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("empty seq output consumed by length should compile through codegen");
 }
@@ -19772,6 +23979,60 @@ fn test_lower_math_min_max_float_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_min_max_float_results_feed_metadata_only_describe() {
+    for (offset, command_name, values) in [
+        (
+            0,
+            "math min",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+        ),
+        (
+            1,
+            "math max",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::float(2.0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+    ] {
+        let math_decl = DeclId::new(566 + offset * 3);
+        let describe_decl = DeclId::new(567 + offset * 3);
+        let starts_with_decl = DeclId::new(568 + offset * 3);
+        let hir = make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            values,
+            "float",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} float result should feed describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, &format!("{command_name} describe"));
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} describe result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_sum_product_rejects_known_mixed_numeric_lists_with_float_result() {
     for (offset, command_name, values) in [
         (
@@ -19871,6 +24132,58 @@ fn test_lower_math_sum_product_float_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_sum_product_float_results_feed_metadata_only_describe() {
+    for (offset, command_name, values) in [
+        (
+            0,
+            "math sum",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+        (
+            1,
+            "math product",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+    ] {
+        let math_decl = DeclId::new(572 + offset * 3);
+        let describe_decl = DeclId::new(573 + offset * 3);
+        let starts_with_decl = DeclId::new(574 + offset * 3);
+        let hir = make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            values,
+            "float",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} float result should feed describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, &format!("{command_name} describe"));
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} describe result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_avg_rejects_materialized_numeric_float_result() {
     for (offset, values) in [
         (
@@ -19964,6 +24277,43 @@ fn test_lower_math_avg_numeric_results_feed_metadata_only_fill() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("math avg fill result should compile");
     }
+}
+
+#[test]
+fn test_lower_math_avg_numeric_result_feeds_metadata_only_describe() {
+    let math_decl = DeclId::new(594);
+    let describe_decl = DeclId::new(595);
+    let starts_with_decl = DeclId::new(596);
+    let hir = make_value_list_math_describe_starts_with_program(
+        math_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::int(2, Span::test_data()),
+            Value::int(3, Span::test_data()),
+        ],
+        "float",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math avg".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math avg float result should feed describe");
+
+    assert_no_runtime_list_operations(&result.program, "math avg describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math avg describe result should compile");
 }
 
 #[test]
@@ -20088,6 +24438,250 @@ fn test_lower_math_sqrt_list_results_feed_metadata_only_str_join() {
     assert_no_runtime_list_operations(&result.program, "math sqrt list str join");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("math sqrt list str join should compile");
+}
+
+#[test]
+fn test_lower_math_sqrt_list_results_feed_metadata_only_fill() {
+    let math_decl = DeclId::new(7928);
+    let fill_decl = DeclId::new(7929);
+    let join_decl = DeclId::new(7930);
+    let starts_with_decl = DeclId::new(7931);
+    let hir = make_value_list_math_fill_join_starts_with_program(
+        math_decl,
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(4, Span::test_data()),
+            Value::float(2.25, Span::test_data()),
+            Value::int(9, Span::test_data()),
+        ],
+        ",",
+        "02.0,01.5,03.0",
+        4,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math sqrt".to_string()),
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math sqrt list result should feed fill: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math sqrt list fill");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math sqrt list fill should compile");
+}
+
+#[test]
+fn test_lower_math_float_unary_list_results_feed_metadata_only_fill() {
+    struct Scenario {
+        command_name: &'static str,
+        values: Vec<Value>,
+        prefix: &'static str,
+        positional_arg: Option<Value>,
+        flag: Option<&'static [u8]>,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            command_name: "math exp",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            prefix: "01.0,2.718",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math ln",
+            values: vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            prefix: "00.0,0.693",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math log",
+            values: vec![
+                Value::int(16, Span::test_data()),
+                Value::int(8, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            prefix: "04.0,03.0,02.0",
+            positional_arg: Some(Value::int(2, Span::test_data())),
+            flag: None,
+        },
+        Scenario {
+            command_name: "math sin",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(90, Span::test_data()),
+            ],
+            prefix: "00.0,01.0",
+            positional_arg: None,
+            flag: Some(b"d"),
+        },
+        Scenario {
+            command_name: "math cos",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "01.0,01.0",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math tan",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "00.0,00.0",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math sinh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "00.0,00.0",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math cosh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "01.0,01.0",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math tanh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "00.0,00.0",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arcsin",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            prefix: "00.0,1.570",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arccos",
+            values: vec![
+                Value::int(1, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            prefix: "00.0,1.570",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arctan",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            prefix: "00.0,0.785",
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arcsinh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            prefix: "00.0,0.881",
+            positional_arg: None,
+            flag: None,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let math_decl = DeclId::new(7932 + offset * 4);
+        let fill_decl = DeclId::new(7933 + offset * 4);
+        let join_decl = DeclId::new(7934 + offset * 4);
+        let starts_with_decl = DeclId::new(7935 + offset * 4);
+        let mut hir = make_value_list_math_fill_join_starts_with_program(
+            math_decl,
+            fill_decl,
+            join_decl,
+            starts_with_decl,
+            scenario.values,
+            ",",
+            scenario.prefix,
+            4,
+            "right",
+            "0",
+        );
+        if let Some(flag) = scenario.flag {
+            hir = with_math_flag(hir, flag);
+        }
+        if let Some(positional_arg) = scenario.positional_arg {
+            hir = with_math_positional_arg(hir, positional_arg);
+        }
+        let decl_names = HashMap::from([
+            (math_decl, scenario.command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} list result should feed fill before str join: {err}",
+                scenario.command_name
+            )
+        });
+
+        assert_no_runtime_list_operations(&result.program, scenario.command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} list fill result should compile: {err}",
+                    scenario.command_name
+                )
+            });
+    }
 }
 
 #[test]
@@ -20556,6 +25150,207 @@ fn test_lower_math_log_list_results_feed_metadata_only_str_join() {
     assert_no_runtime_list_operations(&result.program, "math log list str join");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("math log list str join should compile");
+}
+
+#[test]
+fn test_lower_math_log_scalar_result_feeds_metadata_only_describe() {
+    let math_decl = DeclId::new(640);
+    let describe_decl = DeclId::new(641);
+    let starts_with_decl = DeclId::new(642);
+    let hir = with_math_positional_arg(
+        make_value_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            Value::int(100, Span::test_data()),
+            "float",
+        ),
+        Value::int(10, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math log".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math log scalar result should feed describe");
+
+    assert_no_runtime_list_operations(&result.program, "math log scalar describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math log scalar describe result should compile");
+}
+
+#[test]
+fn test_lower_math_float_unary_scalar_results_feed_metadata_only_describe() {
+    for (offset, command_name, value) in [
+        (0, "math exp", Value::int(0, Span::test_data())),
+        (1, "math ln", Value::int(1, Span::test_data())),
+        (2, "math sin", Value::int(0, Span::test_data())),
+        (3, "math sinh", Value::int(0, Span::test_data())),
+        (4, "math arcsin", Value::int(0, Span::test_data())),
+    ] {
+        let math_decl = DeclId::new(7800 + offset * 3);
+        let describe_decl = DeclId::new(7801 + offset * 3);
+        let starts_with_decl = DeclId::new(7802 + offset * 3);
+        let hir = make_value_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            value,
+            "float",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} scalar result should feed describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, &format!("{command_name} describe"));
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} describe result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_float_unary_list_results_feed_metadata_only_describe() {
+    struct Scenario {
+        command_name: &'static str,
+        values: Vec<Value>,
+        positional_arg: Option<Value>,
+        flag: Option<&'static [u8]>,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            command_name: "math exp",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math ln",
+            values: vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math log",
+            values: vec![
+                Value::int(16, Span::test_data()),
+                Value::int(8, Span::test_data()),
+            ],
+            positional_arg: Some(Value::int(2, Span::test_data())),
+            flag: None,
+        },
+        Scenario {
+            command_name: "math sin",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(90, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: Some(b"d"),
+        },
+        Scenario {
+            command_name: "math cosh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arcsin",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: None,
+        },
+        Scenario {
+            command_name: "math arcsinh",
+            values: vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            positional_arg: None,
+            flag: None,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let math_decl = DeclId::new(81000 + offset * 3);
+        let describe_decl = DeclId::new(81001 + offset * 3);
+        let starts_with_decl = DeclId::new(81002 + offset * 3);
+        let mut hir = make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            scenario.values,
+            "list<float>",
+        );
+        if let Some(flag) = scenario.flag {
+            hir = with_math_flag(hir, flag);
+        }
+        if let Some(positional_arg) = scenario.positional_arg {
+            hir = with_math_positional_arg(hir, positional_arg);
+        }
+        let decl_names = HashMap::from([
+            (math_decl, scenario.command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} list result should feed describe: {err}",
+                scenario.command_name
+            )
+        });
+
+        assert_no_runtime_list_operations(&result.program, scenario.command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} list describe result should compile: {err}",
+                    scenario.command_name
+                )
+            });
+    }
 }
 
 #[test]
@@ -21570,6 +26365,47 @@ fn test_lower_math_variance_stddev_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_variance_stddev_results_feed_metadata_only_describe() {
+    for (offset, command_name) in [(0, "math variance"), (1, "math stddev")] {
+        let math_decl = DeclId::new(755 + offset * 3);
+        let describe_decl = DeclId::new(756 + offset * 3);
+        let starts_with_decl = DeclId::new(757 + offset * 3);
+        let hir = make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+                Value::int(5, Span::test_data()),
+            ],
+            "float",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} result should feed describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, &format!("{command_name} describe"));
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} describe result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
@@ -22515,6 +27351,308 @@ fn make_bits_binary_bytes_list_collect_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_binary_bytes_list_then_pipeline_call_program(
+    bits_decl: DeclId,
+    consumer_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    target: &[u8],
+    endian: Option<&str>,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+    let target_reg = RegId::new(item_count_u32 + 1);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: target_reg,
+        lit: HirLiteral::Binary(target.to_vec()),
+    });
+    let named = if let Some(endian) = endian {
+        let endian_reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: endian_reg,
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), endian_reg)]
+    } else {
+        Vec::new()
+    };
+    let bits_reg = RegId::new(item_count_u32 + if endian.is_some() { 3 } else { 2 });
+    let consumer_reg = RegId::new(bits_reg.get() + 1);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![target_reg],
+                        named,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: consumer_decl,
+                    src_dst: consumer_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_binary_bytes_list_describe_starts_with_program(
+    bits_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    target: &[u8],
+    endian: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+    let target_reg = RegId::new(item_count_u32 + 1);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: target_reg,
+        lit: HirLiteral::Binary(target.to_vec()),
+    });
+    let named = if let Some(endian) = endian {
+        let endian_reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: endian_reg,
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), endian_reg)]
+    } else {
+        Vec::new()
+    };
+    let bits_reg = RegId::new(item_count_u32 + if endian.is_some() { 3 } else { 2 });
+    let describe_reg = RegId::new(bits_reg.get() + 1);
+    let prefix_reg = RegId::new(bits_reg.get() + 2);
+    let starts_with_reg = RegId::new(bits_reg.get() + 3);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![target_reg],
+                        named,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: describe_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::LoadLiteral {
+                    dst: prefix_reg,
+                    lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: starts_with_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(describe_reg),
+                        positional: vec![prefix_reg],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_binary_bytes_list_access_then_pipeline_call_program(
+    bits_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    target: &[u8],
+    endian: Option<&str>,
+    get_index: Option<i64>,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let mut next_reg = item_count_u32 + 1;
+    let target_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: target_reg,
+        lit: HirLiteral::Binary(target.to_vec()),
+    });
+    let named = if let Some(endian) = endian {
+        let endian_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: endian_reg,
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), endian_reg)]
+    } else {
+        Vec::new()
+    };
+
+    let bits_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let access_positional = if let Some(get_index) = get_index {
+        let index_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: index_reg,
+            lit: HirLiteral::Int(get_index),
+        });
+        vec![index_reg]
+    } else {
+        Vec::new()
+    };
+    let access_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let consumer_positional = if let Some(consumer_arg) = consumer_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: consumer_arg,
+        });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+    let consumer_reg = RegId::new(next_reg);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![target_reg],
+                        named,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: access_decl,
+                    src_dst: access_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        positional: access_positional,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: consumer_decl,
+                    src_dst: consumer_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(access_reg),
+                        positional: consumer_positional,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_binary_bytes_list_program(
     bits_decl: DeclId,
     values: Vec<Vec<u8>>,
@@ -22750,6 +27888,366 @@ fn make_bits_shift_rotate_binary_bytes_list_collect_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+enum BitsBinaryListMetadataCallArgs {
+    Not {
+        signed: bool,
+        number_bytes: Option<i64>,
+    },
+    Count {
+        count: i64,
+        signed: bool,
+        number_bytes: Option<i64>,
+    },
+}
+
+fn make_bits_unary_binary_bytes_list_then_pipeline_call_program(
+    bits_decl: DeclId,
+    consumer_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    call_args: BitsBinaryListMetadataCallArgs,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let mut next_reg = item_count_u32 + 1;
+    let (signed, number_bytes, positional) = match call_args {
+        BitsBinaryListMetadataCallArgs::Not {
+            signed,
+            number_bytes,
+        } => (signed, number_bytes, Vec::new()),
+        BitsBinaryListMetadataCallArgs::Count {
+            count,
+            signed,
+            number_bytes,
+        } => {
+            let count_reg = RegId::new(next_reg);
+            next_reg += 1;
+            stmts.push(HirStmt::LoadLiteral {
+                dst: count_reg,
+                lit: HirLiteral::Int(count),
+            });
+            (signed, number_bytes, vec![count_reg])
+        }
+    };
+    let named = if let Some(number_bytes) = number_bytes {
+        let number_bytes_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: number_bytes_reg,
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), number_bytes_reg)]
+    } else {
+        Vec::new()
+    };
+    let bits_reg = RegId::new(next_reg);
+    let consumer_reg = RegId::new(bits_reg.get() + 1);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional,
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: consumer_decl,
+                    src_dst: consumer_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_unary_binary_bytes_list_describe_starts_with_program(
+    bits_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    call_args: BitsBinaryListMetadataCallArgs,
+    prefix: &str,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let mut next_reg = item_count_u32 + 1;
+    let (signed, number_bytes, positional) = match call_args {
+        BitsBinaryListMetadataCallArgs::Not {
+            signed,
+            number_bytes,
+        } => (signed, number_bytes, Vec::new()),
+        BitsBinaryListMetadataCallArgs::Count {
+            count,
+            signed,
+            number_bytes,
+        } => {
+            let count_reg = RegId::new(next_reg);
+            next_reg += 1;
+            stmts.push(HirStmt::LoadLiteral {
+                dst: count_reg,
+                lit: HirLiteral::Int(count),
+            });
+            (signed, number_bytes, vec![count_reg])
+        }
+    };
+    let named = if let Some(number_bytes) = number_bytes {
+        let number_bytes_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: number_bytes_reg,
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), number_bytes_reg)]
+    } else {
+        Vec::new()
+    };
+    let bits_reg = RegId::new(next_reg);
+    let describe_reg = RegId::new(bits_reg.get() + 1);
+    let prefix_reg = RegId::new(bits_reg.get() + 2);
+    let starts_with_reg = RegId::new(bits_reg.get() + 3);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional,
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: describe_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::LoadLiteral {
+                    dst: prefix_reg,
+                    lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: starts_with_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(describe_reg),
+                        positional: vec![prefix_reg],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_unary_binary_bytes_list_access_then_pipeline_call_program(
+    bits_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    call_args: BitsBinaryListMetadataCallArgs,
+    get_index: Option<i64>,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = values.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, value) in values.into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let mut next_reg = item_count_u32 + 1;
+    let (signed, number_bytes, positional) = match call_args {
+        BitsBinaryListMetadataCallArgs::Not {
+            signed,
+            number_bytes,
+        } => (signed, number_bytes, Vec::new()),
+        BitsBinaryListMetadataCallArgs::Count {
+            count,
+            signed,
+            number_bytes,
+        } => {
+            let count_reg = RegId::new(next_reg);
+            next_reg += 1;
+            stmts.push(HirStmt::LoadLiteral {
+                dst: count_reg,
+                lit: HirLiteral::Int(count),
+            });
+            (signed, number_bytes, vec![count_reg])
+        }
+    };
+    let named = if let Some(number_bytes) = number_bytes {
+        let number_bytes_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: number_bytes_reg,
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), number_bytes_reg)]
+    } else {
+        Vec::new()
+    };
+    let bits_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let access_positional = if let Some(get_index) = get_index {
+        let index_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: index_reg,
+            lit: HirLiteral::Int(get_index),
+        });
+        vec![index_reg]
+    } else {
+        Vec::new()
+    };
+    let access_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let consumer_positional = if let Some(consumer_arg) = consumer_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: consumer_arg,
+        });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+    let consumer_reg = RegId::new(next_reg);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: bits_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional,
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: access_decl,
+                    src_dst: access_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(bits_reg),
+                        positional: access_positional,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: consumer_decl,
+                    src_dst: consumer_reg,
+                    args: HirCallArgs {
+                        pipeline_input: Some(access_reg),
+                        positional: consumer_positional,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_not_program(bits_decl: DeclId, input: i64, signed: bool) -> HirProgram {
     make_bits_not_program_with_number_bytes(bits_decl, input, signed, None)
 }
@@ -22967,6 +28465,78 @@ fn make_runtime_scalar_bits_shift_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_runtime_scalar_bits_shift_with_random_count_program(
+    bits_decl: DeclId,
+    random_decl: DeclId,
+    count_start: i64,
+    count_end: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(count_start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(count_end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(1),
+                        step: RegId::new(2),
+                        end: RegId::new(3),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(5)],
+                        named: vec![(b"number-bytes".to_vec(), RegId::new(6))],
+                        flags: vec![b"signed".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -23643,6 +29213,98 @@ fn make_value_list_math_fill_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_list_math_fill_join_starts_with_program(
+    math_decl: DeclId,
+    fill_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Value>,
+    separator: &str,
+    prefix: &str,
+    width: i64,
+    alignment: &str,
+    character: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(width),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(alignment, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(character, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: fill_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        named: vec![
+                            (b"width".to_vec(), RegId::new(2)),
+                            (b"alignment".to_vec(), RegId::new(3)),
+                            (b"character".to_vec(), RegId::new(4)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(6),
+                    val: Box::new(Value::string(separator, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(8),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(8)],
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(9) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 10,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_value_list_math_join_starts_with_program(
     math_decl: DeclId,
     join_decl: DeclId,
@@ -24054,6 +29716,169 @@ fn test_lower_math_mode_on_empty_integer_list_returns_empty_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("empty math mode output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_mode_float_list_result_feeds_metadata_only_describe() {
+    let mode_decl = DeclId::new(7900);
+    let describe_decl = DeclId::new(7901);
+    let starts_with_decl = DeclId::new(7902);
+    let hir = make_value_list_math_describe_starts_with_program(
+        mode_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(2.0, Span::test_data()),
+        ],
+        "list<float>",
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode float-list result should feed describe");
+
+    assert_no_runtime_list_operations(&result.program, "math mode float describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math mode float describe result should compile");
+}
+
+#[test]
+fn test_lower_math_mode_float_list_result_feeds_metadata_only_str_join() {
+    let mode_decl = DeclId::new(7906);
+    let join_decl = DeclId::new(7907);
+    let starts_with_decl = DeclId::new(7908);
+    let hir = make_value_list_math_join_starts_with_program(
+        mode_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(2.0, Span::test_data()),
+        ],
+        ",",
+        "1.5,3.0",
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode float-list result should feed str join");
+
+    assert_no_runtime_list_operations(&result.program, "math mode float str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math mode float str join result should compile");
+}
+
+#[test]
+fn test_lower_math_mode_float_list_result_feeds_metadata_only_fill() {
+    let mode_decl = DeclId::new(7924);
+    let fill_decl = DeclId::new(7925);
+    let join_decl = DeclId::new(7926);
+    let starts_with_decl = DeclId::new(7927);
+    let hir = make_value_list_math_fill_join_starts_with_program(
+        mode_decl,
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(3.0, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(2.0, Span::test_data()),
+        ],
+        ",",
+        "01.5,03.0",
+        4,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode float-list result should feed fill and str join");
+
+    assert_no_runtime_list_operations(&result.program, "math mode float fill");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math mode float fill result should compile");
+}
+
+#[test]
+fn test_lower_math_mode_rejects_non_finite_float_list_items() {
+    let mode_decl = DeclId::new(7903);
+    let describe_decl = DeclId::new(7904);
+    let starts_with_decl = DeclId::new(7905);
+    let hir = make_value_list_math_describe_starts_with_program(
+        mode_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![
+            Value::float(3.0, Span::test_data()),
+            Value::float(f64::INFINITY, Span::test_data()),
+        ],
+        "list<float>",
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math mode should reject non-finite float-list items");
+
+    assert!(
+        err.to_string()
+            .contains("math mode requires finite float list items"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -24469,6 +30294,42 @@ fn test_lower_math_median_float_results_feed_metadata_only_fill() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("math median float fill result should compile");
     }
+}
+
+#[test]
+fn test_lower_math_median_float_result_feeds_metadata_only_describe() {
+    let median_decl = DeclId::new(726);
+    let describe_decl = DeclId::new(727);
+    let starts_with_decl = DeclId::new(728);
+    let hir = make_value_list_math_describe_starts_with_program(
+        median_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::int(3, Span::test_data()),
+        ],
+        "float",
+    );
+    let decl_names = HashMap::from([
+        (median_decl, "math median".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math median float result should feed describe");
+
+    assert_no_runtime_list_operations(&result.program, "math median float describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math median float describe result should compile");
 }
 
 #[test]
@@ -24980,6 +30841,97 @@ fn test_lower_math_abs_float_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_abs_float_list_results_feed_metadata_only_fill() {
+    let abs_decl = DeclId::new(80900);
+    let fill_decl = DeclId::new(80901);
+    let join_decl = DeclId::new(80902);
+    let starts_with_decl = DeclId::new(80903);
+    let hir = make_value_list_math_fill_join_starts_with_program(
+        abs_decl,
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(-2, Span::test_data()),
+            Value::float(-1.5, Span::test_data()),
+        ],
+        ",",
+        "0002,01.5",
+        4,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math abs mixed list result should feed fill: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math abs mixed list fill");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math abs mixed list fill should compile");
+}
+
+#[test]
+fn test_lower_math_abs_float_results_feed_metadata_only_describe() {
+    for (offset, value, expected_prefix) in [
+        (0, Value::float(-2.5, Span::test_data()), "float"),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(-2, Span::test_data()),
+                    Value::float(-1.5, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "list<any>",
+        ),
+    ] {
+        let abs_decl = DeclId::new(5090 + offset * 3);
+        let describe_decl = DeclId::new(5091 + offset * 3);
+        let starts_with_decl = DeclId::new(5092 + offset * 3);
+        let hir = make_value_math_describe_starts_with_program(
+            abs_decl,
+            describe_decl,
+            starts_with_decl,
+            value,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (abs_decl, "math abs".to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math abs float result should feed describe: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, "math abs describe");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math abs describe result should compile");
+    }
+}
+
+#[test]
 fn test_lower_math_abs_rejects_materialized_float_results() {
     let abs_decl = DeclId::new(5086);
     let hir = make_math_float_literal_program(abs_decl, -2.5);
@@ -25334,7 +31286,12 @@ fn test_lower_math_rounding_commands_on_known_mixed_numeric_lists() {
 #[test]
 fn test_lower_math_round_precision_scalar_results_feed_metadata_only_fill() {
     for (offset, value, precision, expected_prefix) in [
-        (0, Value::float(3.1415, Span::test_data()), 2, "3.14"),
+        (
+            0,
+            Value::float(std::f64::consts::PI, Span::test_data()),
+            2,
+            "3.14",
+        ),
         (1, Value::int(3, Span::test_data()), 2, "3.0"),
         (2, Value::float(314.15, Span::test_data()), -1, "310"),
     ] {
@@ -25387,7 +31344,7 @@ fn test_lower_math_round_precision_list_results_feed_metadata_only_str_join() {
             join_decl,
             starts_with_decl,
             vec![
-                Value::float(3.1415, Span::test_data()),
+                Value::float(std::f64::consts::PI, Span::test_data()),
                 Value::float(-2.675, Span::test_data()),
             ],
             ",",
@@ -25418,10 +31375,137 @@ fn test_lower_math_round_precision_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_round_precision_list_results_feed_metadata_only_fill() {
+    let math_decl = DeclId::new(80910);
+    let fill_decl = DeclId::new(80911);
+    let join_decl = DeclId::new(80912);
+    let starts_with_decl = DeclId::new(80913);
+    let hir = with_math_named_arg(
+        make_value_list_math_fill_join_starts_with_program(
+            math_decl,
+            fill_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::float(std::f64::consts::PI, Span::test_data()),
+                Value::float(-2.675, Span::test_data()),
+            ],
+            ",",
+            "03.14,-2.68",
+            5,
+            "right",
+            "0",
+        ),
+        b"p",
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math round --precision list should feed fill: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math round --precision fill");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math round --precision list fill should compile");
+}
+
+#[test]
+fn test_lower_math_round_precision_list_result_feeds_metadata_only_describe() {
+    let math_decl = DeclId::new(81040);
+    let describe_decl = DeclId::new(81041);
+    let starts_with_decl = DeclId::new(81042);
+    let hir = with_math_named_arg(
+        make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            vec![
+                Value::float(std::f64::consts::PI, Span::test_data()),
+                Value::float(-2.675, Span::test_data()),
+            ],
+            "list<float>",
+        ),
+        b"precision",
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math round --precision list should feed describe: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math round --precision list describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math round --precision list describe should compile");
+}
+
+#[test]
+fn test_lower_math_round_precision_scalar_result_feeds_metadata_only_describe() {
+    let math_decl = DeclId::new(5090);
+    let describe_decl = DeclId::new(5091);
+    let starts_with_decl = DeclId::new(5092);
+    let hir = with_math_named_arg(
+        make_value_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            Value::float(std::f64::consts::PI, Span::test_data()),
+            "float",
+        ),
+        b"precision",
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math round --precision should feed describe");
+
+    assert_no_runtime_list_operations(&result.program, "math round --precision describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math round --precision describe result should compile");
+}
+
+#[test]
 fn test_lower_math_round_precision_rejects_materialized_float_results() {
     let decl = DeclId::new(5072);
     let hir = with_math_named_arg(
-        make_value_pipeline_call_program(decl, Value::float(3.1415, Span::test_data())),
+        make_value_pipeline_call_program(
+            decl,
+            Value::float(std::f64::consts::PI, Span::test_data()),
+        ),
         b"precision",
         Value::int(2, Span::test_data()),
     );
@@ -25454,7 +31538,7 @@ fn test_lower_math_round_precision_rejects_non_integer_precision() {
             math_decl,
             fill_decl,
             starts_with_decl,
-            Value::float(3.1415, Span::test_data()),
+            Value::float(std::f64::consts::PI, Span::test_data()),
             "3.1",
             1,
             "right",
@@ -25496,7 +31580,7 @@ fn test_lower_math_round_precision_rejects_non_finite_results() {
             math_decl,
             fill_decl,
             starts_with_decl,
-            Value::float(3.1415, Span::test_data()),
+            Value::float(std::f64::consts::PI, Span::test_data()),
             "NaN",
             1,
             "right",
@@ -25895,8 +31979,278 @@ fn test_lower_bits_binary_folds_empty_and_unequal_binary_list_outputs_for_bytes_
         .unwrap_or_else(|err| panic!("{command_name} should fold binary-list output: {err}"));
 
         assert_program_returns_constant(&result.program, expected_len, command_name);
+        assert_no_runtime_list_operations(&result.program, command_name);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} folded output should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_folds_unmaterializable_outputs_for_list_metadata_consumers() {
+    struct Scenario {
+        context: &'static str,
+        command_name: &'static str,
+        consumer: &'static str,
+        values: Vec<Vec<u8>>,
+        target: Vec<u8>,
+        endian: Option<&'static str>,
+        expected: i64,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            context: "empty list length",
+            command_name: "bits and",
+            consumer: "length",
+            values: Vec::new(),
+            target: vec![0xff],
+            endian: None,
+            expected: 0,
+        },
+        Scenario {
+            context: "empty list predicate",
+            command_name: "bits and",
+            consumer: "is-empty",
+            values: Vec::new(),
+            target: vec![0xff],
+            endian: None,
+            expected: 1,
+        },
+        Scenario {
+            context: "empty list not-empty predicate",
+            command_name: "bits and",
+            consumer: "is-not-empty",
+            values: Vec::new(),
+            target: vec![0xff],
+            endian: None,
+            expected: 0,
+        },
+        Scenario {
+            context: "empty binary output list length",
+            command_name: "bits and",
+            consumer: "length",
+            values: vec![Vec::new(), Vec::new()],
+            target: vec![0xff],
+            endian: None,
+            expected: 2,
+        },
+        Scenario {
+            context: "empty binary output list not-empty predicate",
+            command_name: "bits and",
+            consumer: "is-not-empty",
+            values: vec![Vec::new(), Vec::new()],
+            target: vec![0xff],
+            endian: None,
+            expected: 1,
+        },
+        Scenario {
+            context: "unequal output list length",
+            command_name: "bits xor",
+            consumer: "length",
+            values: vec![vec![0x01], vec![0x02, 0x03]],
+            target: vec![0xff],
+            endian: Some("big"),
+            expected: 2,
+        },
+        Scenario {
+            context: "unequal output list not-empty predicate",
+            command_name: "bits xor",
+            consumer: "is-not-empty",
+            values: vec![vec![0x01], vec![0x02, 0x03]],
+            target: vec![0xff],
+            endian: Some("big"),
+            expected: 1,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let bits_decl = DeclId::new(29460 + offset * 2);
+        let consumer_decl = DeclId::new(29461 + offset * 2);
+        let hir = make_bits_binary_bytes_list_then_pipeline_call_program(
+            bits_decl,
+            consumer_decl,
+            scenario.values,
+            &scenario.target,
+            scenario.endian,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, scenario.command_name.to_string()),
+            (consumer_decl, scenario.consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} should fold {}: {err}",
+                scenario.command_name, scenario.context
+            )
+        });
+
+        assert_program_returns_constant(&result.program, scenario.expected, scenario.context);
+        assert_no_runtime_list_operations(&result.program, scenario.context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} {} consumed by {} should compile: {err}",
+                    scenario.command_name, scenario.context, scenario.consumer
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_folds_unmaterializable_outputs_for_describe() {
+    let bits_decl = DeclId::new(80850);
+    let describe_decl = DeclId::new(80851);
+    let starts_with_decl = DeclId::new(80852);
+    let hir = make_bits_binary_bytes_list_describe_starts_with_program(
+        bits_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![vec![0x01], vec![0x02, 0x03]],
+        &[0xff],
+        Some("big"),
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits xor".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits xor should fold unequal binary-list output through describe");
+
+    assert_describe_literal_prefix(&result.program, b"list<binary>\0", "bits xor describe");
+    assert_no_runtime_list_operations(&result.program, "bits xor describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits xor binary-list describe output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bits_binary_folds_unmaterializable_outputs_through_list_access() {
+    struct Scenario {
+        context: &'static str,
+        command_name: &'static str,
+        access: &'static str,
+        get_index: Option<i64>,
+        values: Vec<Vec<u8>>,
+        target: Vec<u8>,
+        endian: Option<&'static str>,
+        consumer: &'static str,
+        consumer_arg: Option<HirLiteral>,
+        expected: i64,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            context: "unequal selected non-empty result",
+            command_name: "bits and",
+            access: "get",
+            get_index: Some(1),
+            values: vec![vec![0xaa], vec![0xbb, 0xcc]],
+            target: vec![0xff],
+            endian: Some("little"),
+            consumer: "bytes starts-with",
+            consumer_arg: Some(HirLiteral::Binary(vec![0xbb, 0x00])),
+            expected: 1,
+        },
+        Scenario {
+            context: "empty selected result",
+            command_name: "bits and",
+            access: "get",
+            get_index: Some(0),
+            values: vec![Vec::new(), vec![0x01]],
+            target: Vec::new(),
+            endian: None,
+            consumer: "bytes length",
+            consumer_arg: None,
+            expected: 0,
+        },
+        Scenario {
+            context: "unequal last non-empty result",
+            command_name: "bits xor",
+            access: "last",
+            get_index: None,
+            values: vec![vec![0xaa], vec![0xbb, 0xcc]],
+            target: vec![0x00],
+            endian: Some("big"),
+            consumer: "bytes starts-with",
+            consumer_arg: Some(HirLiteral::Binary(vec![0xbb, 0xcc])),
+            expected: 1,
+        },
+        Scenario {
+            context: "empty first result",
+            command_name: "bits and",
+            access: "first",
+            get_index: None,
+            values: vec![Vec::new(), vec![0x01]],
+            target: Vec::new(),
+            endian: None,
+            consumer: "bytes length",
+            consumer_arg: None,
+            expected: 0,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let bits_decl = DeclId::new(29480 + offset * 3);
+        let access_decl = DeclId::new(29481 + offset * 3);
+        let consumer_decl = DeclId::new(29482 + offset * 3);
+        let hir = make_bits_binary_bytes_list_access_then_pipeline_call_program(
+            bits_decl,
+            access_decl,
+            consumer_decl,
+            scenario.values,
+            &scenario.target,
+            scenario.endian,
+            scenario.get_index,
+            scenario.consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, scenario.command_name.to_string()),
+            (access_decl, scenario.access.to_string()),
+            (consumer_decl, scenario.consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} should fold {} through {}: {err}",
+                scenario.command_name, scenario.context, scenario.access
+            )
+        });
+
+        assert_program_returns_constant(&result.program, scenario.expected, scenario.context);
+        assert_no_runtime_list_operations(&result.program, scenario.context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} {} consumed through {} should compile: {err}",
+                    scenario.command_name, scenario.context, scenario.access
+                )
+            });
     }
 }
 
@@ -25930,6 +32284,7 @@ fn test_lower_bits_unary_shift_rotate_fold_unequal_binary_list_outputs_for_bytes
     .expect("bits not should fold unequal binary-list output through bytes collect");
 
     assert_program_returns_constant(&bits_not_result.program, 3, "bits not binary list");
+    assert_no_runtime_list_operations(&bits_not_result.program, "bits not binary list");
     compile_mir_to_ebpf_with_hints(
         &bits_not_result.program,
         None,
@@ -25967,8 +32322,331 @@ fn test_lower_bits_unary_shift_rotate_fold_unequal_binary_list_outputs_for_bytes
         .unwrap_or_else(|err| panic!("{command_name} should fold binary-list output: {err}"));
 
         assert_program_returns_constant(&result.program, 3, command_name);
+        assert_no_runtime_list_operations(&result.program, command_name);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} folded output should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_unary_shift_rotate_fold_unmaterializable_outputs_for_list_metadata_consumers() {
+    struct Scenario {
+        context: &'static str,
+        command_name: &'static str,
+        consumer: &'static str,
+        values: Vec<Vec<u8>>,
+        call_args: BitsBinaryListMetadataCallArgs,
+        expected: i64,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            context: "bits not empty binary output list length",
+            command_name: "bits not",
+            consumer: "length",
+            values: vec![Vec::new(), Vec::new()],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+            expected: 2,
+        },
+        Scenario {
+            context: "bits not empty binary output list not-empty predicate",
+            command_name: "bits not",
+            consumer: "is-not-empty",
+            values: vec![Vec::new(), Vec::new()],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+            expected: 1,
+        },
+        Scenario {
+            context: "bits not unequal output list length",
+            command_name: "bits not",
+            consumer: "length",
+            values: vec![vec![0xff], vec![0x00, 0x01]],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+            expected: 2,
+        },
+        Scenario {
+            context: "bits shl unequal output list length",
+            command_name: "bits shl",
+            consumer: "length",
+            values: vec![vec![0x80], vec![0x01, 0x02]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+            expected: 2,
+        },
+        Scenario {
+            context: "bits ror unequal output list not-empty predicate",
+            command_name: "bits ror",
+            consumer: "is-not-empty",
+            values: vec![vec![0x80], vec![0x01, 0x02]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+            expected: 1,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let bits_decl = DeclId::new(71480 + offset * 2);
+        let consumer_decl = DeclId::new(71481 + offset * 2);
+        let hir = make_bits_unary_binary_bytes_list_then_pipeline_call_program(
+            bits_decl,
+            consumer_decl,
+            scenario.values,
+            scenario.call_args,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, scenario.command_name.to_string()),
+            (consumer_decl, scenario.consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} should fold {}: {err}",
+                scenario.command_name, scenario.context
+            )
+        });
+
+        assert_program_returns_constant(&result.program, scenario.expected, scenario.context);
+        assert_no_runtime_list_operations(&result.program, scenario.context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} {} consumed by {} should compile: {err}",
+                    scenario.command_name, scenario.context, scenario.consumer
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_unary_shift_rotate_fold_unmaterializable_outputs_for_describe() {
+    struct Scenario {
+        command_name: &'static str,
+        values: Vec<Vec<u8>>,
+        call_args: BitsBinaryListMetadataCallArgs,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            command_name: "bits not",
+            values: vec![vec![0xff], vec![0x00, 0x01]],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+        },
+        Scenario {
+            command_name: "bits shl",
+            values: vec![vec![0x80], vec![0x01, 0x02]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+        },
+        Scenario {
+            command_name: "bits ror",
+            values: vec![vec![0x80], vec![0x01, 0x02]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let bits_decl = DeclId::new(80853 + offset * 3);
+        let describe_decl = DeclId::new(80854 + offset * 3);
+        let starts_with_decl = DeclId::new(80855 + offset * 3);
+        let hir = make_bits_unary_binary_bytes_list_describe_starts_with_program(
+            bits_decl,
+            describe_decl,
+            starts_with_decl,
+            scenario.values,
+            scenario.call_args,
+            "list<binary>",
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, scenario.command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} should fold unequal binary-list output through describe: {err}",
+                scenario.command_name
+            )
+        });
+
+        assert_describe_literal_prefix(
+            &result.program,
+            b"list<binary>\0",
+            &format!("{} describe", scenario.command_name),
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("{} describe", scenario.command_name),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} binary-list describe output should compile through codegen: {err}",
+                    scenario.command_name
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_unary_shift_rotate_fold_unmaterializable_outputs_through_list_access() {
+    struct Scenario {
+        context: &'static str,
+        command_name: &'static str,
+        access: &'static str,
+        get_index: Option<i64>,
+        values: Vec<Vec<u8>>,
+        call_args: BitsBinaryListMetadataCallArgs,
+        consumer: &'static str,
+        consumer_arg: Option<HirLiteral>,
+        expected: i64,
+    }
+
+    let scenarios = vec![
+        Scenario {
+            context: "bits not unequal selected result",
+            command_name: "bits not",
+            access: "get",
+            get_index: Some(1),
+            values: vec![vec![0xff], vec![0x00, 0x01]],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+            consumer: "bytes starts-with",
+            consumer_arg: Some(HirLiteral::Binary(vec![0xff, 0xfe])),
+            expected: 1,
+        },
+        Scenario {
+            context: "bits not empty first result",
+            command_name: "bits not",
+            access: "first",
+            get_index: None,
+            values: vec![Vec::new(), vec![0x01]],
+            call_args: BitsBinaryListMetadataCallArgs::Not {
+                signed: true,
+                number_bytes: Some(8),
+            },
+            consumer: "bytes length",
+            consumer_arg: None,
+            expected: 0,
+        },
+        Scenario {
+            context: "bits shl unequal last result",
+            command_name: "bits shl",
+            access: "last",
+            get_index: None,
+            values: vec![vec![0x80], vec![0x01, 0x00]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+            consumer: "bytes starts-with",
+            consumer_arg: Some(HirLiteral::Binary(vec![0x02, 0x00])),
+            expected: 1,
+        },
+        Scenario {
+            context: "bits ror unequal last result",
+            command_name: "bits ror",
+            access: "last",
+            get_index: None,
+            values: vec![vec![0x80], vec![0x01, 0x02]],
+            call_args: BitsBinaryListMetadataCallArgs::Count {
+                count: 1,
+                signed: false,
+                number_bytes: None,
+            },
+            consumer: "bytes length",
+            consumer_arg: None,
+            expected: 2,
+        },
+    ];
+
+    for (offset, scenario) in scenarios.into_iter().enumerate() {
+        let bits_decl = DeclId::new(71500 + offset * 3);
+        let access_decl = DeclId::new(71501 + offset * 3);
+        let consumer_decl = DeclId::new(71502 + offset * 3);
+        let hir = make_bits_unary_binary_bytes_list_access_then_pipeline_call_program(
+            bits_decl,
+            access_decl,
+            consumer_decl,
+            scenario.values,
+            scenario.call_args,
+            scenario.get_index,
+            scenario.consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, scenario.command_name.to_string()),
+            (access_decl, scenario.access.to_string()),
+            (consumer_decl, scenario.consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{} should fold {} through {}: {err}",
+                scenario.command_name, scenario.context, scenario.access
+            )
+        });
+
+        assert_program_returns_constant(&result.program, scenario.expected, scenario.context);
+        assert_no_runtime_list_operations(&result.program, scenario.context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{} {} consumed through {} should compile: {err}",
+                    scenario.command_name, scenario.context, scenario.access
+                )
+            });
     }
 }
 
@@ -26896,6 +33574,88 @@ fn test_lower_bits_shift_signed_i64_on_runtime_scalar_integer_inputs() {
                 panic!("{command_name} runtime scalar input should compile through codegen: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bits_shift_signed_i64_accepts_bounded_runtime_shift_count() {
+    for (offset, command_name, expected_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::ArShr),
+    ] {
+        let bits_decl = DeclId::new(70052 + offset);
+        let random_decl = DeclId::new(70054 + offset);
+        let hir =
+            make_runtime_scalar_bits_shift_with_random_count_program(bits_decl, random_decl, 0, 63);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower bounded runtime count: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    rhs: MirValue::VReg(_),
+                    ..
+                } if *op == expected_op
+            )),
+            "expected {command_name} to emit {expected_op:?} with a runtime shift-count register"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} bounded runtime shift count should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_signed_i64_rejects_unbounded_runtime_shift_count() {
+    let bits_decl = DeclId::new(70056);
+    let random_decl = DeclId::new(70057);
+    let hir =
+        make_runtime_scalar_bits_shift_with_random_count_program(bits_decl, random_decl, 0, 64);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl should reject runtime shift counts above 63");
+
+    assert!(
+        err.to_string()
+            .contains("runtime shift counts require a proven range from 0 through 63"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -28301,6 +35061,100 @@ fn test_lower_bits_rotate_signed_i64_on_runtime_scalar_integer_inputs() {
                 panic!("{command_name} runtime scalar input should compile through codegen: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_accepts_bounded_runtime_rotate_count() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70752 + offset);
+        let random_decl = DeclId::new(70754 + offset);
+        let hir =
+            make_runtime_scalar_bits_shift_with_random_count_program(bits_decl, random_decl, 0, 64);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower bounded runtime rotate count: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+            "expected {command_name} bounded runtime rotate count to branch around identity counts"
+        );
+        for expected_op in [
+            BinOpKind::Sub,
+            BinOpKind::Shl,
+            BinOpKind::Shr,
+            BinOpKind::Or,
+        ] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected {command_name} bounded runtime rotate count to emit {expected_op:?}"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} bounded runtime rotate count should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_rejects_unbounded_runtime_rotate_count() {
+    let bits_decl = DeclId::new(70756);
+    let random_decl = DeclId::new(70757);
+    let hir =
+        make_runtime_scalar_bits_shift_with_random_count_program(bits_decl, random_decl, 0, 65);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits rol".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits rol should reject runtime rotate counts above 64");
+
+    assert!(
+        err.to_string()
+            .contains("runtime rotate counts require a proven range from 0 through 64"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -31136,8 +37990,10 @@ fn test_lower_sort_ignore_case_on_numeric_list_is_supported() {
 }
 
 #[test]
-fn test_lower_sort_natural_rejects_compile_time_string_lists() {
+fn test_lower_sort_natural_on_compile_time_string_list_folds_by_natural_order() {
     let sort_decl = DeclId::new(1233);
+    let join_decl = DeclId::new(1234);
+    let starts_with_decl = DeclId::new(1235);
     let hir = HirProgram::new(
         HirFunction {
             blocks: vec![HirBlock {
@@ -31162,6 +38018,32 @@ fn test_lower_sort_natural_rejects_compile_time_string_lists() {
                             ..HirCallArgs::default()
                         },
                     },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(2),
+                        val: Box::new(Value::string("-", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: join_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(3),
+                        val: Box::new(Value::string("item1-item2-item10", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: starts_with_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3)],
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
                 ],
                 terminator: HirTerminator::Return { src: RegId::new(1) },
             }],
@@ -31169,16 +38051,20 @@ fn test_lower_sort_natural_rejects_compile_time_string_lists() {
             spans: Vec::new(),
             ast: Vec::new(),
             comments: Vec::new(),
-            register_count: 2,
+            register_count: 4,
             file_count: 0,
         },
         HashMap::new(),
         vec![],
         None,
     );
-    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -31186,14 +38072,26 @@ fn test_lower_sort_natural_rejects_compile_time_string_lists() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("sort --natural on strings should remain unsupported");
+    .expect("sort --natural should fold compile-time string lists by natural order");
 
     assert!(
-        err.to_string().contains(
-            "sort on typed fixed arrays currently supports only integer or bool scalar elements"
-        ),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"item1-item2-item10\0")
+            )),
+        "expected natural sort to feed str join with constant item1-item2-item10"
     );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --natural string-list result should compile through codegen");
 }
 
 #[test]
@@ -31296,49 +38194,58 @@ fn test_lower_sort_values_on_constant_record_sorts_fields_by_value() {
 }
 
 #[test]
-fn test_lower_sort_values_rejects_non_record_inputs() {
-    let sort_decl = DeclId::new(1237);
-    let hir = HirProgram::new(
-        HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadValue {
-                        dst: RegId::new(0),
-                        val: Box::new(Value::list(
-                            vec![
-                                Value::int(2, Span::test_data()),
-                                Value::int(1, Span::test_data()),
-                            ],
-                            Span::test_data(),
-                        )),
-                    },
-                    HirStmt::Call {
-                        decl_id: sort_decl,
-                        src_dst: RegId::new(1),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(0)),
-                            flags: vec![b"values".to_vec()],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(1) },
-            }],
-            entry: HirBlockId(0),
-            spans: Vec::new(),
-            ast: Vec::new(),
-            comments: Vec::new(),
-            register_count: 2,
-            file_count: 0,
-        },
-        HashMap::new(),
-        vec![],
-        None,
-    );
-    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+fn test_lower_sort_values_on_source_record_sorts_fields_by_value() {
+    let sort_decl = DeclId::new(12370);
+    let values_decl = DeclId::new(12371);
+    let get_decl = DeclId::new(12372);
+    let hir =
+        make_source_record_sort_values_then_values_get_program(sort_decl, values_decl, get_decl);
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source record sort --values HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
 
-    let err = lower_hir_to_mir_with_hints(
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort --values should preserve source-record fixed-layout metadata");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    assert_returned_scalar_i64_or_const(&result, 2);
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("source record sort --values should compile through codegen");
+}
+
+#[test]
+fn test_lower_sort_values_on_numeric_list_is_supported() {
+    let sort_decl = DeclId::new(1237);
+    let get_decl = DeclId::new(1238);
+    let mut hir = make_numeric_list_call_then_get_program(sort_decl, get_decl, None, 0);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
+        panic!("expected sort call");
+    };
+    args.flags.push(b"values".to_vec());
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -31346,13 +38253,10 @@ fn test_lower_sort_values_rejects_non_record_inputs() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("sort --values should remain record-only");
+    .expect("sort --values should lower as numeric sort on stack-backed numeric lists");
 
-    assert!(
-        err.to_string()
-            .contains("sort --values supports only compile-time record inputs"),
-        "unexpected error: {err}"
-    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --values followed by get should compile through codegen");
 }
 
 #[test]
@@ -31925,6 +38829,47 @@ fn test_lower_split_list_heterogeneous_groups_feed_metadata_consumers() {
     assert_no_runtime_list_operations(&result.program, "split list heterogeneous metadata");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("split list heterogeneous group metadata consumer should compile");
+}
+
+#[test]
+fn test_lower_split_list_heterogeneous_groups_feed_metadata_only_describe() {
+    let split_decl = DeclId::new(81220);
+    let describe_decl = DeclId::new(81221);
+    let starts_with_decl = DeclId::new(81222);
+    let hir = make_split_list_string_describe_starts_with_program(
+        split_decl,
+        describe_decl,
+        starts_with_decl,
+        &["a", "x", "b", "c", "x", "d"],
+        "x",
+        Vec::new(),
+        None,
+        "list<list<string>>",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list heterogeneous groups should feed describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<list<string>>",
+        "split list heterogeneous describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "split list heterogeneous describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split list heterogeneous describe should compile");
 }
 
 #[test]
@@ -33474,6 +40419,86 @@ fn make_bytes_reverse_list_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_reverse_list_describe_starts_with_program(
+    reverse_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    prefix: &str,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let reversed_reg = RegId::new(item_count_u32 + 1);
+    let describe_reg = RegId::new(item_count_u32 + 2);
+    let prefix_reg = RegId::new(item_count_u32 + 3);
+    let starts_with_reg = RegId::new(item_count_u32 + 4);
+    stmts.push(HirStmt::Call {
+        decl_id: reverse_decl,
+        src_dst: reversed_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(reversed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(describe_reg),
+            positional: vec![prefix_reg],
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_reverse_list_collect_then_length_program(
     reverse_decl: DeclId,
     collect_decl: DeclId,
@@ -33882,7 +40907,31 @@ fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_for_list_
             vec![&[][..], &[][..]],
             2,
         ),
+        (
+            "unequal binary item length",
+            "length",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            2,
+        ),
+        (
+            "unequal binary item is-empty",
+            "is-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            0,
+        ),
+        (
+            "unequal binary item not-empty",
+            "is-not-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            1,
+        ),
         ("empty list predicate", "is-empty", Vec::<&[u8]>::new(), 1),
+        (
+            "empty list not-empty predicate",
+            "is-not-empty",
+            Vec::<&[u8]>::new(),
+            0,
+        ),
     ];
 
     for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
@@ -33918,6 +40967,55 @@ fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_for_list_
                 panic!("bytes reverse {context} consumed by {consumer} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_for_describe() {
+    let bytes_reverse_decl = DeclId::new(80780);
+    let describe_decl = DeclId::new(80781);
+    let starts_with_decl = DeclId::new(80782);
+    let hir = make_bytes_reverse_list_describe_starts_with_program(
+        bytes_reverse_decl,
+        describe_decl,
+        starts_with_decl,
+        &[&[0x01][..], &[0x02, 0x03][..]],
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_reverse_decl, "bytes reverse".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes reverse should fold unequal binary-list results through describe");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<binary>\0")
+            )),
+        "expected describe to materialize list<binary> for unequal binary-list output"
+    );
+    assert_no_runtime_list_operations(&result.program, "bytes reverse describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes reverse binary-list describe output should compile through codegen");
 }
 
 #[test]
@@ -34803,6 +41901,116 @@ fn make_bytes_at_list_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_at_list_describe_starts_with_program(
+    at_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    prefix: &str,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let range_start_reg = RegId::new(item_count_u32 + 1);
+    let range_step_reg = RegId::new(item_count_u32 + 2);
+    let range_end_reg = RegId::new(item_count_u32 + 3);
+    let range_reg = RegId::new(item_count_u32 + 4);
+    let sliced_reg = RegId::new(item_count_u32 + 5);
+    let describe_reg = RegId::new(item_count_u32 + 6);
+    let prefix_reg = RegId::new(item_count_u32 + 7);
+    let starts_with_reg = RegId::new(item_count_u32 + 8);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_start_reg,
+        lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_end_reg,
+        lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: range_start_reg,
+            step: range_step_reg,
+            end: range_end_reg,
+            inclusion,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: at_decl,
+        src_dst: sliced_reg,
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(sliced_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_at_list_get_then_pipeline_call_program(
     at_decl: DeclId,
     get_decl: DeclId,
@@ -35266,7 +42474,7 @@ fn test_lower_bytes_at_binary_list_folds_empty_and_unequal_slices_for_bytes_coll
 }
 
 #[test]
-fn test_lower_bytes_at_binary_list_folds_empty_slices_for_list_metadata_consumers() {
+fn test_lower_bytes_at_binary_list_folds_unmaterializable_slices_for_list_metadata_consumers() {
     let scenarios = [
         (
             "empty list length",
@@ -35285,12 +42493,44 @@ fn test_lower_bytes_at_binary_list_folds_empty_slices_for_list_metadata_consumer
             2,
         ),
         (
+            "unequal slice list length",
+            "length",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            Some(0),
+            None,
+            2,
+        ),
+        (
+            "unequal slice list is-empty",
+            "is-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "unequal slice list not-empty",
+            "is-not-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            Some(0),
+            None,
+            1,
+        ),
+        (
             "empty list predicate",
             "is-empty",
             Vec::<&[u8]>::new(),
             Some(0),
             Some(0),
             1,
+        ),
+        (
+            "empty list not-empty predicate",
+            "is-not-empty",
+            Vec::<&[u8]>::new(),
+            Some(0),
+            Some(0),
+            0,
         ),
     ];
 
@@ -35324,11 +42564,49 @@ fn test_lower_bytes_at_binary_list_folds_empty_slices_for_list_metadata_consumer
         .unwrap_or_else(|err| panic!("bytes at should fold {context} through {command}: {err}"));
 
         assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes at {context} consumed by {command} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_at_binary_list_folds_unmaterializable_slices_for_describe() {
+    let bytes_at_decl = DeclId::new(80830);
+    let describe_decl = DeclId::new(80831);
+    let starts_with_decl = DeclId::new(80832);
+    let hir = make_bytes_at_list_describe_starts_with_program(
+        bytes_at_decl,
+        describe_decl,
+        starts_with_decl,
+        &[&[0x01][..], &[0x02, 0x03][..]],
+        Some(0),
+        None,
+        RangeInclusion::Inclusive,
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_at_decl, "bytes at".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes at should fold unequal binary-list slices through describe");
+
+    assert_describe_literal_prefix(&result.program, b"list<binary>\0", "bytes at describe");
+    assert_no_runtime_list_operations(&result.program, "bytes at describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes at binary-list describe output should compile through codegen");
 }
 
 #[test]
@@ -35949,6 +43227,112 @@ fn make_bytes_add_list_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_add_list_describe_starts_with_program(
+    add_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    data: Vec<u8>,
+    index: Option<i64>,
+    from_end: bool,
+    prefix: &str,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (item_index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(item_index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let data_reg = RegId::new(item_count_u32 + 1);
+    let index_reg = index.map(|raw_index| {
+        let reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(raw_index),
+        });
+        reg
+    });
+    let added_reg = RegId::new(item_count_u32 + 2 + u32::from(index_reg.is_some()));
+    let describe_reg = RegId::new(added_reg.get() + 1);
+    let prefix_reg = RegId::new(added_reg.get() + 2);
+    let starts_with_reg = RegId::new(added_reg.get() + 3);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: data_reg,
+        lit: HirLiteral::Binary(data),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: add_decl,
+        src_dst: added_reg,
+        args: HirCallArgs {
+            positional: vec![data_reg],
+            named: index_reg
+                .map(|reg| vec![(b"index".to_vec(), reg)])
+                .unwrap_or_default(),
+            pipeline_input: Some(RegId::new(0)),
+            flags: if from_end {
+                vec![b"end".to_vec()]
+            } else {
+                Vec::new()
+            },
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(added_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_add_list_get_then_pipeline_call_program(
     add_decl: DeclId,
     get_decl: DeclId,
@@ -36309,7 +43693,9 @@ fn test_lower_bytes_add_accepts_empty_result() {
 
 #[test]
 fn test_lower_bytes_add_binary_list_folds_empty_and_unequal_results_for_bytes_collect() {
-    let scenarios: Vec<(&str, Vec<&[u8]>, Vec<u8>, Option<i64>, bool, i64)> = vec![
+    type BytesAddScenario<'a> = (&'a str, Vec<&'a [u8]>, Vec<u8>, Option<i64>, bool, i64);
+
+    let scenarios: Vec<BytesAddScenario<'_>> = vec![
         ("empty list", Vec::new(), Vec::new(), None, false, 0),
         (
             "empty binary outputs",
@@ -36375,7 +43761,7 @@ fn test_lower_bytes_add_binary_list_folds_empty_and_unequal_results_for_bytes_co
 }
 
 #[test]
-fn test_lower_bytes_add_binary_list_folds_empty_results_for_list_metadata_consumers() {
+fn test_lower_bytes_add_binary_list_folds_unmaterializable_results_for_list_metadata_consumers() {
     let scenarios: Vec<(&str, &str, Vec<&[u8]>, i64)> = vec![
         ("empty list length", "length", Vec::new(), 0),
         (
@@ -36384,7 +43770,31 @@ fn test_lower_bytes_add_binary_list_folds_empty_results_for_list_metadata_consum
             vec![&[][..], &[][..]],
             2,
         ),
+        (
+            "unequal binary output list length",
+            "length",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            2,
+        ),
+        (
+            "unequal binary output list is-empty",
+            "is-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            0,
+        ),
+        (
+            "unequal binary output list not-empty",
+            "is-not-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            1,
+        ),
         ("empty list predicate", "is-empty", Vec::new(), 1),
+        (
+            "empty list not-empty predicate",
+            "is-not-empty",
+            Vec::new(),
+            0,
+        ),
     ];
 
     for (index, (context, command, items, expected)) in scenarios.into_iter().enumerate() {
@@ -36415,11 +43825,49 @@ fn test_lower_bytes_add_binary_list_folds_empty_results_for_list_metadata_consum
         .unwrap_or_else(|err| panic!("bytes add should fold {context} through {command}: {err}"));
 
         assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes add {context} consumed by {command} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_add_binary_list_folds_unmaterializable_results_for_describe() {
+    let bytes_add_decl = DeclId::new(80833);
+    let describe_decl = DeclId::new(80834);
+    let starts_with_decl = DeclId::new(80835);
+    let hir = make_bytes_add_list_describe_starts_with_program(
+        bytes_add_decl,
+        describe_decl,
+        starts_with_decl,
+        &[&[0x01][..], &[0x02, 0x03][..]],
+        Vec::new(),
+        None,
+        false,
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes add should fold unequal binary-list results through describe");
+
+    assert_describe_literal_prefix(&result.program, b"list<binary>\0", "bytes add describe");
+    assert_no_runtime_list_operations(&result.program, "bytes add describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes add binary-list describe output should compile through codegen");
 }
 
 #[test]
@@ -37054,6 +44502,78 @@ fn make_bytes_pattern_transform_list_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_pattern_transform_list_describe_starts_with_program(
+    transform_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    command: &str,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let (input_reg, positional, next_reg) =
+        make_bytes_pattern_transform_list_prefix(&mut stmts, items, pattern, replacement, command);
+    let transformed_reg = RegId::new(next_reg);
+    let describe_reg = RegId::new(next_reg + 1);
+    let prefix_reg = RegId::new(next_reg + 2);
+    let starts_with_reg = RegId::new(next_reg + 3);
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transformed_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(input_reg),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transformed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_pattern_transform_list_get_then_pipeline_call_program(
     transform_decl: DeclId,
     get_decl: DeclId,
@@ -37468,7 +44988,8 @@ fn test_lower_bytes_remove_binary_list_folds_empty_and_unequal_results_for_bytes
 }
 
 #[test]
-fn test_lower_bytes_remove_binary_list_folds_empty_results_for_list_metadata_consumers() {
+fn test_lower_bytes_remove_binary_list_folds_unmaterializable_results_for_list_metadata_consumers()
+{
     let scenarios: Vec<(&str, &str, Vec<&[u8]>, i64)> = vec![
         ("empty list length", "length", Vec::new(), 0),
         (
@@ -37477,7 +44998,31 @@ fn test_lower_bytes_remove_binary_list_folds_empty_results_for_list_metadata_con
             vec![&[0x10][..], &[0x10][..]],
             2,
         ),
+        (
+            "unequal binary output list length",
+            "length",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            2,
+        ),
+        (
+            "unequal binary output list is-empty",
+            "is-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            0,
+        ),
+        (
+            "unequal binary output list not-empty",
+            "is-not-empty",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            1,
+        ),
         ("empty list predicate", "is-empty", Vec::new(), 1),
+        (
+            "empty list not-empty predicate",
+            "is-not-empty",
+            Vec::new(),
+            0,
+        ),
     ];
 
     for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
@@ -37511,11 +45056,50 @@ fn test_lower_bytes_remove_binary_list_folds_empty_results_for_list_metadata_con
         });
 
         assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes remove {context} consumed by {consumer} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_remove_binary_list_folds_unmaterializable_results_for_describe() {
+    let bytes_remove_decl = DeclId::new(80836);
+    let describe_decl = DeclId::new(80837);
+    let starts_with_decl = DeclId::new(80838);
+    let hir = make_bytes_pattern_transform_list_describe_starts_with_program(
+        bytes_remove_decl,
+        describe_decl,
+        starts_with_decl,
+        "bytes remove",
+        &[&[0x01][..], &[0x02, 0x03][..]],
+        vec![0x10],
+        None,
+        Vec::new(),
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove should fold unequal binary-list results through describe");
+
+    assert_describe_literal_prefix(&result.program, b"list<binary>\0", "bytes remove describe");
+    assert_no_runtime_list_operations(&result.program, "bytes remove describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes remove binary-list describe output should compile through codegen");
 }
 
 #[test]
@@ -37900,7 +45484,9 @@ fn test_lower_bytes_replace_binary_list_materializes_replaced_list() {
 
 #[test]
 fn test_lower_bytes_replace_binary_list_folds_empty_and_unequal_results_for_bytes_collect() {
-    let scenarios: Vec<(&str, Vec<&[u8]>, Vec<u8>, i64)> = vec![
+    type BytesReplaceScenario<'a> = (&'a str, Vec<&'a [u8]>, Vec<u8>, i64);
+
+    let scenarios: Vec<BytesReplaceScenario<'_>> = vec![
         ("empty list", Vec::new(), Vec::new(), 0),
         (
             "empty binary outputs",
@@ -37961,7 +45547,8 @@ fn test_lower_bytes_replace_binary_list_folds_empty_and_unequal_results_for_byte
 }
 
 #[test]
-fn test_lower_bytes_replace_binary_list_folds_empty_results_for_list_metadata_consumers() {
+fn test_lower_bytes_replace_binary_list_folds_unmaterializable_results_for_list_metadata_consumers()
+{
     let scenarios: Vec<(&str, &str, Vec<&[u8]>, i64)> = vec![
         ("empty list length", "length", Vec::new(), 0),
         (
@@ -37970,7 +45557,31 @@ fn test_lower_bytes_replace_binary_list_folds_empty_results_for_list_metadata_co
             vec![&[0x10][..], &[0x10][..]],
             2,
         ),
+        (
+            "unequal binary output list length",
+            "length",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            2,
+        ),
+        (
+            "unequal binary output list is-empty",
+            "is-empty",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            0,
+        ),
+        (
+            "unequal binary output list not-empty",
+            "is-not-empty",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            1,
+        ),
         ("empty list predicate", "is-empty", Vec::new(), 1),
+        (
+            "empty list not-empty predicate",
+            "is-not-empty",
+            Vec::new(),
+            0,
+        ),
     ];
 
     for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
@@ -38004,11 +45615,50 @@ fn test_lower_bytes_replace_binary_list_folds_empty_results_for_list_metadata_co
         });
 
         assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes replace {context} consumed by {consumer} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_folds_unmaterializable_results_for_describe() {
+    let bytes_replace_decl = DeclId::new(80839);
+    let describe_decl = DeclId::new(80840);
+    let starts_with_decl = DeclId::new(80841);
+    let hir = make_bytes_pattern_transform_list_describe_starts_with_program(
+        bytes_replace_decl,
+        describe_decl,
+        starts_with_decl,
+        "bytes replace",
+        &[&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+        vec![0x10],
+        Some(Vec::new()),
+        Vec::new(),
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_replace_decl, "bytes replace".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes replace should fold unequal binary-list results through describe");
+
+    assert_describe_literal_prefix(&result.program, b"list<binary>\0", "bytes replace describe");
+    assert_no_runtime_list_operations(&result.program, "bytes replace describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes replace binary-list describe output should compile through codegen");
 }
 
 #[test]
@@ -38334,6 +45984,25 @@ fn assert_no_runtime_list_operations(program: &MirProgram, context: &str) {
                 MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
             )),
         "expected {context} not to use runtime list operations"
+    );
+}
+
+fn assert_describe_literal_prefix(program: &MirProgram, prefix: &[u8], context: &str) {
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(prefix)
+            )),
+        "expected {context} to materialize describe literal prefix {:?}",
+        String::from_utf8_lossy(prefix)
     );
 }
 
@@ -39125,7 +46794,10 @@ fn test_lower_binary_list_builder_append_prepend_collect_constant_values() {
 
 #[test]
 fn test_lower_binary_list_builder_transforms_collect_constant_values() {
-    let scenarios: Vec<(&str, Option<i64>, Vec<Vec<u8>>, Vec<&[u8]>, Vec<u8>)> = vec![
+    type BinaryListBuilderScenario<'a> =
+        (&'a str, Option<i64>, Vec<Vec<u8>>, Vec<&'a [u8]>, Vec<u8>);
+
+    let scenarios: Vec<BinaryListBuilderScenario<'_>> = vec![
         (
             "take",
             Some(2),
@@ -39394,10 +47066,45 @@ fn test_lower_bytes_collect_accepts_empty_results() {
     .expect("bytes collect should accept empty list results");
 
     assert_program_returns_constant(&result.program, 0, "empty list");
+    assert_no_runtime_list_operations(&result.program, "empty bytes collect list");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes collect empty list output consumed by bytes length should compile");
 
-    let builder_scenarios: Vec<(&str, Vec<&[u8]>, Option<&[u8]>)> = vec![
+    for (offset, consumer, expected) in [(0, "is-empty", 1), (1, "is-not-empty", 0)] {
+        let bytes_collect_decl = DeclId::new(80680 + offset * 2);
+        let consumer_decl = DeclId::new(80681 + offset * 2);
+        let hir = make_bytes_collect_then_length_program(
+            bytes_collect_decl,
+            consumer_decl,
+            Vec::new(),
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes collect empty output should feed {consumer}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, consumer);
+        assert_no_runtime_list_operations(&result.program, consumer);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes collect empty output consumed by {consumer} should compile: {err}")
+            });
+    }
+
+    type EmptyBuilderScenario<'a> = (&'a str, Vec<&'a [u8]>, Option<&'a [u8]>);
+
+    let builder_scenarios: Vec<EmptyBuilderScenario<'_>> = vec![
         ("empty binary item", vec![&[][..]], None),
         ("empty separator", vec![&[][..], &[][..]], Some(&[][..])),
     ];
@@ -39617,6 +47324,69 @@ fn make_bytes_split_then_pipeline_call_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_split_describe_starts_with_program(
+    split_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: separator,
+                },
+                HirStmt::Call {
+                    decl_id: split_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(prefix.as_bytes().to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -39962,7 +47732,7 @@ fn test_lower_bytes_split_folds_empty_and_unequal_parts_for_bytes_collect() {
 }
 
 #[test]
-fn test_lower_bytes_split_folds_empty_parts_for_list_metadata_consumers() {
+fn test_lower_bytes_split_folds_unmaterializable_parts_for_list_metadata_consumers() {
     let scenarios = [
         (
             "empty input length",
@@ -39979,11 +47749,39 @@ fn test_lower_bytes_split_folds_empty_parts_for_list_metadata_consumers() {
             2,
         ),
         (
+            "unequal part length",
+            "length",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            2,
+        ),
+        (
+            "unequal part is-empty",
+            "is-empty",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            0,
+        ),
+        (
+            "unequal part not-empty",
+            "is-not-empty",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            1,
+        ),
+        (
             "empty input is-empty",
             "is-empty",
             vec![],
             HirLiteral::Binary(vec![0x20]),
             0,
+        ),
+        (
+            "empty input is-not-empty",
+            "is-not-empty",
+            vec![],
+            HirLiteral::Binary(vec![0x20]),
+            1,
         ),
     ];
 
@@ -40014,11 +47812,62 @@ fn test_lower_bytes_split_folds_empty_parts_for_list_metadata_consumers() {
         .unwrap_or_else(|err| panic!("bytes split should fold {context} through {command}: {err}"));
 
         assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes split {context} consumed by {command} should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_bytes_split_folds_unmaterializable_parts_for_describe() {
+    let bytes_split_decl = DeclId::new(80820);
+    let describe_decl = DeclId::new(80821);
+    let starts_with_decl = DeclId::new(80822);
+    let hir = make_bytes_split_describe_starts_with_program(
+        bytes_split_decl,
+        describe_decl,
+        starts_with_decl,
+        vec![0x61, 0x20, 0x62, 0x62],
+        HirLiteral::Binary(vec![0x20]),
+        "list<binary>",
+    );
+    let decl_names = HashMap::from([
+        (bytes_split_decl, "bytes split".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes split should fold unequal binary parts through describe");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<binary>\0")
+            )),
+        "expected describe to materialize list<binary> for unequal bytes split parts"
+    );
+    assert_no_runtime_list_operations(&result.program, "bytes split describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes split describe output should compile through codegen");
 }
 
 #[test]
@@ -40862,7 +48711,7 @@ fn test_lower_source_record_list_field_get_projects_fixed_layout_list_item() {
 }
 
 #[test]
-fn test_lower_values_on_integer_metadata_record_builds_numeric_list() {
+fn test_lower_values_on_integer_metadata_record_get_projects_field_directly() {
     let values_decl = DeclId::new(110);
     let get_decl = DeclId::new(111);
     let hir = make_record_values_then_get_program(values_decl, get_decl, false, 1);
@@ -40881,25 +48730,17 @@ fn test_lower_values_on_integer_metadata_record_builds_numeric_list() {
     )
     .expect("values should lower integer metadata-backed record fields");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
-        "expected values to materialize a numeric list with one slot per record field"
-    );
+    assert_returned_scalar_i64_or_const(&result, 2);
+    assert_no_runtime_list_operations(&result.program, "integer record values get");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record values followed by get should compile through codegen");
 }
 
 #[test]
-fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
+fn test_lower_values_on_numeric_scalar_metadata_record_get_projects_bool_directly() {
     let values_decl = DeclId::new(112);
     let get_decl = DeclId::new(113);
-    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 3);
+    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 2);
     let decl_names = HashMap::from([
         (values_decl, "values".to_string()),
         (get_decl, "get".to_string()),
@@ -40915,19 +48756,95 @@ fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
     )
     .expect("values should lower bool/null metadata-backed record fields as numeric scalars");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
-        "expected values to materialize a numeric list with one slot per record field"
-    );
+    assert_returned_scalar_i64_or_const(&result, 1);
+    assert_no_runtime_list_operations(&result.program, "numeric scalar record values get");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "record values with bool/null fields followed by get should compile through codegen",
     );
+}
+
+#[test]
+fn test_lower_values_on_integer_metadata_record_first_projects_field_directly() {
+    let values_decl = DeclId::new(114);
+    let first_decl = DeclId::new(115);
+    let hir = make_record_values_then_direct_consumer_program(values_decl, first_decl, None);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (first_decl, "first".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should direct-project first metadata-backed record field");
+
+    assert_returned_scalar_i64_or_const(&result, 7);
+    assert_no_runtime_list_operations(&result.program, "metadata record values first");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record values followed by first should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_numeric_metadata_record_last_projects_bool_directly() {
+    let values_decl = DeclId::new(116);
+    let last_decl = DeclId::new(117);
+    let hir = make_record_values_then_direct_consumer_program(values_decl, last_decl, None);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (last_decl, "last".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should direct-project last metadata-backed record field");
+
+    assert_returned_scalar_i64_or_const(&result, 1);
+    assert_no_runtime_list_operations(&result.program, "metadata record values last");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record values followed by last should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_numeric_metadata_record_reverse_first_projects_last_field_directly() {
+    let values_decl = DeclId::new(118);
+    let reverse_decl = DeclId::new(119);
+    let first_decl = DeclId::new(120);
+    let hir = make_record_values_then_direct_consumer_program(
+        values_decl,
+        first_decl,
+        Some(reverse_decl),
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (reverse_decl, "reverse".to_string()),
+        (first_decl, "first".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should direct-project metadata-backed record field through reverse first");
+
+    assert_returned_scalar_i64_or_const(&result, 1);
+    assert_no_runtime_list_operations(&result.program, "metadata record values reverse first");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record values followed by reverse first should compile through codegen");
 }
 
 #[test]
@@ -40977,6 +48894,113 @@ fn test_lower_values_on_mixed_constant_record_feeds_metadata_length() {
     assert_no_runtime_list_operations(&result.program, "mixed record values length");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values length should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_feeds_metadata_describe() {
+    let values_decl = DeclId::new(81490);
+    let describe_decl = DeclId::new(81491);
+    let length_decl = DeclId::new(81492);
+    let hir =
+        make_record_mixed_values_describe_length_program(values_decl, describe_decl, length_decl);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<oneof<int, string>>",
+        "mixed record values describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "mixed record values describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values describe should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_transforms_feed_metadata_describe() {
+    for (offset, transform_name, expected_prefix) in [
+        (0, "reverse", "list<oneof<string, int>>"),
+        (10, "compact", "list<oneof<int, string>>"),
+        (20, "uniq", "list<oneof<int, string>>"),
+    ] {
+        let values_decl = DeclId::new(81500 + offset);
+        let transform_decl = DeclId::new(81501 + offset);
+        let describe_decl = DeclId::new(81502 + offset);
+        let length_decl = DeclId::new(81503 + offset);
+        let hir = make_record_mixed_values_transform_describe_length_program(
+            values_decl,
+            transform_decl,
+            describe_decl,
+            length_decl,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("mixed record values {transform_name} should feed describe: {err}")
+        });
+
+        let label = format!("mixed record values {transform_name} describe");
+        assert_describe_literal_prefix(&result.program, expected_prefix.as_bytes(), &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("mixed record values {transform_name} describe should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_rejects_metadata_math_mode() {
+    let values_decl = DeclId::new(7921);
+    let mode_decl = DeclId::new(7922);
+    let join_decl = DeclId::new(7923);
+    let hir = make_record_mixed_values_math_mode_join_program(values_decl, mode_decl, join_decl);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (mode_decl, "math mode".to_string()),
+        (join_decl, "str join".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("mixed scalar record values should not feed metadata-only math mode");
+
+    assert!(
+        err.to_string().contains("math mode requires"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -41089,6 +49113,55 @@ fn test_lower_values_on_mixed_constant_record_count_transforms_feed_metadata_len
 }
 
 #[test]
+fn test_lower_values_on_mixed_constant_record_count_transforms_feed_metadata_describe() {
+    for (offset, transform_name, expected_prefix) in [
+        (0, "take", "list<oneof<int, string>>"),
+        (10, "first", "list<oneof<int, string>>"),
+        (20, "skip", "list<bool>"),
+        (30, "drop", "list<int>"),
+        (40, "last", "list<oneof<string, bool>>"),
+    ] {
+        let values_decl = DeclId::new(81540 + offset);
+        let transform_decl = DeclId::new(81541 + offset);
+        let describe_decl = DeclId::new(81542 + offset);
+        let length_decl = DeclId::new(81543 + offset);
+        let hir = make_record_mixed_values_count_transform_describe_length_program(
+            values_decl,
+            transform_decl,
+            describe_decl,
+            length_decl,
+            2,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("mixed record values {transform_name} should feed describe: {err}")
+        });
+
+        let label = format!("mixed record values {transform_name} describe");
+        assert_describe_literal_prefix(&result.program, expected_prefix.as_bytes(), &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("mixed record values {transform_name} describe should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_values_on_mixed_constant_record_find_feeds_metadata_length() {
     let values_decl = DeclId::new(1259);
     let find_decl = DeclId::new(1260);
@@ -41114,6 +49187,45 @@ fn test_lower_values_on_mixed_constant_record_find_feeds_metadata_length() {
     assert_no_runtime_list_operations(&result.program, "mixed record values find");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values find length should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_find_feeds_metadata_describe() {
+    let values_decl = DeclId::new(81600);
+    let find_decl = DeclId::new(81601);
+    let describe_decl = DeclId::new(81602);
+    let length_decl = DeclId::new(81603);
+    let hir = make_record_mixed_values_find_describe_length_program(
+        values_decl,
+        find_decl,
+        describe_decl,
+        length_decl,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (find_decl, "find".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values find should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<string>",
+        "mixed record values find describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "mixed record values find describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values find describe should compile through codegen");
 }
 
 #[test]
@@ -41310,6 +49422,237 @@ fn test_lower_values_on_mixed_constant_record_split_list_feeds_length() {
 }
 
 #[test]
+fn test_lower_values_on_mixed_constant_record_split_list_feeds_metadata_describe() {
+    let values_decl = DeclId::new(81610);
+    let split_decl = DeclId::new(81611);
+    let describe_decl = DeclId::new(81612);
+    let length_decl = DeclId::new(81613);
+    let hir = make_record_mixed_values_split_list_describe_length_program(
+        values_decl,
+        split_decl,
+        describe_decl,
+        length_decl,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (split_decl, "split list".to_string()),
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values split list should feed metadata-only describe");
+
+    assert_describe_literal_prefix(
+        &result.program,
+        b"list<list<any>>",
+        "mixed record values split list describe",
+    );
+    assert_no_runtime_list_operations(&result.program, "mixed record values split list describe");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values split list describe should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_split_list_feeds_metadata_empty_predicates() {
+    for (offset, predicate_name, expected) in [(0, "is-empty", 0), (1, "is-not-empty", 1)] {
+        let values_decl = DeclId::new(81615 + offset * 3);
+        let split_decl = DeclId::new(81616 + offset * 3);
+        let predicate_decl = DeclId::new(81617 + offset * 3);
+        let hir = make_record_mixed_values_split_list_length_program(
+            values_decl,
+            split_decl,
+            predicate_decl,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (split_decl, "split list".to_string()),
+            (predicate_decl, predicate_name.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("mixed record values split list should feed {predicate_name}: {err}")
+        });
+
+        let label = format!("mixed record values split list {predicate_name}");
+        assert_program_returns_constant(&result.program, expected, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("mixed record values split list {predicate_name} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_split_list_get_feeds_metadata_describe() {
+    for (offset, group_index, expected_prefix) in [(0, 0, "list<int>"), (10, 1, "list<any>")] {
+        let values_decl = DeclId::new(81620 + offset);
+        let split_decl = DeclId::new(81621 + offset);
+        let get_decl = DeclId::new(81622 + offset);
+        let describe_decl = DeclId::new(81623 + offset);
+        let length_decl = DeclId::new(81624 + offset);
+        let hir = make_record_mixed_values_split_list_get_describe_length_program(
+            values_decl,
+            split_decl,
+            get_decl,
+            describe_decl,
+            length_decl,
+            group_index,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (split_decl, "split list".to_string()),
+            (get_decl, "get".to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("mixed record values split list get {group_index} should feed describe: {err}")
+        });
+
+        let label = format!("mixed record values split list get {group_index} describe");
+        assert_describe_literal_prefix(&result.program, expected_prefix.as_bytes(), &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "mixed record values split list get {group_index} describe should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_split_list_get_feeds_metadata_scalar_consumers() {
+    for (offset, group_index, consumer_name, expected) in [
+        (0, 0, "length", 1),
+        (10, 1, "length", 0),
+        (20, 0, "is-empty", 0),
+        (30, 1, "is-empty", 1),
+        (40, 0, "is-not-empty", 1),
+        (50, 1, "is-not-empty", 0),
+    ] {
+        let values_decl = DeclId::new(81660 + offset);
+        let split_decl = DeclId::new(81661 + offset);
+        let get_decl = DeclId::new(81662 + offset);
+        let consumer_decl = DeclId::new(81663 + offset);
+        let hir = make_record_mixed_values_split_list_get_consumer_program(
+            values_decl,
+            split_decl,
+            get_decl,
+            consumer_decl,
+            group_index,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (split_decl, "split list".to_string()),
+            (get_decl, "get".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "mixed record values split list get {group_index} should feed {consumer_name}: {err}"
+            )
+        });
+
+        let label = format!("mixed record values split list get {group_index} {consumer_name}");
+        assert_program_returns_constant(&result.program, expected, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "mixed record values split list get {group_index} {consumer_name} should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_split_list_direct_consumers_feed_metadata_describe() {
+    for (offset, consumer_name, expected_prefix) in
+        [(0, "first", "list<int>"), (10, "last", "list<any>")]
+    {
+        let values_decl = DeclId::new(81630 + offset);
+        let split_decl = DeclId::new(81631 + offset);
+        let consumer_decl = DeclId::new(81632 + offset);
+        let describe_decl = DeclId::new(81633 + offset);
+        let length_decl = DeclId::new(81634 + offset);
+        let hir = make_record_mixed_values_split_list_consumer_describe_length_program(
+            values_decl,
+            split_decl,
+            consumer_decl,
+            describe_decl,
+            length_decl,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (split_decl, "split list".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "mixed record values split list {consumer_name} should feed metadata-only describe: {err}"
+            )
+        });
+
+        let label = format!("mixed record values split list {consumer_name} describe");
+        assert_describe_literal_prefix(&result.program, expected_prefix.as_bytes(), &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "mixed record values split list {consumer_name} describe should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
 fn test_lower_values_on_constant_string_record_materializes_fixed_list() {
     let values_decl = DeclId::new(114);
     let get_decl = DeclId::new(115);
@@ -41457,6 +49800,36 @@ fn test_lower_values_on_float_metadata_record_feed_metadata_consumers() {
     assert_no_runtime_list_operations(&result.program, "float record values sort join");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("float record values sort/join should compile through codegen");
+
+    let values_decl = DeclId::new(7917);
+    let mode_decl = DeclId::new(7918);
+    let join_decl = DeclId::new(7919);
+    let starts_with_decl = DeclId::new(7920);
+    let hir = make_record_float_values_sort_join_starts_with_program(
+        values_decl,
+        mode_decl,
+        join_decl,
+        starts_with_decl,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (mode_decl, "math mode".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float record values should feed metadata-only math mode");
+    assert_no_runtime_list_operations(&result.program, "float record values math mode join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float record values math mode/join should compile through codegen");
 }
 
 #[test]
@@ -41555,7 +49928,7 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
             transform_decl,
             join_decl,
             starts_with_decl,
-            transform_arg,
+            transform_arg.clone(),
             expected_prefix,
         );
         let decl_names = HashMap::from([
@@ -41597,6 +49970,49 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("record columns {transform_name} should compile through codegen: {err}")
+            });
+
+        let columns_decl = DeclId::new(81400 + offset);
+        let transform_decl = DeclId::new(81401 + offset);
+        let describe_decl = DeclId::new(81402 + offset);
+        let length_decl = DeclId::new(81403 + offset);
+        let hir = make_record_columns_transform_describe_length_program(
+            columns_decl,
+            transform_decl,
+            describe_decl,
+            length_decl,
+            transform_arg,
+        );
+        let decl_names = HashMap::from([
+            (columns_decl, "columns".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("columns | {transform_name} should feed metadata-only describe: {err}")
+        });
+        assert_describe_literal_prefix(
+            &result.program,
+            b"list<string>",
+            &format!("record columns {transform_name} describe"),
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("record columns {transform_name} describe"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("record columns {transform_name} describe should compile: {err}")
             });
     }
 }

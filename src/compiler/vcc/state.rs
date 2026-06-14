@@ -1748,10 +1748,10 @@ impl VccState {
             .collect();
         let mut cond_refinements = HashMap::new();
         for (reg, left) in &self.cond_refinements {
-            if let Some(right) = other.cond_refinements.get(reg) {
-                if left == right {
-                    cond_refinements.insert(*reg, *left);
-                }
+            if let Some(right) = other.cond_refinements.get(reg)
+                && left == right
+            {
+                cond_refinements.insert(*reg, *left);
             }
         }
         let mut not_equal_consts = HashMap::new();

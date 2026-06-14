@@ -340,8 +340,8 @@ impl Substitution {
 impl UnifyError {
     pub fn new(expected: HMType, actual: HMType, message: impl Into<String>) -> Self {
         Self {
-            expected,
-            actual,
+            expected: Box::new(expected),
+            actual: Box::new(actual),
             message: message.into(),
         }
     }

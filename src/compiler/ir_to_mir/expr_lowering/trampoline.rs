@@ -15,13 +15,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<TrampolineFieldSelector, CompileError> {
         match member {
             PathMember::String { val, .. } => Ok(TrampolineFieldSelector::Field(val.clone())),
-            PathMember::Int { val, .. } => usize::try_from(*val)
-                .map(TrampolineFieldSelector::Index)
-                .map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "trampoline array indexing requires a non-negative integer".into(),
-                    )
-                }),
+            PathMember::Int { val, .. } => Ok(TrampolineFieldSelector::Index(*val)),
         }
     }
 

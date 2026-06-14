@@ -1,17 +1,16 @@
 const VERIFIER_DIFF_FIXTURES_2705_2714 = [
     {
-        name: "core-char-rejects-list-output"
+        name: "core-char-list-length"
         category: "language-core"
-        tags: [string char diagnostics reject list]
+        tags: [string char list unicode integer length accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  char --list'
+            '  char --list --unicode --integer prompt | length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "char --list produces a table and is not supported in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-char-rejects-conflicting-codepoint-flags"
@@ -112,18 +111,17 @@ const VERIFIER_DIFF_FIXTURES_2705_2714 = [
         error_contains: "char --integer codepoint U+110000 is outside the valid Unicode range in eBPF"
     }
     {
-        name: "core-char-rejects-nul-output"
+        name: "core-char-nul-output"
         category: "language-core"
-        tags: [string char diagnostics reject nul]
+        tags: [string char nul length accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  char nul'
+            '  char nul | str length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "char output containing NUL bytes is not supported in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-char-unicode-rejects-invalid-codepoint"

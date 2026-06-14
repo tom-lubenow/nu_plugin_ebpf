@@ -164,10 +164,10 @@ fn run_setup(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
                 .output();
 
             let mut sysctl_applied = false;
-            if let Ok(out) = output {
-                if out.status.success() {
-                    sysctl_applied = true;
-                }
+            if let Ok(out) = output
+                && out.status.success()
+            {
+                sysctl_applied = true;
             }
 
             if !sysctl_applied {

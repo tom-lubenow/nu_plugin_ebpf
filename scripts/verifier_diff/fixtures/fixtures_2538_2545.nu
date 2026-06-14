@@ -28,18 +28,17 @@ const VERIFIER_DIFF_FIXTURES_2538_2545 = [
         error_contains: "str index-of requires a compile-time string literal"
     }
     {
-        name: "core-string-str-index-of-rejects-nul-substring"
+        name: "core-string-str-index-of-nul-substring"
         category: "language-core"
-        tags: [string str index-of diagnostics reject]
+        tags: [string str index-of nul accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str index-of "a\u{0000}"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str index-of does not support NUL bytes in the substring in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-str-index-of-rejects-conflicting-flags"

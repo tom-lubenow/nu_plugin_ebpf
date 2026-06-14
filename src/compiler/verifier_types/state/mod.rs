@@ -745,13 +745,13 @@ impl VerifierState {
     }
 
     pub(super) fn set_not_equal_const(&mut self, vreg: VReg, value: i64) {
-        if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
-            if !slot.contains(&value) {
-                slot.push(value);
-                slot.sort_unstable();
-                if slot.len() > Self::MAX_NOT_EQUAL_FACTS {
-                    slot.remove(0);
-                }
+        if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize)
+            && !slot.contains(&value)
+        {
+            slot.push(value);
+            slot.sort_unstable();
+            if slot.len() > Self::MAX_NOT_EQUAL_FACTS {
+                slot.remove(0);
             }
         }
     }

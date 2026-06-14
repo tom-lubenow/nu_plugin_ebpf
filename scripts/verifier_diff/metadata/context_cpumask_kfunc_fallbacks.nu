@@ -1,0 +1,29 @@
+const CPUMASK_KFUNC_KERNEL_FEATURE_FALLBACKS = [
+    { name: "bpf_cpumask_acquire", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_and", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_any_and_distribute", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_any_distribute", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_clear", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_clear_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_copy", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_create", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_empty", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_equal", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first_and", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first_zero", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_full", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_intersects", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_or", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_populate", min_kernel: "6.18", source: "https://github.com/torvalds/linux/blob/v6.18/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_release", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_release_dtor", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_set_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_setall", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_subset", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_and_clear_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_and_set_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_weight", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_xor", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+]

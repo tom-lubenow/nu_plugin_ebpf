@@ -103,11 +103,10 @@ impl MirInst {
             }
             MirInst::Jump { .. } => {}
             MirInst::Branch { cond, .. } => f(cond),
-            MirInst::Return { val } => {
-                if let Some(value) = val {
-                    visit_value!(value);
-                }
-            }
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => f(vreg),
+            MirInst::Return { val: _ } => {}
             MirInst::TailCall { index, .. } => visit_value!(index),
             MirInst::LoopHeader { counter, .. } => f(counter),
             MirInst::LoopBack { counter, .. } => f(counter),

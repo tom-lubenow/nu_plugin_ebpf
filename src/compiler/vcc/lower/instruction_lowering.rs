@@ -555,24 +555,24 @@ impl<'a> VccLowerer<'a> {
                 let scalar_identity_alias =
                     self.scalar_identity_alias_for_binop(*dst, *op, lhs, rhs);
 
-                match op {
-                    BinOpKind::Add | BinOpKind::Sub if lhs_ptr.is_some() ^ rhs_ptr.is_some() => {
-                        let (base, offset_val, base_ptr) = if lhs_ptr.is_some() {
-                            (lhs, rhs, lhs_ptr.unwrap())
-                        } else {
-                            (rhs, lhs, rhs_ptr.unwrap())
-                        };
+                let pointer_arithmetic = match (*op, lhs_ptr, rhs_ptr) {
+                    (BinOpKind::Add, Some(base_ptr), None) => Some((lhs, rhs, base_ptr, false)),
+                    (BinOpKind::Sub, Some(base_ptr), None) => Some((lhs, rhs, base_ptr, true)),
+                    (BinOpKind::Add, None, Some(base_ptr)) => Some((rhs, lhs, base_ptr, false)),
+                    (BinOpKind::Sub, None, Some(_)) => {
+                        return Err(VccError::new(
+                            VccErrorKind::PointerArithmetic,
+                            "numeric - pointer is not supported",
+                        ));
+                    }
+                    _ => None,
+                };
 
-                        if matches!(op, BinOpKind::Sub) && lhs_ptr.is_none() {
-                            return Err(VccError::new(
-                                VccErrorKind::PointerArithmetic,
-                                "numeric - pointer is not supported",
-                            ));
-                        }
-
+                match pointer_arithmetic {
+                    Some((base, offset_val, base_ptr, subtract_offset)) => {
                         let base_reg = self.base_ptr_reg(base, out);
                         let mut offset = self.lower_value(offset_val, out);
-                        if matches!(op, BinOpKind::Sub) {
+                        if subtract_offset {
                             match offset {
                                 VccValue::Imm(value) => {
                                     offset = VccValue::Imm(-value);
@@ -600,7 +600,7 @@ impl<'a> VccLowerer<'a> {
                         derived_ptr.context_buffer_end = false;
                         self.ptr_regs.insert(dst_reg, derived_ptr);
                     }
-                    _ => {
+                    None => {
                         let vcc_lhs = self.lower_value(lhs, out);
                         let vcc_rhs = self.lower_value(rhs, out);
                         out.push(VccInst::BinOp {
@@ -1400,7 +1400,7 @@ impl<'a> VccLowerer<'a> {
                 if matches!(helper_kind, Some(BpfHelper::KptrXchg))
                     && let Some(arg1) = args.get(1)
                 {
-                    let dst_slot_kind = args.get(0).and_then(|arg0| self.kptr_slot_ref_kind(arg0));
+                    let dst_slot_kind = args.first().and_then(|arg0| self.kptr_slot_ref_kind(arg0));
                     let src = self.lower_value(arg1, out);
                     out.push(VccInst::KptrXchgTransfer {
                         dst: VccReg(dst.0),
@@ -1430,11 +1430,10 @@ impl<'a> VccLowerer<'a> {
                 if matches!(
                     helper_kind,
                     Some(BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard)
-                ) {
-                    if let Some(arg0) = args.first() {
-                        let release_ptr = self.lower_value(arg0, out);
-                        out.push(VccInst::RingbufRelease { ptr: release_ptr });
-                    }
+                ) && let Some(arg0) = args.first()
+                {
+                    let release_ptr = self.lower_value(arg0, out);
+                    out.push(VccInst::RingbufRelease { ptr: release_ptr });
                 }
                 if let Some(helper) = helper_kind {
                     for (arg_idx, arg) in args.iter().enumerate() {
@@ -1529,17 +1528,16 @@ impl<'a> VccLowerer<'a> {
                         kind,
                     });
                 }
-                if let Some(kind) = Self::kfunc_release_kind(kfunc) {
-                    if let Some(release_arg_idx) = Self::kfunc_release_arg_index(kfunc)
-                        && let Some(arg) = args.get(release_arg_idx)
-                    {
-                        out.push(VccInst::KfuncRelease {
-                            call: format!("kfunc '{}'", kfunc),
-                            ptr: VccValue::Reg(VccReg(arg.0)),
-                            kind,
-                            arg_idx: release_arg_idx,
-                        });
-                    }
+                if let Some(kind) = Self::kfunc_release_kind(kfunc)
+                    && let Some(release_arg_idx) = Self::kfunc_release_arg_index(kfunc)
+                    && let Some(arg) = args.get(release_arg_idx)
+                {
+                    out.push(VccInst::KfuncRelease {
+                        call: format!("kfunc '{}'", kfunc),
+                        ptr: VccValue::Reg(VccReg(arg.0)),
+                        kind,
+                        arg_idx: release_arg_idx,
+                    });
                 }
                 if kfunc == "bpf_rcu_read_lock" {
                     out.push(VccInst::RcuReadLockAcquire);
@@ -1553,49 +1551,49 @@ impl<'a> VccLowerer<'a> {
                 if kfunc == "bpf_preempt_enable" {
                     out.push(VccInst::PreemptDisableRelease);
                 }
-                if kfunc == "bpf_local_irq_save" {
-                    if let Some(flags) = args.first() {
-                        out.push(VccInst::LocalIrqDisableAcquire {
-                            flags: VccReg(flags.0),
-                        });
-                    }
+                if kfunc == "bpf_local_irq_save"
+                    && let Some(flags) = args.first()
+                {
+                    out.push(VccInst::LocalIrqDisableAcquire {
+                        flags: VccReg(flags.0),
+                    });
                 }
-                if kfunc == "bpf_local_irq_restore" {
-                    if let Some(flags) = args.first() {
-                        out.push(VccInst::LocalIrqDisableRelease {
-                            flags: VccReg(flags.0),
-                        });
-                    }
+                if kfunc == "bpf_local_irq_restore"
+                    && let Some(flags) = args.first()
+                {
+                    out.push(VccInst::LocalIrqDisableRelease {
+                        flags: VccReg(flags.0),
+                    });
                 }
-                if kfunc == "bpf_res_spin_lock" {
-                    if let Some(lock) = args.first() {
-                        out.push(VccInst::ResSpinLockAcquire {
-                            lock: VccReg(lock.0),
-                        });
-                    }
+                if kfunc == "bpf_res_spin_lock"
+                    && let Some(lock) = args.first()
+                {
+                    out.push(VccInst::ResSpinLockAcquire {
+                        lock: VccReg(lock.0),
+                    });
                 }
-                if kfunc == "bpf_res_spin_unlock" {
-                    if let Some(lock) = args.first() {
-                        out.push(VccInst::ResSpinLockRelease {
-                            lock: VccReg(lock.0),
-                        });
-                    }
+                if kfunc == "bpf_res_spin_unlock"
+                    && let Some(lock) = args.first()
+                {
+                    out.push(VccInst::ResSpinLockRelease {
+                        lock: VccReg(lock.0),
+                    });
                 }
-                if kfunc == "bpf_res_spin_lock_irqsave" {
-                    if let (Some(lock), Some(flags)) = (args.first(), args.get(1)) {
-                        out.push(VccInst::ResSpinLockIrqsaveAcquire {
-                            lock: VccReg(lock.0),
-                            flags: VccReg(flags.0),
-                        });
-                    }
+                if kfunc == "bpf_res_spin_lock_irqsave"
+                    && let (Some(lock), Some(flags)) = (args.first(), args.get(1))
+                {
+                    out.push(VccInst::ResSpinLockIrqsaveAcquire {
+                        lock: VccReg(lock.0),
+                        flags: VccReg(flags.0),
+                    });
                 }
-                if kfunc == "bpf_res_spin_unlock_irqrestore" {
-                    if let (Some(lock), Some(flags)) = (args.first(), args.get(1)) {
-                        out.push(VccInst::ResSpinLockIrqsaveRelease {
-                            lock: VccReg(lock.0),
-                            flags: VccReg(flags.0),
-                        });
-                    }
+                if kfunc == "bpf_res_spin_unlock_irqrestore"
+                    && let (Some(lock), Some(flags)) = (args.first(), args.get(1))
+                {
+                    out.push(VccInst::ResSpinLockIrqsaveRelease {
+                        lock: VccReg(lock.0),
+                        flags: VccReg(flags.0),
+                    });
                 }
                 if let Some(lifecycle) = Self::kfunc_iter_lifecycle(kfunc)
                     && let Some(iter) = args.get(lifecycle.arg_idx)
@@ -1903,6 +1901,7 @@ impl<'a> VccLowerer<'a> {
                 let dst_slot_size = self.slot_sizes.get(dst_buffer).copied().unwrap_or(0);
                 let required_append_bytes = match val_type {
                     StringAppendType::Literal { bytes } => bytes.len(),
+                    StringAppendType::LiteralExact { bytes, .. } => bytes.len(),
                     StringAppendType::StringSlot { max_len, .. } => {
                         (*max_len).min(STRING_APPEND_COPY_CAP)
                     }
@@ -1950,6 +1949,25 @@ impl<'a> VccLowerer<'a> {
                                 op: VccBinOp::Add,
                                 lhs: VccValue::Reg(len_reg),
                                 rhs: VccValue::Imm(effective_len as i64),
+                            });
+                        }
+                    }
+                    StringAppendType::LiteralExact { bytes, len } => {
+                        if !bytes.is_empty() {
+                            let last = (bytes.len() as i64).saturating_sub(1);
+                            out.push(VccInst::Store {
+                                ptr: dst_ptr,
+                                offset: last,
+                                src: VccValue::Imm(0),
+                                size: 1,
+                            });
+                        }
+                        if *len > 0 {
+                            out.push(VccInst::BinOp {
+                                dst: len_reg,
+                                op: VccBinOp::Add,
+                                lhs: VccValue::Reg(len_reg),
+                                rhs: VccValue::Imm(*len as i64),
                             });
                         }
                     }

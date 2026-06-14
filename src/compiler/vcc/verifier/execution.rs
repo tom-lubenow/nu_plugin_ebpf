@@ -534,13 +534,13 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                if let Some(range) = state.value_range(*value, ty) {
-                    if range.max <= 0 || range.min <= 0 {
-                        self.errors.push(VccError::new(
-                            VccErrorKind::UnsupportedInstruction,
-                            message.clone(),
-                        ));
-                    }
+                if let Some(range) = state.value_range(*value, ty)
+                    && (range.max <= 0 || range.min <= 0)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
                 }
             }
             VccInst::AssertConstEq {
@@ -998,13 +998,12 @@ impl VccVerifier {
                     }
                     if let (VccAddrSpace::Stack(_) | VccAddrSpace::MapValue, Some(bounds)) =
                         (ptr_info.space, ptr_info.bounds)
+                        && bounds.shifted_with_size(0, size_range.max).is_none()
                     {
-                        if bounds.shifted_with_size(0, size_range.max).is_none() {
-                            self.errors.push(VccError::new(
-                                VccErrorKind::PointerBounds,
-                                format!("{op} out of bounds"),
-                            ));
-                        }
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!("{op} out of bounds"),
+                        ));
                     }
                 } else if matches!(
                     ptr_info.space,
@@ -1082,13 +1081,12 @@ impl VccVerifier {
                     }
                     if let (VccAddrSpace::Stack(_) | VccAddrSpace::MapValue, Some(bounds)) =
                         (ptr_info.space, ptr_info.bounds)
+                        && bounds.shifted_with_size(0, size_range.max).is_none()
                     {
-                        if bounds.shifted_with_size(0, size_range.max).is_none() {
-                            self.errors.push(VccError::new(
-                                VccErrorKind::PointerBounds,
-                                format!("{op} out of bounds"),
-                            ));
-                        }
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!("{op} out of bounds"),
+                        ));
                     }
                 } else if matches!(
                     ptr_info.space,
@@ -1229,20 +1227,19 @@ impl VccVerifier {
                                         return;
                                     }
                                 }
-                                (VccValueType::Ptr(_), other) | (other, VccValueType::Ptr(_)) => {
+                                (VccValueType::Ptr(_), other) | (other, VccValueType::Ptr(_))
                                     if !self.is_null_scalar(*lhs, lhs_ty)
                                         && !self.is_null_scalar(*rhs, rhs_ty)
-                                        && other.class() != VccTypeClass::Ptr
-                                    {
-                                        self.errors.push(VccError::new(
-                                            VccErrorKind::TypeMismatch {
-                                                expected: VccTypeClass::Scalar,
-                                                actual: other.class(),
-                                            },
-                                            "pointer comparison only supports null scalar",
-                                        ));
-                                        return;
-                                    }
+                                        && other.class() != VccTypeClass::Ptr =>
+                                {
+                                    self.errors.push(VccError::new(
+                                        VccErrorKind::TypeMismatch {
+                                            expected: VccTypeClass::Scalar,
+                                            actual: other.class(),
+                                        },
+                                        "pointer comparison only supports null scalar",
+                                    ));
+                                    return;
                                 }
                                 _ => {}
                             }
@@ -2734,7 +2731,7 @@ impl VccVerifier {
                     if slot.0 != u32::MAX
                         && info
                             .bounds
-                            .map_or(true, |bounds| bounds.min == 0 && bounds.max == 0) =>
+                            .is_none_or(|bounds| bounds.min == 0 && bounds.max == 0) =>
                 {
                     Some(slot)
                 }
@@ -2794,10 +2791,10 @@ impl VccVerifier {
             },
             VccTerminator::Return { value } => {
                 self.check_required_return_range(*value, state);
-                if let Some(value) = value {
-                    if let Err(err) = state.value_type(*value) {
-                        self.errors.push(err);
-                    }
+                if let Some(value) = value
+                    && let Err(err) = state.value_type(*value)
+                {
+                    self.errors.push(err);
                 }
                 let returned_ringbuf_ref = self.allowed_returned_ringbuf_ref(*value, state);
                 if state.has_live_ringbuf_refs_except(returned_ringbuf_ref) {

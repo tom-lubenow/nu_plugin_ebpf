@@ -642,6 +642,34 @@ impl<'a> MirToEbpfCompiler<'a> {
         if self.register_reserved_runtime_map_reference(map)? {
             return Ok(());
         }
+        if map.kind == MapKind::Arena {
+            if !self.declared_generic_maps.contains(map) {
+                return Err(CompileError::UnsupportedInstruction(
+                    map.kind.map_fd_materialization_error(&map.name),
+                ));
+            }
+            let inferred_max_entries =
+                self.generic_map_max_entries
+                    .get(map)
+                    .copied()
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "map '{}' uses arena and requires map-define --max-entries",
+                            map.name
+                        ))
+                    })?;
+            self.generic_map_specs.insert(
+                map.name.clone(),
+                MapLayoutSpec {
+                    kind: map.kind,
+                    key_size: 0,
+                    value_size: 0,
+                    max_entries: inferred_max_entries,
+                    value_size_defaulted: false,
+                },
+            );
+            return Ok(());
+        }
         if !map.kind.supports_map_fd_materialization() && !map.kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(
                 map.kind.map_fd_materialization_error(&map.name),
@@ -749,6 +777,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         });
 
         for map in declared {
+            if map.kind == MapKind::Arena {
+                self.register_generic_map_spec(&map, 0, Some(0))?;
+                continue;
+            }
             let key_size = self
                 .generic_map_key_types
                 .get(&map)
@@ -822,10 +854,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::ProgArray => BpfMapDef::prog_array(1024),
             MapKind::ArrayOfMaps => BpfMapDef::array_of_maps(spec.max_entries),
             MapKind::HashOfMaps => BpfMapDef::hash_of_maps(spec.key_size, spec.max_entries),
+            MapKind::Arena => BpfMapDef::arena(spec.max_entries),
             MapKind::DeprecatedCgroupStorage
             | MapKind::DeprecatedPerCpuCgroupStorage
-            | MapKind::StructOps
-            | MapKind::Arena => {
+            | MapKind::StructOps => {
                 return Err(CompileError::UnsupportedInstruction(
                     spec.kind.map_fd_materialization_error("<unknown>"),
                 ));
@@ -909,14 +941,18 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     pub(super) fn compile_dynamic_map_update(
         &mut self,
-        map_ptr_offset: i16,
-        inner_map: &crate::compiler::mir::MapRef,
-        key: VReg,
-        key_reg: EbpfReg,
-        val: VReg,
-        val_reg: EbpfReg,
-        flags: u64,
+        update: DynamicMapUpdateCompile<'_>,
     ) -> Result<(), CompileError> {
+        let DynamicMapUpdateCompile {
+            map_ptr_offset,
+            inner_map,
+            key,
+            key_reg,
+            val,
+            val_reg,
+            flags,
+        } = update;
+
         if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
             return Err(CompileError::UnsupportedInstruction(
                 inner_map

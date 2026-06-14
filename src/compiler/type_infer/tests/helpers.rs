@@ -552,7 +552,7 @@ fn test_type_error_syscall_program_rejects_unmodeled_helper() {
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallHelper {
         dst,
-        helper: BpfHelper::GetCurrentPidTgid as u32,
+        helper: BpfHelper::GetCurrentComm as u32,
         args: vec![],
     });
     block.terminator = MirInst::Return { val: None };
@@ -564,7 +564,7 @@ fn test_type_error_syscall_program_rejects_unmodeled_helper() {
         .expect_err("expected unmodeled syscall helper to be rejected");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs")
+            .contains("helper 'bpf_get_current_comm' is not modeled for syscall programs")
     }));
 }
 
@@ -3265,9 +3265,7 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(ctx))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(ctx)).chain(args).collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
@@ -3963,7 +3961,7 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             dst,
             helper: helper as u32,
             args: std::iter::once(MirValue::VReg(ctx))
-                .chain(extra_args.into_iter())
+                .chain(extra_args)
                 .collect(),
         });
         block.terminator = MirInst::Return { val: None };
@@ -5608,9 +5606,7 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(ctx))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(ctx)).chain(args).collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
@@ -8628,9 +8624,7 @@ fn test_infer_msg_helpers_in_sk_msg_program() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(ctx))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(ctx)).chain(args).collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
@@ -8661,9 +8655,7 @@ fn test_type_error_sk_cgroup_helpers_reject_sk_msg_program() {
         block.instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(sk))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(sk)).chain(args).collect(),
         });
         block.terminator = MirInst::Return { val: None };
 
@@ -8725,9 +8717,7 @@ fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
         func.block_mut(call).instructions.push(MirInst::CallHelper {
             dst,
             helper: helper as u32,
-            args: std::iter::once(MirValue::VReg(sock))
-                .chain(args.into_iter())
-                .collect(),
+            args: std::iter::once(MirValue::VReg(sock)).chain(args).collect(),
         });
         func.block_mut(call).instructions.push(MirInst::CallHelper {
             dst: cleanup_ret,
@@ -9192,7 +9182,7 @@ fn test_infer_tc_egress_skb_metadata_helpers() {
             dst,
             helper: helper as u32,
             args: std::iter::once(MirValue::VReg(ctx))
-                .chain(extra_args.into_iter())
+                .chain(extra_args)
                 .collect(),
         });
         block.terminator = MirInst::Return { val: None };
@@ -9315,7 +9305,7 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
             dst,
             helper: helper as u32,
             args: std::iter::once(MirValue::VReg(ctx))
-                .chain(extra_args.into_iter())
+                .chain(extra_args)
                 .collect(),
         });
         block.terminator = MirInst::Return { val: None };
@@ -9354,7 +9344,7 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_unsupported_program() {
             dst,
             helper: helper as u32,
             args: std::iter::once(MirValue::VReg(ctx))
-                .chain(extra_args.into_iter())
+                .chain(extra_args)
                 .collect(),
         });
         block.terminator = MirInst::Return { val: None };

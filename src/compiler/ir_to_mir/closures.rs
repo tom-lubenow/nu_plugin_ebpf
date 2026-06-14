@@ -935,10 +935,10 @@ impl<'a> HirToMirLowering<'a> {
         let mut loaded_var_ids: Vec<VarId> = Vec::new();
         for block in &hir.blocks {
             for stmt in &block.stmts {
-                if let HirStmt::LoadVariable { var_id, .. } = stmt {
-                    if !loaded_var_ids.contains(var_id) {
-                        loaded_var_ids.push(*var_id);
-                    }
+                if let HirStmt::LoadVariable { var_id, .. } = stmt
+                    && !loaded_var_ids.contains(var_id)
+                {
+                    loaded_var_ids.push(*var_id);
                 }
             }
         }

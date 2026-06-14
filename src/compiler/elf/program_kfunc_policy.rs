@@ -263,13 +263,13 @@ impl ProgramSpec {
 
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
         let program_policy = program_specific_kfunc_policy(self.program_type());
-        if let Some(policy) = modeled_kfunc_policy(kfunc) {
-            if self.program_type() != policy.program_type {
-                return Some(format!(
-                    "kfunc '{}' is only valid in {} programs",
-                    kfunc, policy.label
-                ));
-            }
+        if let Some(policy) = modeled_kfunc_policy(kfunc)
+            && self.program_type() != policy.program_type
+        {
+            return Some(format!(
+                "kfunc '{}' is only valid in {} programs",
+                kfunc, policy.label
+            ));
         }
         if let Some(policy) = program_policy {
             if !policy.modeled_kfuncs.contains(&kfunc) {

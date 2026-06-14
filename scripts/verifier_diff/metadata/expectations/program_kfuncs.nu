@@ -1,4 +1,4 @@
-const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
+const PROGRAM_KFUNC_RAW_TRACEPOINT_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "raw_tracepoint:sys_enter"
         program: [
@@ -64,116 +64,9 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
             "kfunc:bpf_res_spin_unlock_irqrestore"
         ]
     }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup_unix:connect4"
-        program: [
-            '{|event|'
-            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: []
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|event|'
-            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|ctx|'
-            '  mut rec = { event: $ctx }'
-            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|ctx|'
-            '  mut rec = {}'
-            '  $rec.event = $ctx'
-            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|ctx|'
-            '  let base = { event: $ctx }'
-            '  mut rec = { ok: true, ...$base }'
-            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|ctx|'
-            '  def wrap [event] { { event: $event } }'
-            '  mut rec = (wrap $ctx)'
-            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
-    }
-    {
-        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
-        program: [
-            '{|event|'
-            '  let text = "$event.sun_path = /tmp/nu-ebpf.sock"'
-            '  # $event.sun_path = /tmp/nu-ebpf.sock'
-            '  if $event.sun_path == "/tmp/nu-ebpf.sock" { 0 }'
-            '  "allow"'
-            '}'
-        ]
-        feature_keys: []
-    }
 ]
 
-const PROGRAM_KFUNC_KERNEL_FEATURE_DETAIL_EXPECTATIONS = [
-    {
-        target: "tc:lo:ingress"
-        program: [
-            '{|ctx|'
-            '  let d = "0123456789abcdef"'
-            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
-            '  0'
-            '}'
-        ]
-        feature: {
-            key: "kfunc:bpf_dynptr_from_skb"
-            min_kernel: "6.4"
-            source: "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c"
-        }
-    }
-    {
-        target: "fentry:tcp_v4_rcv"
-        program: [
-            '{|ctx|'
-            '  let d = "0123456789abcdef"'
-            '  kfunc-call "bpf_dynptr_from_skb" $ctx.arg0 0 $d'
-            '  0'
-            '}'
-        ]
-        feature: {
-            key: "kfunc:bpf_dynptr_from_skb"
-            min_kernel: "6.12"
-            source: "https://github.com/torvalds/linux/blob/v6.12/net/core/filter.c"
-        }
-    }
-]
+let PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = (
+    $PROGRAM_KFUNC_RAW_TRACEPOINT_KERNEL_FEATURE_EXPECTATIONS
+    | append $PROGRAM_KFUNC_SOCK_ADDR_KERNEL_FEATURE_EXPECTATIONS
+)

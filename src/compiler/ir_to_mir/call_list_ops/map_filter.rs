@@ -1,5 +1,25 @@
 use super::*;
 
+pub(in crate::compiler::ir_to_mir) struct TypedFixedArrayWhereLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) src_dst: RegId,
+    pub(in crate::compiler::ir_to_mir) dst_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) input_reg: RegId,
+    pub(in crate::compiler::ir_to_mir) input_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) input_meta: &'a RegMetadata,
+    pub(in crate::compiler::ir_to_mir) closure_block_id: NuBlockId,
+    pub(in crate::compiler::ir_to_mir) closure_ir: &'a HirFunction,
+}
+
+pub(in crate::compiler::ir_to_mir) struct TypedFixedArrayEachLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) src_dst: RegId,
+    pub(in crate::compiler::ir_to_mir) dst_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) input_reg: RegId,
+    pub(in crate::compiler::ir_to_mir) input_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) input_meta: &'a RegMetadata,
+    pub(in crate::compiler::ir_to_mir) closure_block_id: NuBlockId,
+    pub(in crate::compiler::ir_to_mir) closure_ir: &'a HirFunction,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn typed_fixed_array_numeric_list_input(
         &mut self,
@@ -43,11 +63,8 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(None);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) =
+            Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty)
         else {
             return Ok(None);
         };
@@ -60,7 +77,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -77,28 +94,71 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array pointer input in eBPF"
             )));
         };
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            cmd_name,
+            address_space,
+            input_meta,
+        )?;
+
+        Ok(Some((input_vreg, elem_ty, array_len)))
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn typed_fixed_array_stack_list_array_type(
+        ty: &MirType,
+    ) -> Option<(MirType, usize)> {
+        let array_ty = match ty {
+            MirType::Array { .. } => ty,
+            MirType::Ptr {
+                pointee,
+                address_space:
+                    AddressSpace::Stack
+                    | AddressSpace::Map
+                    | AddressSpace::Context
+                    | AddressSpace::Kernel,
+            } if matches!(pointee.as_ref(), MirType::Array { .. }) => pointee.as_ref(),
+            _ => return None,
+        };
+        match array_ty {
+            MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
+            _ => None,
+        }
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn validate_typed_fixed_array_stack_list_address_space(
+        cmd_name: &str,
+        address_space: AddressSpace,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
         if !matches!(
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context | AddressSpace::Kernel
         ) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
             )));
         }
-
-        Ok(Some((input_vreg, elem_ty, array_len)))
+        if address_space == AddressSpace::Kernel && !input_meta.trusted_btf {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed fixed-array pointers in Kernel address space requires trusted BTF provenance in eBPF"
+            )));
+        }
+        Ok(())
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_typed_fixed_array_where(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
-        closure_block_id: NuBlockId,
-        closure_ir: &HirFunction,
+        lowering: TypedFixedArrayWhereLowering<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayWhereLowering {
+            src_dst,
+            dst_vreg,
+            input_reg,
+            input_vreg,
+            input_meta,
+            closure_block_id,
+            closure_ir,
+        } = lowering;
+
         let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_stack_list_input(
             "where",
             input_reg,
@@ -184,14 +244,18 @@ impl<'a> HirToMirLowering<'a> {
 
     pub(in crate::compiler::ir_to_mir) fn lower_typed_fixed_array_each(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: &RegMetadata,
-        closure_block_id: NuBlockId,
-        closure_ir: &HirFunction,
+        lowering: TypedFixedArrayEachLowering<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayEachLowering {
+            src_dst,
+            dst_vreg,
+            input_reg,
+            input_vreg,
+            input_meta,
+            closure_block_id,
+            closure_ir,
+        } = lowering;
+
         let Some((input_vreg, elem_ty, array_len)) =
             self.typed_fixed_array_numeric_list_input("each", input_reg, input_vreg, input_meta)?
         else {
@@ -285,5 +349,82 @@ impl<'a> HirToMirLowering<'a> {
             _ => return None,
         };
         if dst == src { Some(*value) } else { None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn typed_fixed_array_numeric_list_input_accepts_only_trusted_kernel_arrays() {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 3,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+
+        let trusted_reg = RegId::new(1);
+        let trusted_vreg = lowering.get_vreg(trusted_reg);
+        lowering
+            .vreg_type_hints
+            .insert(trusted_vreg, ptr_ty.clone());
+        let trusted_meta = RegMetadata {
+            field_type: Some(ptr_ty.clone()),
+            trusted_btf: true,
+            ..Default::default()
+        };
+        let accepted = lowering
+            .typed_fixed_array_numeric_list_input("each", trusted_reg, trusted_vreg, &trusted_meta)
+            .expect("trusted kernel fixed-array input should lower")
+            .expect("trusted kernel fixed-array input should be recognized");
+        assert_eq!(accepted, (trusted_vreg, MirType::U32, 3));
+
+        let untrusted_reg = RegId::new(2);
+        let untrusted_vreg = lowering.get_vreg(untrusted_reg);
+        lowering.vreg_type_hints.insert(untrusted_vreg, ptr_ty);
+        let untrusted_meta = RegMetadata {
+            field_type: lowering.vreg_type_hints.get(&untrusted_vreg).cloned(),
+            ..Default::default()
+        };
+        let err = lowering
+            .typed_fixed_array_numeric_list_input(
+                "each",
+                untrusted_reg,
+                untrusted_vreg,
+                &untrusted_meta,
+            )
+            .expect_err("untrusted kernel fixed-array input should be rejected");
+        assert!(
+            err.to_string().contains("requires trusted BTF provenance"),
+            "unexpected error: {err}"
+        );
     }
 }

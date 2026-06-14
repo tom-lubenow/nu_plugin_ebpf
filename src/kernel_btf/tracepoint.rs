@@ -653,6 +653,39 @@ pub struct TracepointContext {
     pub minimum_kernel_source: Option<&'static str>,
 }
 
+#[derive(Debug, Clone)]
+struct TracepointContextProvenance {
+    source: TracepointContextSource,
+    source_path: Option<String>,
+    minimum_kernel: Option<&'static str>,
+    minimum_kernel_source: Option<&'static str>,
+}
+
+impl TracepointContextProvenance {
+    fn new(source: TracepointContextSource, source_path: Option<String>) -> Self {
+        Self::with_minimum_kernel(
+            source,
+            source_path,
+            source.minimum_kernel(),
+            source.minimum_kernel_source(),
+        )
+    }
+
+    fn with_minimum_kernel(
+        source: TracepointContextSource,
+        source_path: Option<String>,
+        minimum_kernel: Option<&'static str>,
+        minimum_kernel_source: Option<&'static str>,
+    ) -> Self {
+        Self {
+            source,
+            source_path,
+            minimum_kernel,
+            minimum_kernel_source,
+        }
+    }
+}
+
 impl TracepointContext {
     /// Create a new tracepoint context
     pub fn new(
@@ -689,25 +722,25 @@ impl TracepointContext {
             struct_name,
             fields,
             size,
-            source,
-            source_path,
-            source.minimum_kernel(),
-            source.minimum_kernel_source(),
+            TracepointContextProvenance::new(source, source_path),
         )
     }
 
     /// Create a new tracepoint context with explicit provenance and compatibility metadata.
-    pub fn new_with_source_and_minimum_kernel(
+    fn new_with_source_and_minimum_kernel(
         category: impl Into<String>,
         name: impl Into<String>,
         struct_name: impl Into<String>,
         fields: Vec<FieldInfo>,
         size: usize,
-        source: TracepointContextSource,
-        source_path: Option<String>,
-        minimum_kernel: Option<&'static str>,
-        minimum_kernel_source: Option<&'static str>,
+        provenance: TracepointContextProvenance,
     ) -> Self {
+        let TracepointContextProvenance {
+            source,
+            source_path,
+            minimum_kernel,
+            minimum_kernel_source,
+        } = provenance;
         Self {
             category: category.into(),
             name: name.into(),
@@ -799,10 +832,12 @@ impl TracepointContext {
             format!("trace_event_raw_{}", name),
             fields,
             64, // 8 + 8 + 48
-            TracepointContextSource::WellKnownSyscallFallback,
-            None,
-            minimum_kernel,
-            minimum_kernel_source,
+            TracepointContextProvenance::with_minimum_kernel(
+                TracepointContextSource::WellKnownSyscallFallback,
+                None,
+                minimum_kernel,
+                minimum_kernel_source,
+            ),
         )
     }
 
@@ -2910,10 +2945,12 @@ impl TracepointContext {
             format!("trace_event_raw_{}", name),
             fields,
             24,
-            TracepointContextSource::WellKnownSyscallFallback,
-            None,
-            minimum_kernel,
-            minimum_kernel_source,
+            TracepointContextProvenance::with_minimum_kernel(
+                TracepointContextSource::WellKnownSyscallFallback,
+                None,
+                minimum_kernel,
+                minimum_kernel_source,
+            ),
         )
     }
 }

@@ -1,0 +1,225 @@
+const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
+    {
+        name: "core-record-values-float-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate record values list float length get sort describe str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let count_ok = (({ a: 2.5 b: 1.5 } | values | length) == 2)'
+            '  let get_ok = ({ a: 2.5 b: 1.5 } | values | get 0 | describe | str starts-with "float")'
+            '  $count_ok and ($get_ok and ({ a: 2.5 b: 1.5 } | values | sort | str join "-" | str starts-with "1.5-2.5"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-mixed-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate record values list mixed length get string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let length_ok = (({ pid: 7 comm: "nu" } | values | length) == 2)'
+            '  $length_ok and ({ pid: 7 comm: "nu" } | values | get 1 | str starts-with "nu")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-mixed-first-last"
+        category: "language-core"
+        tags: [aggregate record values list mixed first last reverse string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let first_ok = (({ pid: 7 comm: "nu" } | values | first) == 7)'
+            '  let last_ok = ({ pid: 7 comm: "nu" } | values | last | str starts-with "nu")'
+            '  $first_ok and ($last_ok and ({ pid: 7 comm: "nu" } | values | reverse | first | str starts-with "nu"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-mixed-split-list"
+        category: "language-core"
+        tags: [aggregate record values list mixed split-list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | values | split list "nu" | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-columns-get"
+        category: "language-core"
+        tags: [aggregate record columns list string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 ok: true } | columns | get 1 | str starts-with "cpu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-columns-metadata-transforms"
+        category: "language-core"
+        tags: [aggregate record columns list string sort reverse find split-list str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let sort_ok = ({ b: 2 a: 1 } | columns | sort | str join "-" | str starts-with "a-b")'
+            '  let reverse_ok = ({ pid: 7 cpu: 2 ok: true } | columns | reverse | str join "," | str starts-with "ok,cpu,pid")'
+            '  $sort_ok and ($reverse_ok and ((({ pid: 7 cpu: 2 ok: true } | columns | find cpu | length) == 1) and (({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | length) == 2)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-columns-empty-length"
+        category: "language-core"
+        tags: [aggregate record columns list empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  {} | columns | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-empty-metadata-list-first-last"
+        category: "language-core"
+        tags: [aggregate record columns values list empty first last is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let columns_first = ({} | columns | first | is-empty)'
+            '  let columns_last = ({} | columns | last | is-empty)'
+            '  let values_first = ({} | values | first | is-empty)'
+            '  let values_last = ({} | values | last | is-empty)'
+            '  $columns_first and ($columns_last and ($values_first and $values_last))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-empty-metadata-list-counted-first-last"
+        category: "language-core"
+        tags: [aggregate record columns values list empty first last count is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let columns_first = ({} | columns | first 1 | is-empty)'
+            '  let columns_last = ({} | columns | last 1 | is-empty)'
+            '  let values_first = ({} | values | first 1 | is-empty)'
+            '  let values_last = ({} | values | last 1 | is-empty)'
+            '  $columns_first and ($columns_last and ($values_first and $values_last))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-empty-length"
+        category: "language-core"
+        tags: [aggregate record values list empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  {} | values | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: 7 cpu: 2 } | transpose key value | get 1 | get value) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-mixed-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose key value | get 1 | get value | str starts-with "nu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-ignore-titles-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get ignore-titles]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: 7 cpu: 2 } | transpose --ignore-titles val | get 1 | get val) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-ignore-titles-mixed-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get string ignore-titles]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose --ignore-titles val | get 1 | get val | str starts-with "nu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-length"
+        category: "language-core"
+        tags: [aggregate record transpose list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose key value | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-describe-known-record"
+        category: "language-core"
+        tags: [describe aggregate record string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | describe | str starts-with "record<pid: int, cpu: int>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+]

@@ -254,35 +254,36 @@ impl<'a> MirToEbpfCompiler<'a> {
         };
         let mut spilled_rhs: Option<(EbpfReg, i16)> = None;
 
-        if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg) {
-            if rhs_reg_value == dst_reg && lhs_vreg != Some(rhs_vreg) {
-                if dst_reg != EbpfReg::R0 {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, rhs_reg_value));
-                    rhs_reg = Some(EbpfReg::R0);
-                } else {
-                    self.check_stack_space(8)?;
-                    self.stack_offset -= 8;
-                    let spill_offset = self.stack_offset;
-                    self.emit_store(EbpfReg::R10, spill_offset, rhs_reg_value, 8)?;
+        if let (Some(rhs_reg_value), Some(rhs_vreg)) = (rhs_reg, rhs_vreg)
+            && rhs_reg_value == dst_reg
+            && lhs_vreg != Some(rhs_vreg)
+        {
+            if dst_reg != EbpfReg::R0 {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, rhs_reg_value));
+                rhs_reg = Some(EbpfReg::R0);
+            } else {
+                self.check_stack_space(8)?;
+                self.stack_offset -= 8;
+                let spill_offset = self.stack_offset;
+                self.emit_store(EbpfReg::R10, spill_offset, rhs_reg_value, 8)?;
 
-                    let reload_reg = lhs_src_reg
-                        .filter(|reg| *reg != dst_reg)
-                        .or_else(|| {
-                            self.available_regs
-                                .iter()
-                                .copied()
-                                .find(|reg| *reg != dst_reg)
-                        })
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "no temporary register available for binop rhs preservation".into(),
-                            )
-                        })?;
+                let reload_reg = lhs_src_reg
+                    .filter(|reg| *reg != dst_reg)
+                    .or_else(|| {
+                        self.available_regs
+                            .iter()
+                            .copied()
+                            .find(|reg| *reg != dst_reg)
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "no temporary register available for binop rhs preservation".into(),
+                        )
+                    })?;
 
-                    rhs_reg = Some(reload_reg);
-                    spilled_rhs = Some((reload_reg, spill_offset));
-                }
+                rhs_reg = Some(reload_reg);
+                spilled_rhs = Some((reload_reg, spill_offset));
             }
         }
 

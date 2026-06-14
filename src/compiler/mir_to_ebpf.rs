@@ -103,6 +103,8 @@ pub struct MirCompileResult {
     pub generic_map_key_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-extra declarations keyed by map identity
+    pub generic_map_extras: HashMap<MapRef, u64>,
     /// Optional map-in-map inner template declarations keyed by outer map identity
     pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
 }
@@ -135,6 +137,7 @@ impl MirCompileResult {
             generic_map_key_types,
             generic_map_key_semantics,
             generic_map_max_entries,
+            generic_map_extras,
             generic_map_inner_templates,
         } = self;
 
@@ -157,6 +160,7 @@ impl MirCompileResult {
         .with_generic_map_key_types(generic_map_key_types)
         .with_generic_map_key_semantics(generic_map_key_semantics)
         .with_generic_map_max_entries(generic_map_max_entries)
+        .with_generic_map_extras(generic_map_extras)
         .with_generic_map_inner_templates(generic_map_inner_templates)
         .with_readonly_globals(readonly_globals)
         .with_data_globals(data_globals)
@@ -336,6 +340,8 @@ pub struct MirToEbpfCompiler<'a> {
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Generic map capacity declarations recovered during HIR/MIR lowering
     generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Generic map-extra declarations recovered during HIR/MIR lowering
+    generic_map_extras: HashMap<MapRef, u64>,
     /// Map-in-map inner template declarations recovered during HIR/MIR lowering
     generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// MIR vreg types for the current function being compiled
@@ -356,6 +362,26 @@ pub struct MirToEbpfCompiler<'a> {
     callee_saved_offsets: HashMap<EbpfReg, i16>,
 }
 
+#[derive(Default)]
+struct GenericMapCodegenInputs {
+    generic_map_key_types: HashMap<MapRef, MirType>,
+    declared_generic_maps: HashSet<MapRef>,
+    generic_map_max_entries: HashMap<MapRef, u32>,
+    generic_map_extras: HashMap<MapRef, u64>,
+    generic_map_inner_templates: HashMap<MapRef, MapRef>,
+    generic_map_value_types: HashMap<MapRef, MirType>,
+}
+
+struct DynamicMapUpdateCompile<'a> {
+    map_ptr_offset: i16,
+    inner_map: &'a MapRef,
+    key: VReg,
+    key_reg: EbpfReg,
+    val: VReg,
+    val_reg: EbpfReg,
+    flags: u64,
+}
+
 impl<'a> MirToEbpfCompiler<'a> {
     /// Create a new compiler
     pub fn new(lir: &'a LirProgram, probe_ctx: Option<&'a ProbeContext>) -> Self {
@@ -371,11 +397,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             lir,
             probe_ctx,
             program_types,
-            HashMap::new(),
-            HashSet::new(),
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
+            GenericMapCodegenInputs::default(),
         )
     }
 
@@ -383,12 +405,17 @@ impl<'a> MirToEbpfCompiler<'a> {
         lir: &'a LirProgram,
         probe_ctx: Option<&'a ProbeContext>,
         program_types: ProgramVregTypes,
-        generic_map_key_types: HashMap<MapRef, MirType>,
-        declared_generic_maps: HashSet<MapRef>,
-        generic_map_max_entries: HashMap<MapRef, u32>,
-        generic_map_inner_templates: HashMap<MapRef, MapRef>,
-        generic_map_value_types: HashMap<MapRef, MirType>,
+        generic_maps: GenericMapCodegenInputs,
     ) -> Self {
+        let GenericMapCodegenInputs {
+            generic_map_key_types,
+            declared_generic_maps,
+            generic_map_max_entries,
+            generic_map_extras,
+            generic_map_inner_templates,
+            generic_map_value_types,
+        } = generic_maps;
+
         Self {
             lir,
             probe_ctx,
@@ -417,6 +444,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             declared_generic_maps,
             generic_map_value_types,
             generic_map_max_entries,
+            generic_map_extras,
             generic_map_inner_templates,
             current_types: HashMap::new(),
             program_types,
@@ -599,6 +627,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             generic_map_key_types: self.generic_map_key_types,
             generic_map_key_semantics: HashMap::new(),
             generic_map_max_entries: self.generic_map_max_entries,
+            generic_map_extras: self.generic_map_extras,
             generic_map_inner_templates: self.generic_map_inner_templates,
         })
     }
@@ -724,6 +753,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_max_entries.clone())
         .unwrap_or_default();
+    let generic_map_extras = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.generic_map_extras.clone())
+        .unwrap_or_default();
     let generic_map_inner_templates = normalized_type_hints
         .as_ref()
         .map(|hints| hints.generic_map_inner_templates.clone())
@@ -739,11 +772,14 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         &lir_program,
         probe_ctx,
         program_types,
-        generic_map_key_types,
-        declared_generic_maps,
-        generic_map_max_entries,
-        generic_map_inner_templates,
-        generic_map_value_types,
+        GenericMapCodegenInputs {
+            generic_map_key_types,
+            declared_generic_maps,
+            generic_map_max_entries,
+            generic_map_extras,
+            generic_map_inner_templates,
+            generic_map_value_types,
+        },
     );
     let mut result = compiler.compile()?;
     result.generic_map_key_semantics = generic_map_key_semantics;
@@ -801,10 +837,10 @@ fn verify_mir_program(
     let mut program_types = ProgramVregTypes::default();
 
     for (idx, (func, hints, slot_hints)) in all_funcs.into_iter().enumerate() {
-        if let Err(errors) = validate_program_capabilities(func, probe_ctx) {
-            if let Some(err) = errors.into_iter().next() {
-                return Err(crate::compiler::CompileError::TypeError(err));
-            }
+        if let Err(errors) = validate_program_capabilities(func, probe_ctx)
+            && let Some(err) = errors.into_iter().next()
+        {
+            return Err(crate::compiler::CompileError::TypeError(err));
         }
         let expected_return = if idx == 0 {
             main_function_expected_return_type(probe_ctx)?
@@ -842,10 +878,9 @@ fn verify_mir_program(
             current_summary.clone(),
             probe_ctx,
             type_hints.map(|hints| &hints.generic_map_value_types),
-        ) {
-            if let Some(err) = errors.into_iter().next() {
-                return Err(CompileError::VerifierTypeError(err));
-            }
+        ) && let Some(err) = errors.into_iter().next()
+        {
+            return Err(CompileError::VerifierTypeError(err));
         }
         if let Err(errors) =
             vcc::verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(

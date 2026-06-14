@@ -354,14 +354,11 @@ impl SsaDestruction {
                 }
                 changed
             }
-            MirInst::LoopBack { header, .. } => {
-                if *header == old_target {
-                    *header = new_target;
-                    true
-                } else {
-                    false
-                }
+            MirInst::LoopBack { header, .. } if *header == old_target => {
+                *header = new_target;
+                true
             }
+            MirInst::LoopBack { .. } => false,
             _ => false,
         }
     }

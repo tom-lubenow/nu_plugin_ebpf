@@ -17,6 +17,58 @@ const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 const CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE: &str =
     "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS";
 
+struct HelperPtrArgValueCheck<'a, 'out> {
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &'a MirValue,
+    op: &'static str,
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+    access_size: Option<usize>,
+    dynamic_size: Option<&'a MirValue>,
+    dynamic_size_allows_zero: bool,
+    out: &'out mut Vec<VccInst>,
+}
+
+struct KfuncPtrArgValueCheck<'a, 'out> {
+    kfunc: &'a str,
+    arg_idx: usize,
+    arg: VReg,
+    op: &'static str,
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+    access_size: Option<usize>,
+    dynamic_size: Option<VReg>,
+    out: &'out mut Vec<VccInst>,
+}
+
+struct HelperScalarConstEqIfConstEqCheck<'a, 'out> {
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &'a MirValue,
+    expected: i64,
+    trigger: &'a MirValue,
+    trigger_expected: i64,
+    message: &'a str,
+    out: &'out mut Vec<VccInst>,
+}
+
+struct HelperScalarConstEqIfMaskedConstEqCheck<'a, 'out> {
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &'a MirValue,
+    expected: i64,
+    trigger: &'a MirValue,
+    trigger_mask: i64,
+    trigger_expected: i64,
+    message: &'a str,
+    out: &'out mut Vec<VccInst>,
+}
+
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_helper_call(
         &mut self,
@@ -559,15 +611,18 @@ impl<'a> VccLowerer<'a> {
 
     fn verify_helper_scalar_const_eq_if_scalar_const_eq(
         &mut self,
-        helper_id: u32,
-        arg_idx: usize,
-        arg: &MirValue,
-        expected: i64,
-        trigger: &MirValue,
-        trigger_expected: i64,
-        message: &str,
-        out: &mut Vec<VccInst>,
+        check: HelperScalarConstEqIfConstEqCheck<'_, '_>,
     ) -> Result<(), VccError> {
+        let HelperScalarConstEqIfConstEqCheck {
+            helper_id,
+            arg_idx,
+            arg,
+            expected,
+            trigger,
+            trigger_expected,
+            message,
+            out,
+        } = check;
         match trigger {
             MirValue::Const(actual) => {
                 if *actual == trigger_expected {
@@ -610,16 +665,19 @@ impl<'a> VccLowerer<'a> {
 
     fn verify_helper_scalar_const_eq_if_scalar_const_mask_eq(
         &mut self,
-        helper_id: u32,
-        arg_idx: usize,
-        arg: &MirValue,
-        expected: i64,
-        trigger: &MirValue,
-        trigger_mask: i64,
-        trigger_expected: i64,
-        message: &str,
-        out: &mut Vec<VccInst>,
+        check: HelperScalarConstEqIfMaskedConstEqCheck<'_, '_>,
     ) -> Result<(), VccError> {
+        let HelperScalarConstEqIfMaskedConstEqCheck {
+            helper_id,
+            arg_idx,
+            arg,
+            expected,
+            trigger,
+            trigger_mask,
+            trigger_expected,
+            message,
+            out,
+        } = check;
         match trigger {
             MirValue::Const(actual) => {
                 if ((*actual as u64) & (trigger_mask as u64)) == trigger_expected as u64 {
@@ -916,21 +974,24 @@ impl<'a> VccLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn check_helper_ptr_arg_value(
+    fn check_helper_ptr_arg_value(
         &mut self,
-        helper_id: u32,
-        arg_idx: usize,
-        arg: &MirValue,
-        op: &'static str,
-        allow_stack: bool,
-        allow_map: bool,
-        allow_kernel: bool,
-        allow_user: bool,
-        access_size: Option<usize>,
-        dynamic_size: Option<&MirValue>,
-        dynamic_size_allows_zero: bool,
-        out: &mut Vec<VccInst>,
+        check: HelperPtrArgValueCheck<'_, '_>,
     ) -> Result<(), VccError> {
+        let HelperPtrArgValueCheck {
+            helper_id,
+            arg_idx,
+            arg,
+            op,
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+            access_size,
+            dynamic_size,
+            dynamic_size_allows_zero,
+            out,
+        } = check;
         if self.helper_pointer_arg_allows_const_zero(helper_id, arg_idx) {
             match arg {
                 MirValue::Const(0) => return Ok(()),
@@ -1687,32 +1748,32 @@ impl<'a> VccLowerer<'a> {
                 access_size.is_none() && rule.size_from_arg.is_some_and(|size_arg| {
                     helper.scalar_arg_nonnegative_requirement(size_arg).is_some()
                 });
-            self.check_helper_ptr_arg_value(
+            self.check_helper_ptr_arg_value(HelperPtrArgValueCheck {
                 helper_id,
-                rule.arg_idx,
+                arg_idx: rule.arg_idx,
                 arg,
-                rule.op,
-                rule.allowed.allow_stack,
-                rule.allowed.allow_map,
-                rule.allowed.allow_kernel,
-                rule.allowed.allow_user,
+                op: rule.op,
+                allow_stack: rule.allowed.allow_stack,
+                allow_map: rule.allowed.allow_map,
+                allow_kernel: rule.allowed.allow_kernel,
+                allow_user: rule.allowed.allow_user,
                 access_size,
                 dynamic_size,
                 dynamic_size_allows_zero,
                 out,
-            )?;
+            })?;
         }
 
-        if semantics.ringbuf_record_arg0 {
-            if let Some(record) = args.first() {
-                self.check_helper_ringbuf_record_arg(
-                    helper_id,
-                    0,
-                    record,
-                    "helper ringbuf submit/discard record",
-                    out,
-                )?;
-            }
+        if semantics.ringbuf_record_arg0
+            && let Some(record) = args.first()
+        {
+            self.check_helper_ringbuf_record_arg(
+                helper_id,
+                0,
+                record,
+                "helper ringbuf submit/discard record",
+                out,
+            )?;
         }
 
         if let Some((arg_idx, message)) = self
@@ -1769,14 +1830,16 @@ impl<'a> VccLowerer<'a> {
             && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))
         {
             self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                HelperScalarConstEqIfConstEqCheck {
                 helper_id,
-                arg_idx,
+                    arg_idx,
                 arg,
-                0,
+                    expected: 0,
                 trigger,
-                0,
+                    trigger_expected: 0,
                 message,
                 out,
+                },
             )?;
         }
 
@@ -1785,14 +1848,16 @@ impl<'a> VccLowerer<'a> {
             && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))
         {
             self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                HelperScalarConstEqIfConstEqCheck {
                 helper_id,
-                arg_idx,
+                    arg_idx,
                 arg,
-                0,
+                    expected: 0,
                 trigger,
-                trigger_expected,
+                    trigger_expected,
                 message,
                 out,
+                },
             )?;
         }
 
@@ -1802,14 +1867,16 @@ impl<'a> VccLowerer<'a> {
                 args.get(requirement.trigger_arg_idx),
             ) {
                 self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                    HelperScalarConstEqIfConstEqCheck {
                     helper_id,
-                    requirement.arg_idx,
+                        arg_idx: requirement.arg_idx,
                     arg,
-                    requirement.expected,
+                        expected: requirement.expected,
                     trigger,
-                    requirement.trigger_expected,
-                    requirement.message,
+                        trigger_expected: requirement.trigger_expected,
+                        message: requirement.message,
                     out,
+                    },
                 )?;
             }
         }
@@ -1820,15 +1887,17 @@ impl<'a> VccLowerer<'a> {
                 args.get(requirement.trigger_arg_idx),
             ) {
                 self.verify_helper_scalar_const_eq_if_scalar_const_mask_eq(
+                    HelperScalarConstEqIfMaskedConstEqCheck {
                     helper_id,
-                    requirement.arg_idx,
+                        arg_idx: requirement.arg_idx,
                     arg,
-                    requirement.expected,
+                        expected: requirement.expected,
                     trigger,
-                    requirement.trigger_mask,
-                    requirement.trigger_expected,
-                    requirement.message,
+                        trigger_mask: requirement.trigger_mask,
+                        trigger_expected: requirement.trigger_expected,
+                        message: requirement.message,
                     out,
+                    },
                 )?;
             }
         }
@@ -1997,7 +2066,7 @@ impl<'a> VccLowerer<'a> {
         self.probe_ctx
             .map(|ctx| ctx.program_type())
             .or_else(|| self.program.map(|program| program.program_type))
-            .map_or(true, |program_type| {
+            .is_none_or(|program_type| {
                 program_type.kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
             })
     }
@@ -2116,21 +2185,21 @@ impl<'a> VccLowerer<'a> {
         what: &'static str,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        if let Some(ty) = self.types.get(&reg) {
-            if !matches!(ty, MirType::Ptr { .. }) {
-                let size = match ty.size() {
-                    0 => 8,
-                    n => n,
-                };
-                if size > 8 {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "{what} v{} has size {} bytes and must be passed as a pointer",
-                            reg.0, size
-                        ),
-                    ));
-                }
+        if let Some(ty) = self.types.get(&reg)
+            && !matches!(ty, MirType::Ptr { .. })
+        {
+            let size = match ty.size() {
+                0 => 8,
+                n => n,
+            };
+            if size > 8 {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "{what} v{} has size {} bytes and must be passed as a pointer",
+                        reg.0, size
+                    ),
+                ));
             }
         }
         let is_ptr = self
@@ -2182,20 +2251,23 @@ impl<'a> VccLowerer<'a> {
         Ok(None)
     }
 
-    pub(super) fn check_kfunc_ptr_arg_value(
+    fn check_kfunc_ptr_arg_value(
         &mut self,
-        kfunc: &str,
-        arg_idx: usize,
-        arg: VReg,
-        op: &'static str,
-        allow_stack: bool,
-        allow_map: bool,
-        allow_kernel: bool,
-        allow_user: bool,
-        access_size: Option<usize>,
-        dynamic_size: Option<VReg>,
-        out: &mut Vec<VccInst>,
+        check: KfuncPtrArgValueCheck<'_, '_>,
     ) -> Result<(), VccError> {
+        let KfuncPtrArgValueCheck {
+            kfunc,
+            arg_idx,
+            arg,
+            op,
+            allow_stack,
+            allow_map,
+            allow_kernel,
+            allow_user,
+            access_size,
+            dynamic_size,
+            out,
+        } = check;
         if !self.is_pointer_reg(arg) && Self::kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx) {
             out.push(VccInst::AssertConstEq {
                 value: VccValue::Reg(VccReg(arg.0)),
@@ -2328,19 +2400,19 @@ impl<'a> VccLowerer<'a> {
                 .size_from_arg
                 .and_then(|size_arg| args.get(size_arg))
                 .copied();
-            self.check_kfunc_ptr_arg_value(
+            self.check_kfunc_ptr_arg_value(KfuncPtrArgValueCheck {
                 kfunc,
-                rule.arg_idx,
+                arg_idx: rule.arg_idx,
                 arg,
-                rule.op,
-                rule.allowed.allow_stack,
-                rule.allowed.allow_map,
-                rule.allowed.allow_kernel,
-                rule.allowed.allow_user,
+                op: rule.op,
+                allow_stack: rule.allowed.allow_stack,
+                allow_map: rule.allowed.allow_map,
+                allow_kernel: rule.allowed.allow_kernel,
+                allow_user: rule.allowed.allow_user,
                 access_size,
                 dynamic_size,
                 out,
-            )?;
+            })?;
         }
 
         for (idx, arg) in args.iter().enumerate() {
@@ -2388,19 +2460,19 @@ impl<'a> VccLowerer<'a> {
             if access_size.is_none() && dynamic_size.is_none() {
                 continue;
             }
-            self.check_kfunc_ptr_arg_value(
+            self.check_kfunc_ptr_arg_value(KfuncPtrArgValueCheck {
                 kfunc,
-                ptr_arg_idx,
-                *arg,
-                "kfunc pointer-size argument",
-                true,
-                true,
-                true,
-                true,
+                arg_idx: ptr_arg_idx,
+                arg: *arg,
+                op: "kfunc pointer-size argument",
+                allow_stack: true,
+                allow_map: true,
+                allow_kernel: true,
+                allow_user: true,
                 access_size,
                 dynamic_size,
                 out,
-            )?;
+            })?;
         }
 
         for (ptr_arg_idx, arg) in args.iter().enumerate() {
@@ -2417,19 +2489,19 @@ impl<'a> VccLowerer<'a> {
             if !Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx) {
                 continue;
             }
-            self.check_kfunc_ptr_arg_value(
+            self.check_kfunc_ptr_arg_value(KfuncPtrArgValueCheck {
                 kfunc,
-                ptr_arg_idx,
-                *arg,
-                "kfunc stack-slot-base argument",
-                true,
-                true,
-                true,
-                true,
-                None,
-                None,
+                arg_idx: ptr_arg_idx,
+                arg: *arg,
+                op: "kfunc stack-slot-base argument",
+                allow_stack: true,
+                allow_map: true,
+                allow_kernel: true,
+                allow_user: true,
+                access_size: None,
+                dynamic_size: None,
                 out,
-            )?;
+            })?;
         }
 
         for (idx, arg) in args.iter().enumerate() {

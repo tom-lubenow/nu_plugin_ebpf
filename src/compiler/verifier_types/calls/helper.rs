@@ -19,18 +19,32 @@ const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
-pub(in crate::compiler::verifier_types) fn check_helper_arg(
-    helper_id: u32,
-    arg_idx: usize,
-    arg: &MirValue,
-    expected: HelperArgKind,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(in crate::compiler::verifier_types) struct HelperArgCheck<'a, 'errors> {
+    pub(in crate::compiler::verifier_types) helper_id: u32,
+    pub(in crate::compiler::verifier_types) arg_idx: usize,
+    pub(in crate::compiler::verifier_types) arg: &'a MirValue,
+    pub(in crate::compiler::verifier_types) expected: HelperArgKind,
+    pub(in crate::compiler::verifier_types) types: &'a HashMap<VReg, MirType>,
+    pub(in crate::compiler::verifier_types) state: &'a VerifierState,
+    pub(in crate::compiler::verifier_types) program: Option<&'a ProgramTypeInfo>,
+    pub(in crate::compiler::verifier_types) probe_ctx: Option<&'a ProbeContext>,
+    pub(in crate::compiler::verifier_types) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(in crate::compiler::verifier_types) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(in crate::compiler::verifier_types) fn check_helper_arg(check: HelperArgCheck<'_, '_>) {
+    let HelperArgCheck {
+        helper_id,
+        arg_idx,
+        arg,
+        expected,
+        types,
+        state,
+        program,
+        probe_ctx,
+        slot_sizes,
+        errors,
+    } = check;
     let ty = value_type(arg, state, slot_sizes);
     match expected {
         HelperArgKind::Scalar => {
@@ -390,24 +404,44 @@ fn validate_sock_ops_hdr_opt_callback(
     }
 }
 
-pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
+struct HelperPtrArgValueCheck<'a, 'errors> {
     helper_id: u32,
     arg_idx: usize,
-    arg: &MirValue,
-    op: &str,
+    arg: &'a MirValue,
+    op: &'a str,
     allow_stack: bool,
     allow_map: bool,
     allow_kernel: bool,
     allow_user: bool,
     allow_maybe_null: bool,
     access_size: Option<usize>,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+    types: &'a HashMap<VReg, MirType>,
+    state: &'a VerifierState,
+    program: Option<&'a ProgramTypeInfo>,
+    probe_ctx: Option<&'a ProbeContext>,
+    slot_sizes: &'a HashMap<StackSlotId, i64>,
+    errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+fn check_helper_ptr_arg_value(check: HelperPtrArgValueCheck<'_, '_>) {
+    let HelperPtrArgValueCheck {
+        helper_id,
+        arg_idx,
+        arg,
+        op,
+        allow_stack,
+        allow_map,
+        allow_kernel,
+        allow_user,
+        allow_maybe_null,
+        access_size,
+        types,
+        state,
+        program,
+        probe_ctx,
+        slot_sizes,
+        errors,
+    } = check;
     if helper_pointer_arg_allows_const_zero(helper_id, arg_idx, arg, state, program, probe_ctx) {
         return;
     }
@@ -540,19 +574,32 @@ fn kptr_xchg_dst_slot_ref_kind(
         .and_then(kfunc_ref_kind_from_bpf_type_name)
 }
 
+pub(in crate::compiler::verifier_types) struct HelperSemanticsApply<'a, 'state, 'errors> {
+    pub(in crate::compiler::verifier_types) helper_id: u32,
+    pub(in crate::compiler::verifier_types) args: &'a [MirValue],
+    pub(in crate::compiler::verifier_types) types: &'a HashMap<VReg, MirType>,
+    pub(in crate::compiler::verifier_types) state: &'state mut VerifierState,
+    pub(in crate::compiler::verifier_types) slot_sizes: &'a HashMap<StackSlotId, i64>,
+    pub(in crate::compiler::verifier_types) program: Option<&'a ProgramTypeInfo>,
+    pub(in crate::compiler::verifier_types) probe_ctx: Option<&'a ProbeContext>,
+    pub(in crate::compiler::verifier_types) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
 pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
-    helper_id: u32,
-    args: &[MirValue],
-    types: &HashMap<VReg, MirType>,
-    state: &mut VerifierState,
-    slot_sizes: &HashMap<StackSlotId, i64>,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    errors: &mut Vec<VerifierTypeError>,
+    apply: HelperSemanticsApply<'_, '_, '_>,
 ) -> Option<KfuncRefKind> {
-    let Some(helper) = BpfHelper::from_u32(helper_id) else {
-        return None;
-    };
+    let HelperSemanticsApply {
+        helper_id,
+        args,
+        types,
+        state,
+        slot_sizes,
+        program,
+        probe_ctx,
+        errors,
+    } = apply;
+
+    let helper = BpfHelper::from_u32(helper_id)?;
 
     let semantics = helper.semantics();
     let mut acquire_kind = helper_acquire_ref_kind(helper);
@@ -631,16 +678,16 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             }
             continue;
         }
-        check_helper_ptr_arg_value(
+        check_helper_ptr_arg_value(HelperPtrArgValueCheck {
             helper_id,
-            rule.arg_idx,
+            arg_idx: rule.arg_idx,
             arg,
-            rule.op,
-            rule.allowed.allow_stack,
-            rule.allowed.allow_map,
-            rule.allowed.allow_kernel,
-            rule.allowed.allow_user,
-            allow_maybe_null_for_arg(rule.arg_idx),
+            op: rule.op,
+            allow_stack: rule.allowed.allow_stack,
+            allow_map: rule.allowed.allow_map,
+            allow_kernel: rule.allowed.allow_kernel,
+            allow_user: rule.allowed.allow_user,
+            allow_maybe_null: allow_maybe_null_for_arg(rule.arg_idx),
             access_size,
             types,
             state,
@@ -648,7 +695,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             probe_ctx,
             slot_sizes,
             errors,
-        );
+        });
     }
 
     validate_helper_raw_context_arg_shape(helper, args, types, state, program, probe_ctx, errors);
@@ -767,16 +814,16 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         let Some(shape) = helper_named_arg_shape(helper, arg_idx) else {
             continue;
         };
-        validate_named_helper_arg_shape(
+        validate_named_helper_arg_shape(NamedHelperArgShapeValidation {
             helper,
             args,
             arg_idx,
             types,
             state,
-            shape.predicate,
-            shape.expected,
+            predicate: shape.predicate,
+            expected: shape.expected,
             errors,
-        );
+        });
     }
     validate_helper_map_fd_matches_map_value(helper, args, state, errors);
 
@@ -824,51 +871,51 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
-    if semantics.ringbuf_record_arg0 {
-        if let Some(record) = args.first() {
-            match record {
-                MirValue::VReg(vreg) if state.is_released_ringbuf_record(*vreg) => {}
-                MirValue::VReg(vreg) => match state.get(*vreg) {
-                    VerifierType::Ptr {
-                        space: AddressSpace::Map,
-                        nullability: Nullability::NonNull,
-                        ringbuf_ref: Some(ref_id),
-                        ..
-                    } => {
-                        if state.is_live_ringbuf_ref(ref_id) {
-                            state.invalidate_ringbuf_ref(ref_id);
-                        } else {
-                            errors.push(VerifierTypeError::new("ringbuf record already released"));
-                        }
+    if semantics.ringbuf_record_arg0
+        && let Some(record) = args.first()
+    {
+        match record {
+            MirValue::VReg(vreg) if state.is_released_ringbuf_record(*vreg) => {}
+            MirValue::VReg(vreg) => match state.get(*vreg) {
+                VerifierType::Ptr {
+                    space: AddressSpace::Map,
+                    nullability: Nullability::NonNull,
+                    ringbuf_ref: Some(ref_id),
+                    ..
+                } => {
+                    if state.is_live_ringbuf_ref(ref_id) {
+                        state.invalidate_ringbuf_ref(ref_id);
+                    } else {
+                        errors.push(VerifierTypeError::new("ringbuf record already released"));
                     }
-                    VerifierType::Ptr {
-                        nullability: Nullability::MaybeNull,
-                        ..
-                    } => {
-                        errors.push(VerifierTypeError::new(format!(
-                            "helper {} arg0 may dereference null pointer v{} (add a null check)",
-                            helper_id, vreg.0
-                        )));
-                    }
-                    VerifierType::Ptr { .. } => {
-                        errors.push(VerifierTypeError::new(format!(
-                            "helper {} arg0 expects ringbuf record pointer",
-                            helper_id
-                        )));
-                    }
-                    _ => {
-                        errors.push(VerifierTypeError::new(format!(
-                            "helper {} arg0 expects ringbuf record pointer",
-                            helper_id
-                        )));
-                    }
-                },
+                }
+                VerifierType::Ptr {
+                    nullability: Nullability::MaybeNull,
+                    ..
+                } => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper {} arg0 may dereference null pointer v{} (add a null check)",
+                        helper_id, vreg.0
+                    )));
+                }
+                VerifierType::Ptr { .. } => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper {} arg0 expects ringbuf record pointer",
+                        helper_id
+                    )));
+                }
                 _ => {
                     errors.push(VerifierTypeError::new(format!(
                         "helper {} arg0 expects ringbuf record pointer",
                         helper_id
                     )));
                 }
+            },
+            _ => {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg0 expects ringbuf record pointer",
+                    helper_id
+                )));
             }
         }
     }
@@ -1334,16 +1381,29 @@ fn helper_arg_is_socket_cookie_socket_pointer(
     }
 }
 
-fn validate_named_helper_arg_shape(
+struct NamedHelperArgShapeValidation<'a, 'errors> {
     helper: BpfHelper,
-    args: &[MirValue],
+    args: &'a [MirValue],
     arg_idx: usize,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
+    types: &'a HashMap<VReg, MirType>,
+    state: &'a VerifierState,
     predicate: fn(&MirType) -> bool,
-    expected: &str,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+    expected: &'a str,
+    errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+fn validate_named_helper_arg_shape(validation: NamedHelperArgShapeValidation<'_, '_>) {
+    let NamedHelperArgShapeValidation {
+        helper,
+        args,
+        arg_idx,
+        types,
+        state,
+        predicate,
+        expected,
+        errors,
+    } = validation;
+
     let Some(arg) = args.get(arg_idx) else {
         return;
     };

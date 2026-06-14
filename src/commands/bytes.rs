@@ -579,6 +579,46 @@ impl PluginCommand for BytesIndexOf {
     }
 }
 
+impl PluginCommand for BytesEndsWith {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "bytes ends-with"
+    }
+
+    fn description(&self) -> &str {
+        "Check whether binary input or each binary list item ends with a pattern."
+    }
+
+    fn signature(&self) -> Signature {
+        binary_predicate_signature(self.name())
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "[0x[01 02] 0x[03 04]] | bytes ends-with 0x[02]",
+            description: "Check each binary value in a list for a suffix",
+            result: Some(Value::list(
+                vec![
+                    Value::bool(true, nu_protocol::Span::unknown()),
+                    Value::bool(false, nu_protocol::Span::unknown()),
+                ],
+                nu_protocol::Span::unknown(),
+            )),
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        run_binary_predicate(call, input, |input, pattern| input.ends_with(pattern))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,45 +659,5 @@ mod tests {
         let output = binary_index_value(&[1, 2, 1, 2], &[1, 2], true, true, span);
 
         assert_eq!(list_ints(&output), vec![2, 0]);
-    }
-}
-
-impl PluginCommand for BytesEndsWith {
-    type Plugin = EbpfPlugin;
-
-    fn name(&self) -> &str {
-        "bytes ends-with"
-    }
-
-    fn description(&self) -> &str {
-        "Check whether binary input or each binary list item ends with a pattern."
-    }
-
-    fn signature(&self) -> Signature {
-        binary_predicate_signature(self.name())
-    }
-
-    fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "[0x[01 02] 0x[03 04]] | bytes ends-with 0x[02]",
-            description: "Check each binary value in a list for a suffix",
-            result: Some(Value::list(
-                vec![
-                    Value::bool(true, nu_protocol::Span::unknown()),
-                    Value::bool(false, nu_protocol::Span::unknown()),
-                ],
-                nu_protocol::Span::unknown(),
-            )),
-        }]
-    }
-
-    fn run(
-        &self,
-        _plugin: &EbpfPlugin,
-        _engine: &EngineInterface,
-        call: &EvaluatedCall,
-        input: PipelineData,
-    ) -> Result<PipelineData, LabeledError> {
-        run_binary_predicate(call, input, |input, pattern| input.ends_with(pattern))
     }
 }

@@ -663,6 +663,7 @@ impl EbpfProgram {
             generic_map_key_types: HashMap::new(),
             generic_map_key_semantics: HashMap::new(),
             generic_map_max_entries: HashMap::new(),
+            generic_map_extras: HashMap::new(),
             generic_map_inner_templates: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
@@ -701,6 +702,7 @@ impl EbpfProgram {
             generic_map_key_types: HashMap::new(),
             generic_map_key_semantics: HashMap::new(),
             generic_map_max_entries: HashMap::new(),
+            generic_map_extras: HashMap::new(),
             generic_map_inner_templates: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
@@ -708,6 +710,7 @@ impl EbpfProgram {
     }
 
     /// Create a new eBPF program with maps and relocations
+    #[allow(clippy::too_many_arguments)]
     pub fn with_maps(
         prog_type: EbpfProgramType,
         target: impl Into<String>,
@@ -746,6 +749,7 @@ impl EbpfProgram {
             generic_map_key_types: HashMap::new(),
             generic_map_key_semantics: HashMap::new(),
             generic_map_max_entries: HashMap::new(),
+            generic_map_extras: HashMap::new(),
             generic_map_inner_templates: HashMap::new(),
             generic_map_value_types,
             generic_map_value_semantics,
@@ -829,6 +833,12 @@ impl EbpfProgram {
         self
     }
 
+    /// Attach map-extra declarations recovered during lowering.
+    pub fn with_generic_map_extras(mut self, generic_map_extras: HashMap<MapRef, u64>) -> Self {
+        self.generic_map_extras = generic_map_extras;
+        self
+    }
+
     /// Attach map-in-map inner template declarations recovered during lowering.
     pub fn with_generic_map_inner_templates(
         mut self,
@@ -870,6 +880,7 @@ impl EbpfProgram {
             generic_map_key_types,
             generic_map_key_semantics,
             generic_map_max_entries,
+            generic_map_extras,
             generic_map_inner_templates,
             generic_map_value_types,
             generic_map_value_semantics,
@@ -900,6 +911,7 @@ impl EbpfProgram {
                 generic_map_key_types,
                 generic_map_key_semantics,
                 generic_map_max_entries,
+                generic_map_extras,
                 generic_map_inner_templates,
                 generic_map_value_types,
                 generic_map_value_semantics,
@@ -926,6 +938,7 @@ impl EbpfProgram {
             generic_map_key_types: self.generic_map_key_types,
             generic_map_key_semantics: self.generic_map_key_semantics,
             generic_map_max_entries: self.generic_map_max_entries,
+            generic_map_extras: self.generic_map_extras,
             generic_map_inner_templates: self.generic_map_inner_templates,
             generic_map_value_types: self.generic_map_value_types,
             generic_map_value_semantics: self.generic_map_value_semantics,
@@ -1765,6 +1778,7 @@ impl EbpfObject {
         }
 
         let merged_generic_map_inner_templates = self.merged_generic_map_inner_templates()?;
+        let merged_generic_map_extras = self.merged_generic_map_extras()?;
 
         let mut program_names = HashSet::new();
         for program in &self.programs {
@@ -1802,6 +1816,7 @@ impl EbpfObject {
                 generic_map_key_types: program.generic_map_key_types.clone(),
                 generic_map_key_semantics: program.generic_map_key_semantics.clone(),
                 generic_map_max_entries: program.generic_map_max_entries.clone(),
+                generic_map_extras: merged_generic_map_extras.clone(),
                 generic_map_inner_templates: merged_generic_map_inner_templates.clone(),
                 generic_map_value_types: program.generic_map_value_types.clone(),
                 generic_map_value_semantics: program.generic_map_value_semantics.clone(),
@@ -2441,7 +2456,7 @@ impl EbpfObject {
                 btf.add_ptr(target_type)
             }
             TypeInfo::Array { element, len } => {
-                let elem_fallback_size = if *len == 0 { 0 } else { fallback_size / *len };
+                let elem_fallback_size = fallback_size.checked_div(*len).unwrap_or(0);
                 let elem_type =
                     Self::emit_local_btf_type(btf, element, elem_fallback_size, array_index_type);
                 btf.add_array(elem_type, array_index_type, *len as u32)
@@ -2672,6 +2687,13 @@ impl EbpfObject {
             .find_map(|program| program.generic_map_key_types.get(&map_ref))
     }
 
+    fn generic_map_extra(&self, map: &EbpfMap) -> Option<u64> {
+        let map_ref = Self::map_ref_for_map(map)?;
+        self.programs
+            .iter()
+            .find_map(|program| program.generic_map_extras.get(&map_ref).copied())
+    }
+
     fn map_ref_for_map(map: &EbpfMap) -> Option<MapRef> {
         Some(MapRef {
             name: map.name.clone(),
@@ -2710,14 +2732,35 @@ impl EbpfObject {
         Ok(merged)
     }
 
+    fn merged_generic_map_extras(&self) -> Result<HashMap<MapRef, u64>, CompileError> {
+        let mut merged: HashMap<MapRef, u64> = HashMap::new();
+        for program in &self.programs {
+            for (map_ref, map_extra) in &program.generic_map_extras {
+                if let Some(existing) = merged.get(map_ref) {
+                    if existing != map_extra {
+                        return Err(CompileError::InvalidProgram(format!(
+                            "conflicting map_extra declarations for runtime map '{}' ({}): {} vs {}",
+                            map_ref.name, map_ref.kind, existing, map_extra
+                        )));
+                    }
+                } else {
+                    merged.insert(map_ref.clone(), *map_extra);
+                }
+            }
+        }
+        Ok(merged)
+    }
+
     fn map_by_ref(&self, map_ref: &MapRef) -> Option<&EbpfMap> {
         self.maps
             .iter()
             .find(|map| map.name == map_ref.name && map.def.map_kind() == Some(map_ref.kind))
     }
 
-    fn btf_map_fixed_member_count(&self, _map: &EbpfMap, include_pinning: bool) -> usize {
-        BTF_MAP_BASE_MEMBER_COUNT + usize::from(include_pinning)
+    fn btf_map_fixed_member_count(&self, map: &EbpfMap, include_pinning: bool) -> usize {
+        BTF_MAP_BASE_MEMBER_COUNT
+            + usize::from(include_pinning)
+            + usize::from(self.generic_map_extra(map).is_some())
     }
 
     fn btf_map_data_size(&self, map: &EbpfMap, include_pinning: bool) -> Result<u32, CompileError> {
@@ -2781,6 +2824,10 @@ impl EbpfObject {
         if include_pinning {
             let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
             members.push(("pinning", pinning_ptr));
+        }
+
+        if let Some(map_extra) = self.generic_map_extra(map) {
+            members.push(("map_extra", btf.add_ulong_type("map_extra", map_extra)));
         }
 
         let data_size = self.btf_map_data_size(map, include_pinning)?;

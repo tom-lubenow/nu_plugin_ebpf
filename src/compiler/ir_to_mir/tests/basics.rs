@@ -46,23 +46,23 @@ fn test_emit_ptr_copy_rejects_out_of_range_offsets() {
     let captures = Vec::new();
     let user_functions = HashMap::new();
     let decl_signatures = HashMap::new();
-    let mut lowering = HirToMirLowering::new(
-        None,
-        &decl_names,
-        &closure_irs,
-        &closure_param_sources,
-        &captures,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        &user_functions,
-        &decl_signatures,
-    );
+    let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+        probe_ctx: None,
+        decl_names: &decl_names,
+        closure_irs: &closure_irs,
+        closure_param_sources: &closure_param_sources,
+        captures: &captures,
+        ctx_param: None,
+        type_hints: None,
+        external_map_key_types: None,
+        external_map_key_semantics: None,
+        external_map_max_entries: None,
+        external_map_inner_templates: None,
+        external_map_value_types: None,
+        external_map_value_semantics: None,
+        user_functions: &user_functions,
+        decl_signatures: &decl_signatures,
+    });
     let entry = lowering.func.alloc_block();
     lowering.func.entry = entry;
     lowering.current_block = entry;
@@ -3859,7 +3859,7 @@ fn test_lower_xdp_eth_arp_opcode_projection_adds_vlan_step_and_byteswap() {
         .collect();
 
     assert!(
-        eq_consts.iter().any(|value| *value == 0x8100),
+        eq_consts.contains(&0x8100),
         "ARP protocol view should reuse the Ethernet payload step with VLAN handling"
     );
     assert!(
@@ -5038,23 +5038,23 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
     let captures: Vec<(VarId, Value)> = Vec::new();
     let user_functions = HashMap::new();
     let decl_signatures = HashMap::new();
-    let mut lowering = HirToMirLowering::new(
-        None,
-        &decl_names,
-        &closure_irs,
-        &closure_param_sources,
-        &captures,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        &user_functions,
-        &decl_signatures,
-    );
+    let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+        probe_ctx: None,
+        decl_names: &decl_names,
+        closure_irs: &closure_irs,
+        closure_param_sources: &closure_param_sources,
+        captures: &captures,
+        ctx_param: None,
+        type_hints: None,
+        external_map_key_types: None,
+        external_map_key_semantics: None,
+        external_map_max_entries: None,
+        external_map_inner_templates: None,
+        external_map_value_types: None,
+        external_map_value_semantics: None,
+        user_functions: &user_functions,
+        decl_signatures: &decl_signatures,
+    });
     let header_block = lowering.func.alloc_block();
     lowering.func.entry = header_block;
     lowering.current_block = header_block;
@@ -5163,7 +5163,7 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
         "expected the loop body to load the projected struct field from the iterated element"
     );
 
-    let (mut program, mut type_hints, _, _, _, _, _, _, _, _, _) = lowering.finish_with_hints();
+    let (mut program, mut type_hints, _, _, _, _, _, _, _, _, _, _) = lowering.finish_with_hints();
     optimize_with_ssa_hints(
         &mut program.main,
         None,

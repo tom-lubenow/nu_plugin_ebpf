@@ -1,5 +1,26 @@
 use super::*;
 
+struct TypedFixedArrayFind<'a> {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    needle_vreg: VReg,
+    needle_reg: RegId,
+}
+
+struct MaterializedStackListFind {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_vreg: VReg,
+    input_meta: RegMetadata,
+    needle_vreg: VReg,
+    needle_reg: RegId,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(in crate::compiler::ir_to_mir) fn lower_stack_list_find(
         &mut self,
@@ -63,7 +84,7 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                return self.lower_stack_list_find_materialized(
+                return self.lower_stack_list_find_materialized(MaterializedStackListFind {
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
@@ -71,7 +92,7 @@ impl<'a> HirToMirLowering<'a> {
                     input_meta,
                     needle_vreg,
                     needle_reg,
-                );
+                });
             };
             let vals = values
                 .into_iter()
@@ -92,20 +113,20 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_find(
+            && self.lower_typed_fixed_array_find(TypedFixedArrayFind {
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
+                input_meta: &input_meta,
                 needle_vreg,
                 needle_reg,
-            )?
+            })?
         {
             return Ok(());
         }
-        self.lower_stack_list_find_materialized(
+        self.lower_stack_list_find_materialized(MaterializedStackListFind {
             src_dst,
             dst_vreg,
             src_dst_had_value,
@@ -113,20 +134,24 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             needle_vreg,
             needle_reg,
-        )
+        })
     }
 
     fn lower_typed_fixed_array_find(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        input_meta: &RegMetadata,
-        needle_vreg: VReg,
-        needle_reg: RegId,
+        find: TypedFixedArrayFind<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayFind {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            mut input_vreg,
+            input_meta,
+            needle_vreg,
+            needle_reg,
+        } = find;
+
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
@@ -140,11 +165,8 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) =
+            Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
@@ -158,7 +180,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -175,14 +197,11 @@ impl<'a> HirToMirLowering<'a> {
                 "find requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            "find",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "find on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            input_meta,
+        )?;
 
         let needle_meta = self.get_metadata(needle_reg).cloned();
         let needle_const = needle_meta
@@ -296,14 +315,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_stack_list_find_materialized(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_vreg: VReg,
-        input_meta: RegMetadata,
-        needle_vreg: VReg,
-        needle_reg: RegId,
+        find: MaterializedStackListFind,
     ) -> Result<(), CompileError> {
+        let MaterializedStackListFind {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_vreg,
+            input_meta,
+            needle_vreg,
+            needle_reg,
+        } = find;
+
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(
                 "find requires a stack-backed numeric list input in eBPF".into(),
@@ -469,5 +492,111 @@ impl<'a> HirToMirLowering<'a> {
 
     fn typed_fixed_array_find_scalar_type_description() -> &'static str {
         "signed integer, bool, or <=32-bit unsigned integer scalar elements"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn find_accepts_trusted_kernel_fixed_array() {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 2,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let input_reg = RegId::new(1);
+        let input_vreg = lowering.get_vreg(input_reg);
+        lowering.vreg_type_hints.insert(input_vreg, ptr_ty.clone());
+        let input_meta = RegMetadata {
+            field_type: Some(ptr_ty),
+            trusted_btf: true,
+            ..Default::default()
+        };
+
+        let needle_reg = RegId::new(2);
+        let needle_vreg = lowering.get_vreg(needle_reg);
+        lowering.vreg_type_hints.insert(needle_vreg, MirType::I64);
+        lowering.reg_metadata.insert(
+            needle_reg.get(),
+            RegMetadata {
+                literal_int: Some(7),
+                field_type: Some(MirType::I64),
+                ..Default::default()
+            },
+        );
+
+        let src_dst = RegId::new(3);
+        let dst_vreg = lowering.get_vreg(src_dst);
+        assert!(
+            lowering
+                .lower_typed_fixed_array_find(TypedFixedArrayFind {
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value: false,
+                    input_reg,
+                    input_vreg,
+                    input_meta: &input_meta,
+                    needle_vreg,
+                    needle_reg,
+                })
+                .expect("trusted kernel fixed-array find should lower")
+        );
+
+        let load_count = lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| {
+                matches!(
+                    inst,
+                    MirInst::Load {
+                        ptr,
+                        ty: MirType::U32,
+                        ..
+                    } if *ptr == input_vreg
+                )
+            })
+            .count();
+        assert_eq!(load_count, 2);
+        assert!(
+            lowering
+                .reg_metadata
+                .get(&src_dst.get())
+                .and_then(|meta| meta.list_buffer)
+                .is_some()
+        );
     }
 }

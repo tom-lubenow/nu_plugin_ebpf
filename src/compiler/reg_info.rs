@@ -62,9 +62,9 @@ pub fn scratch_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
         } => &SCRATCH_LIST_GET,
         MirInst::StringAppend { val_type, .. } => match val_type {
             StringAppendType::Integer => &SCRATCH_STRING_APPEND_INT,
-            StringAppendType::Literal { .. } | StringAppendType::StringSlot { .. } => {
-                &SCRATCH_STRING_APPEND
-            }
+            StringAppendType::Literal { .. }
+            | StringAppendType::LiteralExact { .. }
+            | StringAppendType::StringSlot { .. } => &SCRATCH_STRING_APPEND,
         },
         MirInst::StrCmp { .. } => &SCRATCH_STRCMP,
         MirInst::IntToString { .. } => &SCRATCH_INT_TO_STRING,

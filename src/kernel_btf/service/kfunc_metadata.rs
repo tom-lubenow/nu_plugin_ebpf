@@ -8,6 +8,8 @@ use super::{BtfError, KernelBtf, KfuncPointerRefFamily, KfuncSignatureHint};
 #[path = "kfunc_metadata/ref_maps.rs"]
 mod ref_maps;
 
+type KfuncStackObjectArgMap = HashMap<String, Vec<(usize, u32, String)>>;
+
 impl KernelBtf {
     pub(super) fn load_kfunc_known_const_scalar_arg_map(
         &self,
@@ -291,9 +293,9 @@ impl KernelBtf {
 
     pub(super) fn load_kfunc_stack_object_arg_map(
         &self,
-    ) -> Result<HashMap<String, Vec<(usize, u32, String)>>, BtfError> {
+    ) -> Result<KfuncStackObjectArgMap, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
-        let mut map: HashMap<String, Vec<(usize, u32, String)>> = HashMap::new();
+        let mut map: KfuncStackObjectArgMap = HashMap::new();
         for ty in btf.get_types() {
             if !ty.is_function || !Self::is_bpf_kfunc(ty) {
                 continue;

@@ -238,12 +238,12 @@ impl KernelBtf {
         let ty = btf.get_type_by_id(type_id).map_err(|e| {
             BtfError::KernelBtfError(format!("failed to resolve kernel BTF type {type_id}: {e}"))
         })?;
-        let slot_count = Self::trampoline_slot_count(btf, &ty, raw_size_bytes)?;
-        let value = Self::trampoline_value_kind(btf, &ty, raw_size_bytes)
+        let slot_count = Self::trampoline_slot_count(btf, ty, raw_size_bytes)?;
+        let value = Self::trampoline_value_kind(btf, ty, raw_size_bytes)
             .map(|kind| TrampolineValueSpec { slot_index, kind });
         let unsupported_reason = value
             .is_none()
-            .then(|| Self::trampoline_unsupported_reason(&ty));
+            .then(|| Self::trampoline_unsupported_reason(ty));
         Ok(TrampolineFieldLayout {
             slot_index,
             slot_count,
@@ -374,7 +374,7 @@ impl KernelBtf {
         }
 
         for member in &struct_ty.members {
-            let is_anonymous = member.name.as_deref().map_or(true, str::is_empty);
+            let is_anonymous = member.name.as_deref().is_none_or(str::is_empty);
             if !is_anonymous {
                 continue;
             }
@@ -802,7 +802,7 @@ impl KernelBtf {
                 Ok(TypeInfo::Array {
                     element: Box::new(Self::type_info_from_btf_type_inner(
                         btf,
-                        &elem_ty,
+                        elem_ty,
                         raw_type_sizes,
                         raw_pointer_targets,
                         active_type_ids,
@@ -879,7 +879,7 @@ impl KernelBtf {
             })?;
             let type_info = Self::type_info_from_btf_type_inner(
                 btf,
-                &member_ty,
+                member_ty,
                 raw_type_sizes,
                 raw_pointer_targets,
                 active_type_ids,
@@ -889,82 +889,81 @@ impl KernelBtf {
                 .get(&member.type_id)
                 .copied()
                 .map(|size| size as usize);
-            let (offset, size, bitfield) = if let Some(bit_size) =
-                member.bits.filter(|bits| *bits != 0)
-            {
-                if !matches!(type_info, TypeInfo::Int { .. }) {
-                    continue;
-                }
-                let storage_size = Self::trampoline_size_bytes(btf, &member_ty, raw_size_bytes)?;
-                let storage_bits = u32::try_from(storage_size.checked_mul(8).ok_or_else(|| {
-                    BtfError::KernelBtfError(format!(
-                        "size overflow while resolving trampoline aggregate member '{}'",
-                        name
-                    ))
-                })?)
-                .map_err(|_| {
-                    BtfError::KernelBtfError(format!(
-                        "size overflow while resolving trampoline aggregate member '{}'",
-                        name
-                    ))
-                })?;
-                if storage_bits == 0 {
-                    continue;
-                }
-                let storage_base_bits = (member.offset / storage_bits)
-                    .checked_mul(storage_bits)
-                    .ok_or_else(|| {
+            let (offset, size, bitfield) =
+                if let Some(bit_size) = member.bits.filter(|bits| *bits != 0) {
+                    if !matches!(type_info, TypeInfo::Int { .. }) {
+                        continue;
+                    }
+                    let storage_size = Self::trampoline_size_bytes(btf, member_ty, raw_size_bytes)?;
+                    let storage_bits =
+                        u32::try_from(storage_size.checked_mul(8).ok_or_else(|| {
+                            BtfError::KernelBtfError(format!(
+                                "size overflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        })?)
+                        .map_err(|_| {
+                            BtfError::KernelBtfError(format!(
+                                "size overflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        })?;
+                    if storage_bits == 0 {
+                        continue;
+                    }
+                    let storage_base_bits = (member.offset / storage_bits)
+                        .checked_mul(storage_bits)
+                        .ok_or_else(|| {
+                            BtfError::KernelBtfError(format!(
+                                "offset overflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        })?;
+                    let bit_offset = member.offset.checked_sub(storage_base_bits).ok_or_else(
+                        || {
+                            BtfError::KernelBtfError(format!(
+                                "offset underflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        },
+                    )?;
+                    let end_bits = bit_offset.checked_add(bit_size).ok_or_else(|| {
                         BtfError::KernelBtfError(format!(
-                            "offset overflow while resolving trampoline aggregate member '{}'",
+                            "size overflow while resolving trampoline aggregate member '{}'",
                             name
                         ))
                     })?;
-                let bit_offset = member
-                    .offset
-                    .checked_sub(storage_base_bits)
-                    .ok_or_else(|| {
-                        BtfError::KernelBtfError(format!(
-                            "offset underflow while resolving trampoline aggregate member '{}'",
-                            name
-                        ))
-                    })?;
-                let end_bits = bit_offset.checked_add(bit_size).ok_or_else(|| {
-                    BtfError::KernelBtfError(format!(
-                        "size overflow while resolving trampoline aggregate member '{}'",
-                        name
-                    ))
-                })?;
-                if end_bits > storage_bits {
-                    continue;
-                }
-                (
-                    usize::try_from(storage_base_bits / 8).map_err(|_| {
-                        BtfError::KernelBtfError(format!(
-                            "offset overflow while resolving trampoline aggregate member '{}'",
-                            name
-                        ))
-                    })?,
-                    storage_size,
-                    Some(BitfieldInfo {
-                        bit_offset,
-                        bit_size,
-                    }),
-                )
-            } else {
-                if member.offset % 8 != 0 {
-                    continue;
-                }
-                (
-                    usize::try_from(member.offset / 8).map_err(|_| {
-                        BtfError::KernelBtfError(format!(
-                            "offset overflow while resolving trampoline aggregate member '{}'",
-                            name
-                        ))
-                    })?,
-                    Self::trampoline_size_bytes(btf, &member_ty, raw_size_bytes)?,
-                    None,
-                )
-            };
+                    if end_bits > storage_bits {
+                        continue;
+                    }
+                    (
+                        usize::try_from(storage_base_bits / 8).map_err(|_| {
+                            BtfError::KernelBtfError(format!(
+                                "offset overflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        })?,
+                        storage_size,
+                        Some(BitfieldInfo {
+                            bit_offset,
+                            bit_size,
+                        }),
+                    )
+                } else {
+                    if member.offset % 8 != 0 {
+                        continue;
+                    }
+                    (
+                        usize::try_from(member.offset / 8).map_err(|_| {
+                            BtfError::KernelBtfError(format!(
+                                "offset overflow while resolving trampoline aggregate member '{}'",
+                                name
+                            ))
+                        })?,
+                        Self::trampoline_size_bytes(btf, member_ty, raw_size_bytes)?,
+                        None,
+                    )
+                };
             let end = offset.checked_add(size).ok_or_else(|| {
                 BtfError::KernelBtfError(format!(
                     "size overflow while resolving trampoline aggregate member '{}'",

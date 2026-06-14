@@ -1429,15 +1429,7 @@ fn test_compile_fentry_aggregate_arg_copies_into_backing_slot() {
         .slot_offsets
         .get(&slot)
         .expect("stack slot should have an assigned offset");
-    let expected_chunks = if size_bytes >= 8 {
-        size_bytes / 8
-    } else if size_bytes >= 4 {
-        1
-    } else if size_bytes >= 2 {
-        1
-    } else {
-        1
-    };
+    let expected_chunks = (size_bytes / 8).max(1);
 
     let load_count = compiler
         .instructions

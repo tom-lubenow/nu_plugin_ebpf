@@ -3,6 +3,38 @@ use crate::compiler::mir::AddressSpace;
 
 const MAX_RECORD_COLUMNS_RESULTS: usize = 64;
 
+struct TypedRecordSelectOrReject<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: Option<RegId>,
+    input_meta: RegMetadata,
+    names: &'a [String],
+}
+
+struct TypedRecordRename<'a> {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: Option<RegId>,
+    input_meta: RegMetadata,
+    typed_fields: Vec<StructField>,
+    block_names: Option<&'a Vec<String>>,
+    column_renames: Option<&'a [(String, String)]>,
+    positional_names: &'a [String],
+}
+
+struct TypedRecordValuesDirectProjection {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: Option<RegId>,
+    input_meta: RegMetadata,
+    typed_fields: Vec<StructField>,
+    projection: DirectListProjection,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn validate_optional_record_flag(
         &self,
@@ -442,15 +474,15 @@ impl<'a> HirToMirLowering<'a> {
             })?;
         if input_meta.record_fields.is_empty() {
             if Self::typed_record_visible_fields(&input_meta).is_some() {
-                return self.lower_typed_record_select_or_reject(
+                return self.lower_typed_record_select_or_reject(TypedRecordSelectOrReject {
                     cmd_name,
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
                     input_reg,
                     input_meta,
-                    &names,
-                );
+                    names: &names,
+                });
             }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires record input with compiler-known fields in eBPF"
@@ -535,14 +567,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_record_select_or_reject(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: Option<RegId>,
-        input_meta: RegMetadata,
-        names: &[String],
+        selection: TypedRecordSelectOrReject<'_>,
     ) -> Result<(), CompileError> {
+        let TypedRecordSelectOrReject {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_meta,
+            names,
+        } = selection;
+
         let (_input_reg, input_vreg, input_runtime_ty) =
             self.typed_record_input_vreg_and_runtime_ty(cmd_name, input_reg)?;
 
@@ -656,6 +692,22 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a typed record pointer input in eBPF"
             )));
+        }
+        if let MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        } = &input_runtime_ty
+        {
+            let input_meta = self.get_metadata(input_reg).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires trusted BTF provenance metadata for kernel typed record pointer input in eBPF"
+                ))
+            })?;
+            if !input_meta.trusted_btf {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires trusted BTF provenance for kernel typed record pointer input in eBPF"
+                )));
+            }
         }
         Ok((input_vreg, input_runtime_ty))
     }
@@ -838,17 +890,17 @@ impl<'a> HirToMirLowering<'a> {
                 let block_names = block_rename
                     .map(|block_id| self.rename_block_typed_field_names(block_id, &typed_fields))
                     .transpose()?;
-                return self.lower_typed_record_rename(
+                return self.lower_typed_record_rename(TypedRecordRename {
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
                     input_reg,
                     input_meta,
                     typed_fields,
-                    block_names.as_ref(),
-                    column_renames.as_deref(),
-                    &positional_names,
-                );
+                    block_names: block_names.as_ref(),
+                    column_renames: column_renames.as_deref(),
+                    positional_names: &positional_names,
+                });
             }
             return Err(CompileError::UnsupportedInstruction(
                 "rename requires record input with compiler-known fields in eBPF".into(),
@@ -939,16 +991,20 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_record_rename(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: Option<RegId>,
-        input_meta: RegMetadata,
-        typed_fields: Vec<StructField>,
-        block_names: Option<&Vec<String>>,
-        column_renames: Option<&[(String, String)]>,
-        positional_names: &[String],
+        rename: TypedRecordRename<'_>,
     ) -> Result<(), CompileError> {
+        let TypedRecordRename {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_meta,
+            typed_fields,
+            block_names,
+            column_renames,
+            positional_names,
+        } = rename;
+
         let (_input_reg, input_vreg, input_runtime_ty) =
             self.typed_record_input_vreg_and_runtime_ty("rename", input_reg)?;
 
@@ -1212,6 +1268,19 @@ impl<'a> HirToMirLowering<'a> {
 
         if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
             if let Some(typed_fields) = typed_record_fields {
+                if let Some(projection) = self.current_call_result_direct_list_projection {
+                    return self.lower_typed_record_values_direct_projection(
+                        TypedRecordValuesDirectProjection {
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_meta,
+                            typed_fields,
+                            projection,
+                        },
+                    );
+                }
                 return self.lower_typed_record_values(
                     src_dst,
                     dst_vreg,
@@ -1224,6 +1293,16 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "values requires record input with compiler-known fields in eBPF".into(),
             ));
+        }
+
+        if let Some(projection) = self.current_call_result_direct_list_projection {
+            return self.lower_metadata_record_values_direct_projection(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_meta,
+                projection,
+            );
         }
 
         for field in &input_meta.record_fields {
@@ -1266,6 +1345,255 @@ impl<'a> HirToMirLowering<'a> {
                 Some(nu_protocol::Value::list(vals, Span::unknown()));
         }
 
+        Ok(())
+    }
+
+    fn lower_metadata_record_values_direct_projection(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_meta: RegMetadata,
+        projection: DirectListProjection,
+    ) -> Result<(), CompileError> {
+        let (index, strict_bounds, pass_through_marker) = match projection {
+            DirectListProjection::First => (0, false, None),
+            DirectListProjection::Last => (
+                input_meta.record_fields.len().saturating_sub(1),
+                false,
+                None,
+            ),
+            DirectListProjection::Index(index) => {
+                if index < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get index must be non-negative for metadata record values in eBPF".into(),
+                    ));
+                }
+                let index = usize::try_from(index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "get index is too large for metadata record values in eBPF".into(),
+                    )
+                })?;
+                (index, true, Some(DirectListProjection::Index(index as i64)))
+            }
+            DirectListProjection::ReverseFirst => (
+                input_meta.record_fields.len().saturating_sub(1),
+                false,
+                Some(DirectListProjection::First),
+            ),
+            DirectListProjection::ReverseLast => (0, false, Some(DirectListProjection::Last)),
+            DirectListProjection::ReverseIndex(index) => {
+                if index < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get index must be non-negative for metadata record values in eBPF".into(),
+                    ));
+                }
+                let index = usize::try_from(index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "get index is too large for metadata record values in eBPF".into(),
+                    )
+                })?;
+                if index >= input_meta.record_fields.len() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get index {index} is out of bounds for metadata record values with length {} in eBPF",
+                        input_meta.record_fields.len()
+                    )));
+                }
+                (
+                    input_meta
+                        .record_fields
+                        .len()
+                        .saturating_sub(1)
+                        .saturating_sub(index),
+                    false,
+                    Some(DirectListProjection::Index(index as i64)),
+                )
+            }
+        };
+        let Some(field) = input_meta.record_fields.get(index).cloned() else {
+            if strict_bounds {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get index {index} is out of bounds for metadata record values with length {} in eBPF",
+                    input_meta.record_fields.len()
+                )));
+            }
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::nothing(Span::unknown()),
+            );
+            return Ok(());
+        };
+        if !Self::metadata_record_values_supported_field(&input_meta, &field) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
+                field.name, field.ty
+            )));
+        }
+
+        let field_constant = input_meta
+            .constant_value
+            .as_ref()
+            .and_then(|value| match value {
+                nu_protocol::Value::Record { val, .. } => val.get(&field.name).cloned(),
+                _ => None,
+            });
+        let field_source_meta = field
+            .source_reg
+            .and_then(|reg| self.get_metadata(reg).cloned());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let scalar_constant = field_constant
+            .as_ref()
+            .and_then(Self::constant_scalar_i64)
+            .map(MirValue::Const);
+        let src = scalar_constant.unwrap_or(MirValue::VReg(field.value_vreg));
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src,
+        });
+        self.vreg_type_hints.insert(result_vreg, field.ty.clone());
+
+        let mut out_meta = field_source_meta.unwrap_or_default();
+        out_meta.is_context = field.is_context;
+        out_meta.field_type = Some(field.ty);
+        out_meta.root_ctx_field = field.root_ctx_field;
+        out_meta.trusted_btf = out_meta.trusted_btf
+            && matches!(
+                out_meta.field_type.as_ref(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                })
+            );
+        out_meta.annotated_semantics = field.semantics;
+        out_meta.source_var = None;
+        out_meta.constant_value = field_constant;
+        if let Some(marker) = pass_through_marker {
+            out_meta.direct_projected_list_consumer = Some(marker);
+        }
+        self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
+    fn lower_typed_record_values_direct_projection(
+        &mut self,
+        values: TypedRecordValuesDirectProjection,
+    ) -> Result<(), CompileError> {
+        let TypedRecordValuesDirectProjection {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_meta,
+            typed_fields,
+            projection,
+        } = values;
+
+        let (index, strict_bounds, pass_through_marker) = match projection {
+            DirectListProjection::First => (0, false, None),
+            DirectListProjection::Last => (typed_fields.len().saturating_sub(1), false, None),
+            DirectListProjection::Index(index) => {
+                if index < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get index must be non-negative for typed record values in eBPF".into(),
+                    ));
+                }
+                let index = usize::try_from(index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "get index is too large for typed record values in eBPF".into(),
+                    )
+                })?;
+                (index, true, Some(DirectListProjection::Index(index as i64)))
+            }
+            DirectListProjection::ReverseFirst => (
+                typed_fields.len().saturating_sub(1),
+                false,
+                Some(DirectListProjection::First),
+            ),
+            DirectListProjection::ReverseLast => (0, false, Some(DirectListProjection::Last)),
+            DirectListProjection::ReverseIndex(index) => {
+                if index < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get index must be non-negative for typed record values in eBPF".into(),
+                    ));
+                }
+                let index = usize::try_from(index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "get index is too large for typed record values in eBPF".into(),
+                    )
+                })?;
+                if index >= typed_fields.len() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get index {index} is out of bounds for typed record values with length {} in eBPF",
+                        typed_fields.len()
+                    )));
+                }
+                (
+                    typed_fields.len().saturating_sub(1).saturating_sub(index),
+                    false,
+                    Some(DirectListProjection::Index(index as i64)),
+                )
+            }
+        };
+        let Some(field) = typed_fields.get(index) else {
+            if strict_bounds {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get index {index} is out of bounds for typed record values with length {} in eBPF",
+                    typed_fields.len()
+                )));
+            }
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::nothing(Span::unknown()),
+            );
+            return Ok(());
+        };
+
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty("values", input_reg)?;
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let path_members = vec![PathMember::string(
+            field.name.clone(),
+            false,
+            Casing::Sensitive,
+            Span::unknown(),
+        )];
+        let projected_semantics = input_meta
+            .annotated_semantics
+            .as_ref()
+            .and_then(|semantics| {
+                Self::project_annotated_value_semantics(semantics, &path_members)
+            });
+
+        self.reset_call_result_metadata(src_dst);
+        let projected_ty = self.lower_typed_value_projection(
+            src_dst,
+            result_vreg,
+            input_vreg,
+            &input_runtime_ty,
+            &path_members,
+            &field.name,
+            input_meta.root_ctx_field.as_ref(),
+            input_meta.trusted_btf,
+            projected_semantics.as_ref(),
+        )?;
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(projected_ty);
+        out_meta.root_ctx_field = input_meta.root_ctx_field;
+        out_meta.trusted_btf = input_meta.trusted_btf;
+        out_meta.annotated_semantics = projected_semantics;
+        if let Some(marker) = pass_through_marker {
+            out_meta.direct_projected_list_consumer = Some(marker);
+        }
         Ok(())
     }
 
@@ -2001,5 +2329,115 @@ impl<'a> HirToMirLowering<'a> {
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn with_test_lowering<R>(test: impl FnOnce(&mut HirToMirLowering<'_>) -> R) -> R {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+        test(&mut lowering)
+    }
+
+    fn kernel_record_ty() -> MirType {
+        MirType::Struct {
+            name: Some("trusted_record".to_string()),
+            kernel_btf_type_id: Some(42),
+            fields: vec![StructField {
+                name: "pid".to_string(),
+                ty: MirType::U32,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            }],
+        }
+    }
+
+    fn register_kernel_record(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        trusted_btf: bool,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(kernel_record_ty()),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                trusted_btf,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    #[test]
+    fn typed_record_accepts_trusted_kernel_pointer() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_kernel_record(lowering, input_reg, true);
+
+            let (resolved_vreg, resolved_ty) = lowering
+                .typed_record_vreg_and_runtime_ty("select", input_reg, input_vreg)
+                .expect("trusted kernel typed record pointer should be accepted");
+
+            assert_eq!(resolved_vreg, input_vreg);
+            assert!(matches!(
+                resolved_ty,
+                MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                }
+            ));
+        });
+    }
+
+    #[test]
+    fn typed_record_rejects_untrusted_kernel_pointer() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_kernel_record(lowering, input_reg, false);
+
+            let err = lowering
+                .typed_record_vreg_and_runtime_ty("select", input_reg, input_vreg)
+                .expect_err("untrusted kernel typed record pointer should be rejected");
+
+            let CompileError::UnsupportedInstruction(message) = err else {
+                panic!("expected unsupported-instruction error");
+            };
+            assert!(message.contains("requires trusted BTF provenance"));
+        });
     }
 }

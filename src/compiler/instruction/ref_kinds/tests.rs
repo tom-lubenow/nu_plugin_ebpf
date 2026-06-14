@@ -1,10 +1,10 @@
 use super::unknown::*;
 use super::*;
 
-fn infer_unknown_stack_object_copy_args<'a>(
-    args: &'a [UnknownStackObjectArgInfo],
+fn infer_unknown_stack_object_copy_args(
+    args: &[UnknownStackObjectArgInfo],
     move_semantics: bool,
-) -> Vec<(&'a UnknownStackObjectArgInfo, &'a UnknownStackObjectArgInfo)> {
+) -> Vec<(&UnknownStackObjectArgInfo, &UnknownStackObjectArgInfo)> {
     if args.len() < 2 {
         return Vec::new();
     }
@@ -821,7 +821,7 @@ fn test_fallback_release_arg_index_from_arg0_preferring_non_out_allows_without_n
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_selects_unique_pair() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -852,7 +852,7 @@ fn test_infer_unknown_stack_object_copy_args_selects_unique_pair() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_prefers_named_input() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -882,7 +882,7 @@ fn test_infer_unknown_stack_object_copy_args_prefers_named_input() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_falls_back_without_out_hints() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -910,7 +910,7 @@ fn test_infer_unknown_stack_object_copy_args_falls_back_without_out_hints() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_fallback_prefers_named_input() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -938,7 +938,7 @@ fn test_infer_unknown_stack_object_copy_args_fallback_prefers_named_input() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_fallback_rejects_ambiguous_named_input() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -961,7 +961,7 @@ fn test_infer_unknown_stack_object_copy_args_fallback_rejects_ambiguous_named_in
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_allows_multiple_destinations_for_copy() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1002,7 +1002,7 @@ fn test_infer_unknown_stack_object_copy_args_allows_multiple_destinations_for_co
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_move_requires_single_destination() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1031,7 +1031,7 @@ fn test_infer_unknown_stack_object_copy_args_move_requires_single_destination() 
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_named_pairs_for_type() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1076,7 +1076,7 @@ fn test_infer_unknown_stack_object_copy_args_from_named_pairs_for_type() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_named_pairs_requires_unique_source() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1110,7 +1110,7 @@ fn test_infer_unknown_stack_object_copy_args_from_named_pairs_requires_unique_so
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_named_pairs_prefers_non_const_destination() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1147,7 +1147,7 @@ fn test_infer_unknown_stack_object_copy_args_from_named_pairs_prefers_non_const_
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_for_type_prefers_non_const_destination() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1183,7 +1183,7 @@ fn test_infer_unknown_stack_object_copy_args_for_type_prefers_non_const_destinat
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_for_type_falls_back_to_const_destination() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1213,7 +1213,7 @@ fn test_infer_unknown_stack_object_copy_args_for_type_falls_back_to_const_destin
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_for_type_move_requires_writable_destination() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1238,7 +1238,7 @@ fn test_infer_unknown_stack_object_copy_args_for_type_move_requires_writable_des
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_for_type_move_fallback_requires_writable_dst() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1263,7 +1263,7 @@ fn test_infer_unknown_stack_object_copy_args_for_type_move_fallback_requires_wri
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_const_hints() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1307,7 +1307,7 @@ fn test_infer_unknown_stack_object_copy_args_from_const_hints() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_const_hints_move_requires_single_dst() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1339,7 +1339,7 @@ fn test_infer_unknown_stack_object_copy_args_from_const_hints_move_requires_sing
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_from_const_hints_requires_unique_source() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1365,7 +1365,7 @@ fn test_infer_unknown_stack_object_copy_args_from_const_hints_requires_unique_so
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_requires_matching_types() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1388,7 +1388,7 @@ fn test_infer_unknown_stack_object_copy_args_requires_matching_types() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_supports_multiple_type_pairs() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1429,7 +1429,7 @@ fn test_infer_unknown_stack_object_copy_args_supports_multiple_type_pairs() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_keeps_unambiguous_type_pairs() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1485,7 +1485,7 @@ fn test_infer_unknown_stack_object_copy_args_keeps_unambiguous_type_pairs() {
 
 #[test]
 fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_source() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1514,7 +1514,7 @@ fn test_infer_unknown_stack_object_copy_args_rejects_ambiguous_source() {
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_prefers_named_input_for_destroy() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1541,7 +1541,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_prefers_named_input_for_destroy
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_requires_unique_match() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1570,7 +1570,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_requires_unique_match() {
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_init_uses_named_out() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1597,7 +1597,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_init_uses_named_out() {
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_init_prefers_writable_named_out() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1624,7 +1624,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_init_prefers_writable_named_out
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_init_rejects_const_only_target() {
-    let args = vec![UnknownStackObjectArgInfo {
+    let args = [UnknownStackObjectArgInfo {
         arg_idx: 0,
         type_name: "bpf_wq".to_string(),
         named_out: true,
@@ -1645,7 +1645,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_init_rejects_const_only_target(
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_destroy() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1672,7 +1672,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_destroy() {
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_init() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1699,7 +1699,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_init() {
 
 #[test]
 fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_requires_unique() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1728,7 +1728,7 @@ fn test_infer_unknown_stack_object_lifecycle_arg_from_const_hints_requires_uniqu
 
 #[test]
 fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_selects_unique_out() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1749,7 +1749,7 @@ fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_selects_uniq
 
 #[test]
 fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_rejects_named_in() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1771,7 +1771,7 @@ fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_rejects_name
 
 #[test]
 fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_requires_unique_out() {
-    let args = vec![
+    let args = [
         UnknownStackObjectArgInfo {
             arg_idx: 0,
             type_name: "bpf_wq".to_string(),
@@ -1949,7 +1949,7 @@ fn test_known_dynptr_state_copies_require_input_source_and_output_destination() 
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_prefers_named_input() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -1973,7 +1973,7 @@ fn test_infer_unknown_dynptr_copy_args_prefers_named_input() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_requires_unique_source() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -1997,7 +1997,7 @@ fn test_infer_unknown_dynptr_copy_args_requires_unique_source() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_falls_back_without_out_hints() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2017,7 +2017,7 @@ fn test_infer_unknown_dynptr_copy_args_falls_back_without_out_hints() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_fallback_prefers_named_input() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2037,7 +2037,7 @@ fn test_infer_unknown_dynptr_copy_args_fallback_prefers_named_input() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_fallback_requires_two_args() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2061,7 +2061,7 @@ fn test_infer_unknown_dynptr_copy_args_fallback_requires_two_args() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_prefers_const_input_hint() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2085,7 +2085,7 @@ fn test_infer_unknown_dynptr_copy_args_prefers_const_input_hint() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_prefers_non_const_destination() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2109,7 +2109,7 @@ fn test_infer_unknown_dynptr_copy_args_prefers_non_const_destination() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_falls_back_to_const_destination() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2129,7 +2129,7 @@ fn test_infer_unknown_dynptr_copy_args_falls_back_to_const_destination() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_move_requires_writable_destination() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2149,7 +2149,7 @@ fn test_infer_unknown_dynptr_copy_args_move_requires_writable_destination() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_move_fallback_requires_writable_destination() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2169,7 +2169,7 @@ fn test_infer_unknown_dynptr_copy_args_move_fallback_requires_writable_destinati
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_allows_multiple_destinations_for_copy() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,
@@ -2193,7 +2193,7 @@ fn test_infer_unknown_dynptr_copy_args_allows_multiple_destinations_for_copy() {
 
 #[test]
 fn test_infer_unknown_dynptr_copy_args_move_requires_single_destination() {
-    let args = vec![
+    let args = [
         KfuncUnknownDynptrArg {
             arg_idx: 0,
             role: KfuncUnknownDynptrArgRole::In,

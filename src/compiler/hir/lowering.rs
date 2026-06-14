@@ -499,10 +499,9 @@ fn compute_block_starts(instructions: &[Instruction]) -> HashSet<usize> {
                 | Instruction::Return { .. }
                 | Instruction::ReturnEarly { .. }
                 | Instruction::Unreachable
-        ) {
-            if idx + 1 < instructions.len() {
-                starts.insert(idx + 1);
-            }
+        ) && idx + 1 < instructions.len()
+        {
+            starts.insert(idx + 1);
         }
     }
 

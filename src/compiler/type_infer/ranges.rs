@@ -140,13 +140,11 @@ impl<'a> TypeInference<'a> {
                                     }
                                 }
                             }
-                            if consistent {
-                                if let Some(c) = cap {
-                                    let entry = caps.entry(*dst).or_insert(c);
-                                    if *entry != c {
-                                        *entry = c;
-                                        changed = true;
-                                    }
+                            if consistent && let Some(c) = cap {
+                                let entry = caps.entry(*dst).or_insert(c);
+                                if *entry != c {
+                                    *entry = c;
+                                    changed = true;
                                 }
                             }
                         }
@@ -1653,6 +1651,7 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_range_inst(
         &self,
         inst: &MirInst,
@@ -1916,17 +1915,16 @@ impl<'a> TypeInference<'a> {
                 if matches!(
                     BpfHelper::from_u32(*helper),
                     Some(BpfHelper::ProbeReadKernel | BpfHelper::ProbeReadUser)
-                ) {
-                    if let [MirValue::StackSlot(slot), _, MirValue::VReg(src_ptr)] = args.as_slice()
-                    {
-                        let state_next = match reg_sources.get(src_ptr) {
-                            Some(SlotSourceState::Known(source)) => {
-                                SlotSourceState::Known(self.source_deref(source))
-                            }
-                            _ => SlotSourceState::Unknown,
-                        };
-                        slot_sources.insert(*slot, state_next);
-                    }
+                ) && let [MirValue::StackSlot(slot), _, MirValue::VReg(src_ptr)] =
+                    args.as_slice()
+                {
+                    let state_next = match reg_sources.get(src_ptr) {
+                        Some(SlotSourceState::Known(source)) => {
+                            SlotSourceState::Known(self.source_deref(source))
+                        }
+                        _ => SlotSourceState::Unknown,
+                    };
+                    slot_sources.insert(*slot, state_next);
                 }
                 if let Some(dst) = inst.def() {
                     self.set_state_range(state, dst, ValueRange::Unknown);
@@ -1944,6 +1942,7 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn propagate_range_state(
         &self,
         target: BlockId,

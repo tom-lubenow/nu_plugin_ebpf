@@ -155,10 +155,10 @@ pub(super) fn validate_struct_ops_attach_safety(
         ))
 }
 
-pub(super) fn validate_struct_ops_attach_target<'a>(
-    program_spec: &'a ProgramSpec,
+pub(super) fn validate_struct_ops_attach_target(
+    program_spec: &ProgramSpec,
     span: Span,
-) -> Result<&'a str, LabeledError> {
+) -> Result<&str, LabeledError> {
     let value_type_name = program_spec
         .struct_ops_value_type_name()
         .unwrap_or_else(|| unreachable!("struct_ops attach path requires a struct_ops spec"));
@@ -687,19 +687,18 @@ pub(super) fn validate_required_struct_ops_value_fields(
                 0
             };
 
-            if let Ok(enq_last) = resolve_sched_ext_flag_bit("SCX_OPS_ENQ_LAST", span) {
-                if (sched_ext_flags & enq_last) != 0
-                    && !matches!(body.get("enqueue"), Some(Value::Closure { .. }))
-                {
-                    return Err(LabeledError::new("Invalid struct_ops object")
-                        .with_label(
-                            "struct_ops 'sched_ext_ops' sets SCX_OPS_ENQ_LAST without implementing 'enqueue'",
-                            span,
-                        )
-                        .with_help(
-                            "Add an enqueue callback when using SCX_OPS_ENQ_LAST, or clear the flag to keep the default post-slice behavior",
-                        ));
-                }
+            if let Ok(enq_last) = resolve_sched_ext_flag_bit("SCX_OPS_ENQ_LAST", span)
+                && (sched_ext_flags & enq_last) != 0
+                && !matches!(body.get("enqueue"), Some(Value::Closure { .. }))
+            {
+                return Err(LabeledError::new("Invalid struct_ops object")
+                    .with_label(
+                        "struct_ops 'sched_ext_ops' sets SCX_OPS_ENQ_LAST without implementing 'enqueue'",
+                        span,
+                    )
+                    .with_help(
+                        "Add an enqueue callback when using SCX_OPS_ENQ_LAST, or clear the flag to keep the default post-slice behavior",
+                    ));
             }
 
             if matches!(body.get("update_idle"), Some(Value::Closure { .. }))
@@ -721,22 +720,20 @@ pub(super) fn validate_required_struct_ops_value_fields(
 
             if let Ok(builtin_idle_per_node) =
                 resolve_sched_ext_flag_bit("SCX_OPS_BUILTIN_IDLE_PER_NODE", span)
+                && (sched_ext_flags & builtin_idle_per_node) != 0
+                && matches!(body.get("update_idle"), Some(Value::Closure { .. }))
             {
-                if (sched_ext_flags & builtin_idle_per_node) != 0
-                    && matches!(body.get("update_idle"), Some(Value::Closure { .. }))
-                {
-                    let keep_builtin_idle =
-                        resolve_sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE", span)?;
-                    if (sched_ext_flags & keep_builtin_idle) == 0 {
-                        return Err(LabeledError::new("Invalid struct_ops object")
-                            .with_label(
-                                "struct_ops 'sched_ext_ops' sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
-                                span,
-                            )
-                            .with_help(
-                                "Either clear SCX_OPS_BUILTIN_IDLE_PER_NODE, or set SCX_OPS_KEEP_BUILTIN_IDLE when update_idle is implemented",
-                            ));
-                    }
+                let keep_builtin_idle =
+                    resolve_sched_ext_flag_bit("SCX_OPS_KEEP_BUILTIN_IDLE", span)?;
+                if (sched_ext_flags & keep_builtin_idle) == 0 {
+                    return Err(LabeledError::new("Invalid struct_ops object")
+                        .with_label(
+                            "struct_ops 'sched_ext_ops' sets SCX_OPS_BUILTIN_IDLE_PER_NODE without built-in CPU idle selection enabled",
+                            span,
+                        )
+                        .with_help(
+                            "Either clear SCX_OPS_BUILTIN_IDLE_PER_NODE, or set SCX_OPS_KEEP_BUILTIN_IDLE when update_idle is implemented",
+                        ));
                 }
             }
 

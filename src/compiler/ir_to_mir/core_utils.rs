@@ -1064,24 +1064,40 @@ impl<'a> HirToMirLowering<'a> {
             has_contains_metadata: bool,
         }
 
-        fn collect_managed_fields(
-            ty: &MirType,
+        struct FieldWalk {
             path: String,
             offset: usize,
             depth: usize,
             in_array: bool,
             repeat: usize,
-            timers: &mut Vec<ManagedField>,
-            spin_locks: &mut Vec<ManagedField>,
-            wqs: &mut Vec<ManagedField>,
-            refcounts: &mut Vec<ManagedField>,
-            dynptrs: &mut Vec<ManagedField>,
-            kptrs: &mut Vec<ManagedField>,
-            graph_roots: &mut Vec<GraphField>,
-            graph_nodes: &mut Vec<GraphField>,
+        }
+
+        #[derive(Default)]
+        struct ManagedFieldCollection {
+            timers: Vec<ManagedField>,
+            spin_locks: Vec<ManagedField>,
+            wqs: Vec<ManagedField>,
+            refcounts: Vec<ManagedField>,
+            dynptrs: Vec<ManagedField>,
+            kptrs: Vec<ManagedField>,
+            graph_roots: Vec<GraphField>,
+            graph_nodes: Vec<GraphField>,
+        }
+
+        fn collect_managed_fields(
+            ty: &MirType,
+            walk: FieldWalk,
+            fields: &mut ManagedFieldCollection,
         ) {
+            let FieldWalk {
+                path,
+                offset,
+                depth,
+                in_array,
+                repeat,
+            } = walk;
             if ty.is_bpf_timer_struct() {
-                timers.push(ManagedField {
+                fields.timers.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1092,7 +1108,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_spin_lock_struct() {
-                spin_locks.push(ManagedField {
+                fields.spin_locks.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1103,7 +1119,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_wq_struct() {
-                wqs.push(ManagedField {
+                fields.wqs.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1114,7 +1130,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_refcount_struct() {
-                refcounts.push(ManagedField {
+                fields.refcounts.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1125,7 +1141,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_dynptr_struct() {
-                dynptrs.push(ManagedField {
+                fields.dynptrs.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1136,7 +1152,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if let Some(pointee_name) = ty.bpf_kptr_pointee_name() {
-                kptrs.push(ManagedField {
+                fields.kptrs.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -1147,7 +1163,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if let Some(root) = ty.bpf_graph_root_info() {
-                graph_roots.push(GraphField {
+                fields.graph_roots.push(GraphField {
                     path,
                     offset,
                     depth,
@@ -1159,7 +1175,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_list_head_struct() {
-                graph_roots.push(GraphField {
+                fields.graph_roots.push(GraphField {
                     path,
                     offset,
                     depth,
@@ -1171,7 +1187,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_rb_root_struct() {
-                graph_roots.push(GraphField {
+                fields.graph_roots.push(GraphField {
                     path,
                     offset,
                     depth,
@@ -1183,7 +1199,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_list_node_struct() {
-                graph_nodes.push(GraphField {
+                fields.graph_nodes.push(GraphField {
                     path,
                     offset,
                     depth,
@@ -1195,7 +1211,7 @@ impl<'a> HirToMirLowering<'a> {
                 return;
             }
             if ty.is_bpf_rb_node_struct() {
-                graph_nodes.push(GraphField {
+                fields.graph_nodes.push(GraphField {
                     path,
                     offset,
                     depth,
@@ -1208,8 +1224,11 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             match ty {
-                MirType::Struct { fields, .. } => {
-                    for field in fields {
+                MirType::Struct {
+                    fields: struct_fields,
+                    ..
+                } => {
+                    for field in struct_fields {
                         let field_path = if path.is_empty() {
                             field.name.clone()
                         } else {
@@ -1217,38 +1236,28 @@ impl<'a> HirToMirLowering<'a> {
                         };
                         collect_managed_fields(
                             &field.ty,
-                            field_path,
-                            offset.saturating_add(field.offset),
-                            depth + 1,
-                            in_array,
-                            repeat,
-                            timers,
-                            spin_locks,
-                            wqs,
-                            refcounts,
-                            dynptrs,
-                            kptrs,
-                            graph_roots,
-                            graph_nodes,
+                            FieldWalk {
+                                path: field_path,
+                                offset: offset.saturating_add(field.offset),
+                                depth: depth + 1,
+                                in_array,
+                                repeat,
+                            },
+                            fields,
                         );
                     }
                 }
                 MirType::Array { elem, len } => {
                     collect_managed_fields(
                         elem,
-                        format!("{path}[]"),
-                        offset,
-                        depth + 1,
-                        true,
-                        repeat.saturating_mul(*len),
-                        timers,
-                        spin_locks,
-                        wqs,
-                        refcounts,
-                        dynptrs,
-                        kptrs,
-                        graph_roots,
-                        graph_nodes,
+                        FieldWalk {
+                            path: format!("{path}[]"),
+                            offset,
+                            depth: depth + 1,
+                            in_array: true,
+                            repeat: repeat.saturating_mul(*len),
+                        },
+                        fields,
                     );
                 }
                 _ => {}
@@ -1263,30 +1272,28 @@ impl<'a> HirToMirLowering<'a> {
             fields.iter().map(|field| field.repeat.max(1)).sum()
         }
 
-        let mut timers = Vec::new();
-        let mut spin_locks = Vec::new();
-        let mut wqs = Vec::new();
-        let mut refcounts = Vec::new();
-        let mut dynptrs = Vec::new();
-        let mut kptrs = Vec::new();
-        let mut graph_roots = Vec::new();
-        let mut graph_nodes = Vec::new();
+        let mut managed_fields = ManagedFieldCollection::default();
         collect_managed_fields(
             ty,
-            "value".to_string(),
-            0,
-            0,
-            false,
-            1,
-            &mut timers,
-            &mut spin_locks,
-            &mut wqs,
-            &mut refcounts,
-            &mut dynptrs,
-            &mut kptrs,
-            &mut graph_roots,
-            &mut graph_nodes,
+            FieldWalk {
+                path: "value".to_string(),
+                offset: 0,
+                depth: 0,
+                in_array: false,
+                repeat: 1,
+            },
+            &mut managed_fields,
         );
+        let ManagedFieldCollection {
+            timers,
+            spin_locks,
+            wqs,
+            refcounts,
+            dynptrs,
+            kptrs,
+            graph_roots,
+            graph_nodes,
+        } = managed_fields;
 
         let spin_lock_count = total_occurrences(&spin_locks);
         if spin_lock_count > 0 {
@@ -1603,6 +1610,23 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn register_named_map_extra(&mut self, map: &MapRef, map_extra: u64) {
+        if self.conflicting_map_extras.contains(map) {
+            return;
+        }
+
+        match self.map_extras.get(map) {
+            Some(existing) if *existing != map_extra => {
+                self.map_extras.remove(map);
+                self.conflicting_map_extras.insert(map.clone());
+            }
+            Some(_) => {}
+            None => {
+                self.map_extras.insert(map.clone(), map_extra);
+            }
+        }
+    }
+
     pub(super) fn register_named_map_inner_template(
         &mut self,
         outer: &MapRef,
@@ -1700,6 +1724,14 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn named_map_extra(&self, map: &MapRef) -> Option<u64> {
+        if self.conflicting_map_extras.contains(map) {
+            None
+        } else {
+            self.map_extras.get(map).copied()
+        }
+    }
+
     pub(super) fn named_map_value_semantics(
         &self,
         map: &MapRef,
@@ -1724,9 +1756,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let needed = align_to_eight(required_len.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let needed = align_to_eight(required_len.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let slot_entry = self
             .func
             .stack_slots

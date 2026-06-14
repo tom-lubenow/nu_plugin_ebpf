@@ -33,22 +33,34 @@ fn kfunc_arg_accepts_raw_skb_context_source(
     probe_ctx
         .map(|ctx| ctx.program_type())
         .or_else(|| program.map(|program| program.program_type))
-        .map_or(true, |program_type| {
-            program_type.kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
-        })
+        .is_none_or(|program_type| program_type.kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx))
 }
 
-pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
-    kfunc: &str,
-    arg_idx: usize,
-    arg: VReg,
-    expected: KfuncArgKind,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
-    program: Option<&ProgramTypeInfo>,
-    probe_ctx: Option<&ProbeContext>,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+pub(in crate::compiler::verifier_types) struct KfuncArgCheck<'a, 'errors> {
+    pub(in crate::compiler::verifier_types) kfunc: &'a str,
+    pub(in crate::compiler::verifier_types) arg_idx: usize,
+    pub(in crate::compiler::verifier_types) arg: VReg,
+    pub(in crate::compiler::verifier_types) expected: KfuncArgKind,
+    pub(in crate::compiler::verifier_types) types: &'a HashMap<VReg, MirType>,
+    pub(in crate::compiler::verifier_types) state: &'a VerifierState,
+    pub(in crate::compiler::verifier_types) program: Option<&'a ProgramTypeInfo>,
+    pub(in crate::compiler::verifier_types) probe_ctx: Option<&'a ProbeContext>,
+    pub(in crate::compiler::verifier_types) errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+pub(in crate::compiler::verifier_types) fn check_kfunc_arg(check: KfuncArgCheck<'_, '_>) {
+    let KfuncArgCheck {
+        kfunc,
+        arg_idx,
+        arg,
+        expected,
+        types,
+        state,
+        program,
+        probe_ctx,
+        errors,
+    } = check;
+
     let ty = state.get(arg);
     match expected {
         KfuncArgKind::Scalar => {
@@ -211,30 +223,29 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                         }
                     }
                     if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
+                        && let Some(ref_id) = kfunc_ref
                     {
-                        if let Some(ref_id) = kfunc_ref {
-                            if !state.is_live_kfunc_ref(ref_id) {
-                                errors.push(VerifierTypeError::new(format!(
-                                    "kfunc '{}' arg{} reference already released",
-                                    kfunc, arg_idx
-                                )));
-                                return;
-                            }
-                            if !matches!(nullability, Nullability::NonNull) {
-                                errors.push(VerifierTypeError::new(format!(
-                                    "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
-                                    kfunc, arg_idx, arg.0
-                                )));
-                            }
-                            let actual_kind = state.kfunc_ref_kind(ref_id);
-                            if actual_kind != Some(expected_kind) {
-                                let expected = expected_kind.label();
-                                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
-                                errors.push(VerifierTypeError::new(format!(
-                                    "kfunc '{}' arg{} expects {} reference, got {} reference",
-                                    kfunc, arg_idx, expected, actual
-                                )));
-                            }
+                        if !state.is_live_kfunc_ref(ref_id) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} reference already released",
+                                kfunc, arg_idx
+                            )));
+                            return;
+                        }
+                        if !matches!(nullability, Nullability::NonNull) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} may dereference null pointer v{} (add a null check)",
+                                kfunc, arg_idx, arg.0
+                            )));
+                        }
+                        let actual_kind = state.kfunc_ref_kind(ref_id);
+                        if actual_kind != Some(expected_kind) {
+                            let expected = expected_kind.label();
+                            let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects {} reference, got {} reference",
+                                kfunc, arg_idx, expected, actual
+                            )));
                         }
                     }
                 }
@@ -311,20 +322,36 @@ pub(in crate::compiler::verifier_types) fn kfunc_allowed_spaces(
     }
 }
 
-pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
-    kfunc: &str,
+struct KfuncPtrArgValueCheck<'a, 'errors> {
+    kfunc: &'a str,
     arg_idx: usize,
     arg: VReg,
-    op: &str,
+    op: &'a str,
     allow_stack: bool,
     allow_map: bool,
     allow_kernel: bool,
     allow_user: bool,
     access_size: Option<usize>,
     require_stack_slot_base: bool,
-    state: &VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-) {
+    state: &'a VerifierState,
+    errors: &'errors mut Vec<VerifierTypeError>,
+}
+
+fn check_kfunc_ptr_arg_value(check: KfuncPtrArgValueCheck<'_, '_>) {
+    let KfuncPtrArgValueCheck {
+        kfunc,
+        arg_idx,
+        arg,
+        op,
+        allow_stack,
+        allow_map,
+        allow_kernel,
+        allow_user,
+        access_size,
+        require_stack_slot_base,
+        state,
+        errors,
+    } = check;
     if kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx)
         && matches!(state.get(arg), VerifierType::Scalar | VerifierType::Bool)
         && matches!(
@@ -455,20 +482,23 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
                 kfunc, size_arg, rule.op
             )));
         }
-        check_kfunc_ptr_arg_value(
+        check_kfunc_ptr_arg_value(KfuncPtrArgValueCheck {
             kfunc,
-            rule.arg_idx,
-            *arg,
-            rule.op,
-            rule.allowed.allow_stack,
-            rule.allowed.allow_map,
-            rule.allowed.allow_kernel,
-            rule.allowed.allow_user,
+            arg_idx: rule.arg_idx,
+            arg: *arg,
+            op: rule.op,
+            allow_stack: rule.allowed.allow_stack,
+            allow_map: rule.allowed.allow_map,
+            allow_kernel: rule.allowed.allow_kernel,
+            allow_user: rule.allowed.allow_user,
             access_size,
-            kfunc_pointer_arg_requires_stack_slot_base(kfunc, rule.arg_idx),
+            require_stack_slot_base: kfunc_pointer_arg_requires_stack_slot_base(
+                kfunc,
+                rule.arg_idx,
+            ),
             state,
             errors,
-        );
+        });
     }
 
     for (idx, arg) in args.iter().enumerate() {
@@ -521,20 +551,20 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             continue;
         }
         let op = format!("kfunc '{}' arg{} pointer access", kfunc, ptr_arg_idx);
-        check_kfunc_ptr_arg_value(
+        check_kfunc_ptr_arg_value(KfuncPtrArgValueCheck {
             kfunc,
-            ptr_arg_idx,
-            *arg,
-            &op,
-            true,
-            true,
-            true,
-            true,
-            Some(access_size),
-            kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx),
+            arg_idx: ptr_arg_idx,
+            arg: *arg,
+            op: &op,
+            allow_stack: true,
+            allow_map: true,
+            allow_kernel: true,
+            allow_user: true,
+            access_size: Some(access_size),
+            require_stack_slot_base: kfunc_pointer_arg_requires_stack_slot_base(kfunc, ptr_arg_idx),
             state,
             errors,
-        );
+        });
     }
 
     for (idx, arg) in args.iter().enumerate() {

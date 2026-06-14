@@ -154,15 +154,15 @@ mod tests {
     #[test]
     fn test_resolve_symbol() {
         // This test requires /proc/kallsyms to be readable
-        if let Ok(syms) = KernelSymbols::load() {
-            if syms.is_available() {
-                // Try to resolve the first symbol
-                let first_addr = syms.symbols.first().map(|(a, _)| *a).unwrap_or(0);
-                if first_addr != 0 {
-                    let resolved = syms.resolve(first_addr);
-                    assert!(resolved.is_some());
-                    assert_eq!(resolved.as_ref().unwrap().offset, 0);
-                }
+        if let Ok(syms) = KernelSymbols::load()
+            && syms.is_available()
+        {
+            // Try to resolve the first symbol
+            let first_addr = syms.symbols.first().map(|(a, _)| *a).unwrap_or(0);
+            if first_addr != 0 {
+                let resolved = syms.resolve(first_addr);
+                assert!(resolved.is_some());
+                assert_eq!(resolved.as_ref().unwrap().offset, 0);
             }
         }
     }

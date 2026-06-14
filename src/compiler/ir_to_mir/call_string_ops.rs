@@ -50,6 +50,71 @@ struct RuntimeStringDynamicEnd {
     distance_from_end: usize,
 }
 
+struct TypedFixedStringArrayEndsWith<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    suffix_reg: RegId,
+    suffix: &'a str,
+    ignore_case: bool,
+}
+
+struct TypedFixedStringArrayContains<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    needle_reg: RegId,
+    needle: &'a str,
+    ignore_case: bool,
+}
+
+struct TypedFixedStringArrayIndexOf<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    needle_reg: RegId,
+    needle: &'a str,
+    search_from_end: bool,
+    use_grapheme_clusters: bool,
+}
+
+struct TypedFixedStringArrayTrim {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    trim_char: Option<char>,
+    trim_left: bool,
+    trim_right: bool,
+}
+
+struct RuntimeIntegerFillResult<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_vreg: VReg,
+    input_max_digits: usize,
+    width: usize,
+    alignment: FillAlignment,
+    fill: &'a str,
+}
+
+struct TypedFixedStringArrayReplace<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    find_reg: RegId,
+    find: &'a str,
+    replacement: &'a str,
+    replace_all: bool,
+    use_regex: bool,
+    no_expand: bool,
+    multiline: bool,
+}
+
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
 const MAX_RUNTIME_FILL_DIGIT_THRESHOLD: usize = 18;
@@ -57,6 +122,121 @@ const MAX_STACK_NUMERIC_LIST_CAPACITY: usize = 60;
 const MAX_TYPED_STRING_ARRAY_REPLACE_PROBES: usize = MAX_STRING_SIZE - 1;
 const MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES: usize = MAX_STRING_SIZE - 1;
 const MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES: usize = MAX_STRING_SIZE - 1;
+const NAMED_CHAR_HEX: &[(&str, &str)] = &[
+    ("nul", "0"),
+    ("null_byte", "0"),
+    ("zero_byte", "0"),
+    ("newline", "a"),
+    ("enter", "a"),
+    ("nl", "a"),
+    ("line_feed", "a"),
+    ("lf", "a"),
+    ("carriage_return", "d"),
+    ("cr", "d"),
+    ("crlf", "d a"),
+    ("tab", "9"),
+    ("sp", "20"),
+    ("space", "20"),
+    ("pipe", "7c"),
+    ("left_brace", "7b"),
+    ("lbrace", "7b"),
+    ("right_brace", "7d"),
+    ("rbrace", "7d"),
+    ("left_paren", "28"),
+    ("lp", "28"),
+    ("lparen", "28"),
+    ("right_paren", "29"),
+    ("rparen", "29"),
+    ("rp", "29"),
+    ("left_bracket", "5b"),
+    ("lbracket", "5b"),
+    ("right_bracket", "5d"),
+    ("rbracket", "5d"),
+    ("single_quote", "27"),
+    ("squote", "27"),
+    ("sq", "27"),
+    ("double_quote", "22"),
+    ("dquote", "22"),
+    ("dq", "22"),
+    ("path_sep", "2f"),
+    ("psep", "2f"),
+    ("separator", "2f"),
+    ("eol", "a"),
+    ("lsep", "a"),
+    ("line_sep", "a"),
+    ("esep", "3a"),
+    ("env_sep", "3a"),
+    ("tilde", "7e"),
+    ("twiddle", "7e"),
+    ("squiggly", "7e"),
+    ("home", "7e"),
+    ("hash", "23"),
+    ("hashtag", "23"),
+    ("pound_sign", "23"),
+    ("sharp", "23"),
+    ("root", "23"),
+    ("nf_branch", "e0a0"),
+    ("nf_segment", "e0b0"),
+    ("nf_left_segment", "e0b0"),
+    ("nf_left_segment_thin", "e0b1"),
+    ("nf_right_segment", "e0b2"),
+    ("nf_right_segment_thin", "e0b3"),
+    ("nf_git", "f1d3"),
+    ("nf_git_branch", "e709 e0a0"),
+    ("nf_folder1", "f07c"),
+    ("nf_folder2", "f115"),
+    ("nf_house1", "f015"),
+    ("nf_house2", "f7db"),
+    ("identical_to", "2261"),
+    ("hamburger", "2261"),
+    ("not_identical_to", "2262"),
+    ("branch_untracked", "2262"),
+    ("strictly_equivalent_to", "2263"),
+    ("branch_identical", "2263"),
+    ("upwards_arrow", "2191"),
+    ("branch_ahead", "2191"),
+    ("downwards_arrow", "2193"),
+    ("branch_behind", "2193"),
+    ("up_down_arrow", "2195"),
+    ("branch_ahead_behind", "2195"),
+    ("black_right_pointing_triangle", "25b6"),
+    ("prompt", "25b6"),
+    ("vector_or_cross_product", "2a2f"),
+    ("failed", "2a2f"),
+    ("high_voltage_sign", "26a1"),
+    ("elevated", "26a1"),
+    ("sun", "2600 fe0f"),
+    ("sunny", "2600 fe0f"),
+    ("sunrise", "2600 fe0f"),
+    ("moon", "1f31b"),
+    ("cloudy", "2601 fe0f"),
+    ("cloud", "2601 fe0f"),
+    ("clouds", "2601 fe0f"),
+    ("rainy", "1f326 fe0f"),
+    ("rain", "1f326 fe0f"),
+    ("foggy", "1f32b fe0f"),
+    ("fog", "1f32b fe0f"),
+    ("mist", "2591"),
+    ("haze", "2591"),
+    ("snowy", "2744 fe0f"),
+    ("snow", "2744 fe0f"),
+    ("thunderstorm", "1f329 fe0f"),
+    ("thunder", "1f329 fe0f"),
+    ("bel", "7"),
+    ("backspace", "8"),
+    ("file_separator", "1c"),
+    ("file_sep", "1c"),
+    ("fs", "1c"),
+    ("group_separator", "1d"),
+    ("group_sep", "1d"),
+    ("gs", "1d"),
+    ("record_separator", "1e"),
+    ("record_sep", "1e"),
+    ("rs", "1e"),
+    ("unit_separator", "1f"),
+    ("unit_sep", "1f"),
+    ("us", "1f"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -71,6 +251,7 @@ enum StringLengthMode {
     Utf8Bytes,
     Chars,
     GraphemeClusters,
+    UnicodeWidth,
 }
 
 enum KnownFillInput {
@@ -79,6 +260,45 @@ enum KnownFillInput {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn typed_fixed_string_array_type(ty: &MirType) -> Option<(&MirType, usize)> {
+        match ty {
+            MirType::Array { elem, len } => Some((elem.as_ref(), *len)),
+            MirType::Ptr {
+                pointee,
+                address_space:
+                    AddressSpace::Stack
+                    | AddressSpace::Map
+                    | AddressSpace::Context
+                    | AddressSpace::Kernel,
+            } => match pointee.as_ref() {
+                MirType::Array { elem, len } => Some((elem.as_ref(), *len)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn validate_typed_fixed_string_array_address_space(
+        cmd_name: &str,
+        address_space: AddressSpace,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context | AddressSpace::Kernel
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires stack, map, context, or trusted-kernel typed fixed string-array pointer input in eBPF"
+            )));
+        }
+        if address_space == AddressSpace::Kernel && !input_meta.trusted_btf {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires trusted BTF provenance for kernel typed fixed string-array pointer input in eBPF"
+            )));
+        }
+        Ok(())
+    }
+
     pub(super) fn lower_char(
         &mut self,
         src_dst: RegId,
@@ -104,9 +324,8 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         if self.named_flags.iter().any(|flag| flag == "list") {
-            return Err(CompileError::UnsupportedInstruction(
-                "char --list produces a table and is not supported in eBPF".into(),
-            ));
+            let output = Self::known_named_char_list_value()?;
+            return self.lower_compile_time_list_transform_result(src_dst, &output);
         }
         let unicode = self.named_flags.iter().any(|flag| flag == "unicode");
         let integer = self.named_flags.iter().any(|flag| flag == "integer");
@@ -137,12 +356,6 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?
         };
-        if output.bytes().any(|byte| byte == 0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "char output containing NUL bytes is not supported in eBPF".into(),
-            ));
-        }
-
         self.lower_known_string_result(src_dst, dst_vreg, output)
     }
 
@@ -166,11 +379,10 @@ impl<'a> HirToMirLowering<'a> {
             let codepoint = self
                 .get_metadata(*reg)
                 .and_then(|meta| {
-                    meta.literal_int
-                        .or_else(|| match meta.constant_value.as_ref() {
-                            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                            _ => None,
-                        })
+                    meta.literal_int.or(match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                        _ => None,
+                    })
                 })
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -189,63 +401,34 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn known_named_char(name: &str) -> Option<String> {
-        let hex = match name {
-            "nul" | "null_byte" | "zero_byte" => "0",
-            "newline" | "enter" | "nl" | "line_feed" | "lf" | "eol" | "lsep" | "line_sep" => "a",
-            "carriage_return" | "cr" => "d",
-            "crlf" => "d a",
-            "tab" => "9",
-            "sp" | "space" => "20",
-            "pipe" => "7c",
-            "left_brace" | "lbrace" => "7b",
-            "right_brace" | "rbrace" => "7d",
-            "left_paren" | "lp" | "lparen" => "28",
-            "right_paren" | "rparen" | "rp" => "29",
-            "left_bracket" | "lbracket" => "5b",
-            "right_bracket" | "rbracket" => "5d",
-            "single_quote" | "squote" | "sq" => "27",
-            "double_quote" | "dquote" | "dq" => "22",
-            "path_sep" | "psep" | "separator" => "2f",
-            "esep" | "env_sep" => "3a",
-            "tilde" | "twiddle" | "squiggly" | "home" => "7e",
-            "hash" | "hashtag" | "pound_sign" | "sharp" | "root" => "23",
-            "nf_branch" => "e0a0",
-            "nf_segment" | "nf_left_segment" => "e0b0",
-            "nf_left_segment_thin" => "e0b1",
-            "nf_right_segment" => "e0b2",
-            "nf_right_segment_thin" => "e0b3",
-            "nf_git" => "f1d3",
-            "nf_git_branch" => "e709 e0a0",
-            "nf_folder1" => "f07c",
-            "nf_folder2" => "f115",
-            "nf_house1" => "f015",
-            "nf_house2" => "f7db",
-            "identical_to" | "hamburger" => "2261",
-            "not_identical_to" | "branch_untracked" => "2262",
-            "strictly_equivalent_to" | "branch_identical" => "2263",
-            "upwards_arrow" | "branch_ahead" => "2191",
-            "downwards_arrow" | "branch_behind" => "2193",
-            "up_down_arrow" | "branch_ahead_behind" => "2195",
-            "black_right_pointing_triangle" | "prompt" => "25b6",
-            "vector_or_cross_product" | "failed" => "2a2f",
-            "high_voltage_sign" | "elevated" => "26a1",
-            "sun" | "sunny" | "sunrise" => "2600 fe0f",
-            "moon" => "1f31b",
-            "cloudy" | "cloud" | "clouds" => "2601 fe0f",
-            "rainy" | "rain" => "1f326 fe0f",
-            "foggy" | "fog" => "1f32b fe0f",
-            "mist" | "haze" => "2591",
-            "snowy" | "snow" => "2744 fe0f",
-            "thunderstorm" | "thunder" => "1f329 fe0f",
-            "bel" => "7",
-            "backspace" => "8",
-            "file_separator" | "file_sep" | "fs" => "1c",
-            "group_separator" | "group_sep" | "gs" => "1d",
-            "record_separator" | "record_sep" | "rs" => "1e",
-            "unit_separator" | "unit_sep" | "us" => "1f",
-            _ => return None,
-        };
+        let hex = Self::known_named_char_hex(name)?;
         Self::chars_from_hex_sequence(hex).ok()
+    }
+
+    fn known_named_char_hex(name: &str) -> Option<&'static str> {
+        NAMED_CHAR_HEX
+            .iter()
+            .find_map(|(candidate, hex)| (*candidate == name).then_some(*hex))
+    }
+
+    fn known_named_char_list_value() -> Result<nu_protocol::Value, CompileError> {
+        let rows = NAMED_CHAR_HEX
+            .iter()
+            .map(|(name, hex)| {
+                let mut record = nu_protocol::Record::new();
+                record.push("name", nu_protocol::Value::string(*name, Span::unknown()));
+                record.push(
+                    "character",
+                    nu_protocol::Value::string(
+                        Self::chars_from_hex_sequence(hex)?,
+                        Span::unknown(),
+                    ),
+                );
+                record.push("unicode", nu_protocol::Value::string(*hex, Span::unknown()));
+                Ok(nu_protocol::Value::record(record, Span::unknown()))
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        Ok(nu_protocol::Value::list(rows, Span::unknown()))
     }
 
     fn chars_from_hex_sequence(hex: &str) -> Result<String, CompileError> {
@@ -322,7 +505,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         match length_mode {
-            StringLengthMode::Chars | StringLengthMode::GraphemeClusters => {
+            StringLengthMode::Chars
+            | StringLengthMode::GraphemeClusters
+            | StringLengthMode::UnicodeWidth => {
                 let input = self.exact_string_input(input_reg, "str length")?;
                 return self.lower_i64_result(
                     src_dst,
@@ -373,7 +558,10 @@ impl<'a> HirToMirLowering<'a> {
         mut input_vreg: VReg,
         length_mode: StringLengthMode,
     ) -> Result<bool, CompileError> {
-        if length_mode == StringLengthMode::GraphemeClusters {
+        if matches!(
+            length_mode,
+            StringLengthMode::GraphemeClusters | StringLengthMode::UnicodeWidth
+        ) {
             return Ok(false);
         }
 
@@ -393,15 +581,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -412,15 +597,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str length requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str length requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -453,6 +636,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str length",
+            address_space,
+            &input_meta,
+        )?;
 
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, array_len);
         for index in 0..array_len {
@@ -495,7 +683,9 @@ impl<'a> HirToMirLowering<'a> {
                 StringLengthMode::Chars => {
                     self.lower_typed_fixed_string_slot_char_count(element_ptr, len_vreg, *slot_len)?
                 }
-                StringLengthMode::GraphemeClusters => unreachable!("checked above"),
+                StringLengthMode::GraphemeClusters | StringLengthMode::UnicodeWidth => {
+                    unreachable!("checked above")
+                }
             };
             self.emit(MirInst::ListPush {
                 list: result_vreg,
@@ -607,9 +797,10 @@ impl<'a> HirToMirLowering<'a> {
                 "utf-8-bytes" => StringLengthMode::Utf8Bytes,
                 "chars" => StringLengthMode::Chars,
                 "grapheme-clusters" => StringLengthMode::GraphemeClusters,
+                "unicode-width" => StringLengthMode::UnicodeWidth,
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(
-                        "str length currently supports only --utf-8-bytes, --chars, and --grapheme-clusters flags in eBPF"
+                        "str length currently supports only --utf-8-bytes, --chars, --grapheme-clusters, and --unicode-width flags in eBPF"
                             .into(),
                     ));
                 }
@@ -630,6 +821,7 @@ impl<'a> HirToMirLowering<'a> {
             StringLengthMode::GraphemeClusters => {
                 UnicodeSegmentation::graphemes(input, true).count() as i64
             }
+            StringLengthMode::UnicodeWidth => Self::string_stats_unicode_width(input) as i64,
         }
     }
 
@@ -666,11 +858,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let prefix = self.literal_string_arg(prefix_reg, "str starts-with")?;
-        if prefix.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str starts-with does not support NUL bytes in the prefix in eBPF".into(),
-            ));
-        }
         if let Some(input) = self.exact_string_list_input(input_reg, "str starts-with")? {
             let prefix = if ignore_case {
                 prefix.to_lowercase()
@@ -822,15 +1009,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -841,15 +1025,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str starts-with requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str starts-with requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -883,6 +1065,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str starts-with",
+            address_space,
+            &input_meta,
+        )?;
 
         let prefix_len = prefix.len();
         let prefix_too_long = prefix_len > *content_cap;
@@ -1095,14 +1282,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_string_array_ends_with(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        suffix_reg: RegId,
-        suffix: &str,
-        ignore_case: bool,
+        search: TypedFixedStringArrayEndsWith<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedStringArrayEndsWith {
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            suffix_reg,
+            suffix,
+            ignore_case,
+        } = search;
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -1130,15 +1321,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -1149,15 +1337,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str ends-with requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str ends-with requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -1190,6 +1376,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str ends-with",
+            address_space,
+            &input_meta,
+        )?;
 
         let suffix_len = suffix.len();
         let suffix_too_long = suffix_len > *content_cap;
@@ -1342,11 +1533,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let suffix = self.literal_string_arg(suffix_reg, "str ends-with")?;
-        if suffix.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str ends-with does not support NUL bytes in the suffix in eBPF".into(),
-            ));
-        }
         if let Some(input) = self.exact_string_list_input(input_reg, "str ends-with")? {
             let suffix = if ignore_case {
                 suffix.to_lowercase()
@@ -1369,15 +1555,15 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_ends_with(
+            && self.lower_typed_fixed_string_array_ends_with(TypedFixedStringArrayEndsWith {
                 src_dst,
                 result_vreg,
                 input_reg,
                 input_vreg,
                 suffix_reg,
-                &suffix,
+                suffix: &suffix,
                 ignore_case,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -1501,11 +1687,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let needle = self.literal_string_arg(needle_reg, "str contains")?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str contains does not support NUL bytes in the substring in eBPF".into(),
-            ));
-        }
         if let Some(input) = self.exact_string_list_input(input_reg, "str contains")? {
             let needle = if ignore_case {
                 needle.to_lowercase()
@@ -1528,15 +1709,15 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_contains(
+            && self.lower_typed_fixed_string_array_contains(TypedFixedStringArrayContains {
                 src_dst,
                 result_vreg,
                 input_reg,
                 input_vreg,
                 needle_reg,
-                &needle,
+                needle: &needle,
                 ignore_case,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -1588,14 +1769,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_string_array_contains(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        needle_reg: RegId,
-        needle: &str,
-        ignore_case: bool,
+        search: TypedFixedStringArrayContains<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedStringArrayContains {
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            needle_reg,
+            needle,
+            ignore_case,
+        } = search;
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -1623,15 +1808,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -1642,15 +1824,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str contains requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str contains requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -1683,6 +1863,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str contains",
+            address_space,
+            &input_meta,
+        )?;
 
         let needle_len = needle.len();
         let needle_too_long = needle_len > *content_cap;
@@ -2042,12 +2227,6 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if separator.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str join on typed fixed string arrays does not support NUL bytes in the separator in eBPF"
-                    .into(),
-            ));
-        }
         if *content_cap > STRING_APPEND_COPY_CAP {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "str join on typed fixed string arrays supports string elements up to {STRING_APPEND_COPY_CAP} bytes in eBPF"
@@ -2058,15 +2237,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -2077,15 +2253,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str join requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str join requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -2135,9 +2309,8 @@ impl<'a> HirToMirLowering<'a> {
                 MAX_STRING_SIZE
             )));
         }
-        let output_slot_len = align_to_eight(output_bound.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let output_slot_len =
+            align_to_eight(output_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let output_slot =
             self.func
                 .alloc_stack_slot(output_slot_len, 8, StackSlotKind::StringBuffer);
@@ -2183,16 +2356,31 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str join",
+            address_space,
+            &input_meta,
+        )?;
 
         for index in 0..array_len {
             if index > 0 && !separator.is_empty() {
+                let separator_bytes = separator.as_bytes().to_vec();
+                let val_type = if separator_bytes.contains(&0) {
+                    let len = separator_bytes.len();
+                    StringAppendType::LiteralExact {
+                        bytes: separator_bytes,
+                        len,
+                    }
+                } else {
+                    StringAppendType::Literal {
+                        bytes: separator_bytes,
+                    }
+                };
                 self.emit(MirInst::StringAppend {
                     dst_buffer: output_slot,
                     dst_len: len_vreg,
                     val: MirValue::Const(0),
-                    val_type: StringAppendType::Literal {
-                        bytes: separator.as_bytes().to_vec(),
-                    },
+                    val_type,
                 });
             }
 
@@ -2286,11 +2474,10 @@ impl<'a> HirToMirLowering<'a> {
             let raw = self
                 .get_metadata(number_reg)
                 .and_then(|meta| {
-                    meta.literal_int
-                        .or_else(|| match meta.constant_value.as_ref() {
-                            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                            _ => None,
-                        })
+                    meta.literal_int.or(match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                        _ => None,
+                    })
                 })
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -2524,14 +2711,13 @@ impl<'a> HirToMirLowering<'a> {
             self.named_args.get("min-word-length").copied()
         {
             let raw = self
-                    .get_metadata(min_word_len_reg)
-                    .and_then(|meta| {
-                        meta.literal_int
-                            .or_else(|| match meta.constant_value.as_ref() {
-                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                                _ => None,
-                            })
+                .get_metadata(min_word_len_reg)
+                .and_then(|meta| {
+                    meta.literal_int.or(match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                        _ => None,
                     })
+                })
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "split words --min-word-length requires a compile-time known integer in eBPF"
@@ -2768,11 +2954,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let needle = self.literal_string_arg(needle_reg, "str index-of")?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str index-of does not support NUL bytes in the substring in eBPF".into(),
-            ));
-        }
         if let Some(input) = self.exact_string_list_input(input_reg, "str index-of")? {
             let mut output = Vec::with_capacity(input.len());
             for item in input {
@@ -2801,16 +2982,16 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_index_of(
+            && self.lower_typed_fixed_string_array_index_of(TypedFixedStringArrayIndexOf {
                 src_dst,
                 result_vreg,
                 input_reg,
                 input_vreg,
                 needle_reg,
-                &needle,
+                needle: &needle,
                 search_from_end,
                 use_grapheme_clusters,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -2883,15 +3064,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_string_array_index_of(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        needle_reg: RegId,
-        needle: &str,
-        search_from_end: bool,
-        use_grapheme_clusters: bool,
+        search: TypedFixedStringArrayIndexOf<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedStringArrayIndexOf {
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            needle_reg,
+            needle,
+            search_from_end,
+            use_grapheme_clusters,
+        } = search;
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -2919,15 +3104,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -2938,15 +3120,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str index-of requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str index-of requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -2979,6 +3159,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str index-of",
+            address_space,
+            &input_meta,
+        )?;
 
         let bounds = self.string_index_of_runtime_search_bounds(*content_cap, search_from_end)?;
         let needle_len = needle.len();
@@ -3759,15 +3944,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -3778,15 +3960,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str substring requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str substring requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -3814,6 +3994,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str substring",
+            address_space,
+            &input_meta,
+        )?;
 
         let output_slot_len = align_to_eight(output_content_cap.saturating_add(1)).max(16);
         let output_elem_size = 8usize.checked_add(output_slot_len).ok_or_else(|| {
@@ -4121,19 +4306,19 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_replace(
+            && self.lower_typed_fixed_string_array_replace(TypedFixedStringArrayReplace {
                 src_dst,
                 result_vreg,
                 input_reg,
                 input_vreg,
-                self.positional_args[0].1,
-                &find,
-                &replacement,
+                find_reg: self.positional_args[0].1,
+                find: &find,
+                replacement: &replacement,
                 replace_all,
                 use_regex,
                 no_expand,
                 multiline,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -4291,18 +4476,22 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_string_array_replace(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        find_reg: RegId,
-        find: &str,
-        replacement: &str,
-        replace_all: bool,
-        use_regex: bool,
-        no_expand: bool,
-        multiline: bool,
+        replace: TypedFixedStringArrayReplace<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedStringArrayReplace {
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            find_reg,
+            find,
+            replacement,
+            replace_all,
+            use_regex,
+            no_expand,
+            multiline,
+        } = replace;
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -4331,12 +4520,6 @@ impl<'a> HirToMirLowering<'a> {
                     .into(),
             ));
         }
-        if find.as_bytes().contains(&0) || replacement.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str replace on typed fixed string arrays does not support NUL bytes in eBPF"
-                    .into(),
-            ));
-        }
         if find.len() != replacement.len() {
             return Err(CompileError::UnsupportedInstruction(
                 "str replace on typed fixed string arrays requires replacement length to equal find length in eBPF"
@@ -4348,15 +4531,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -4367,15 +4547,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str replace requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str replace requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -4403,6 +4581,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str replace",
+            address_space,
+            &input_meta,
+        )?;
         let out_ty = MirType::Array {
             elem: Box::new(elem_ty.clone()),
             len: array_len,
@@ -4944,9 +5127,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let max_len = outputs.iter().map(String::len).max().unwrap_or(0);
-        let aligned_len = align_to_eight(max_len.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let aligned_len = align_to_eight(max_len.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let elem_ty = MirType::Array {
             elem: Box::new(MirType::U8),
             len: 8 + aligned_len,
@@ -5105,7 +5286,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_trim(
+            && self.lower_typed_fixed_string_array_trim(TypedFixedStringArrayTrim {
                 src_dst,
                 result_vreg,
                 input_reg,
@@ -5113,7 +5294,7 @@ impl<'a> HirToMirLowering<'a> {
                 trim_char,
                 trim_left,
                 trim_right,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -5153,11 +5334,6 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
         let byte = encoded.as_bytes()[0];
-        if byte == 0 {
-            return Err(CompileError::UnsupportedInstruction(
-                "str trim on typed fixed string arrays does not support NUL --char in eBPF".into(),
-            ));
-        }
         Ok(byte)
     }
 
@@ -5420,14 +5596,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_string_array_trim(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        trim_char: Option<char>,
-        trim_left: bool,
-        trim_right: bool,
+        trim: TypedFixedStringArrayTrim,
     ) -> Result<bool, CompileError> {
+        let TypedFixedStringArrayTrim {
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            trim_char,
+            trim_left,
+            trim_right,
+        } = trim;
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -5452,15 +5632,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty) => ty,
             None => return Ok(false),
         };
-        let Some(MirType::Array {
-            elem: array_elem_ty,
-            len: array_len,
-        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        let Some((array_elem_ty, mut array_len)) =
+            Self::typed_fixed_string_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
-        let mut elem_ty = array_elem_ty.as_ref().clone();
-        let mut array_len = *array_len;
+        let mut elem_ty = array_elem_ty.clone();
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
@@ -5471,15 +5648,13 @@ impl<'a> HirToMirLowering<'a> {
                         "str trim requires typed fixed string-array input in eBPF".into(),
                     )
                 })?;
-            let Some(MirType::Array { elem, len }) =
-                Self::aggregate_call_value_type(&base_runtime_ty)
-            else {
+            let Some((elem, len)) = Self::typed_fixed_string_array_type(&base_runtime_ty) else {
                 return Err(CompileError::UnsupportedInstruction(
                     "str trim requires typed fixed string-array input in eBPF".into(),
                 ));
             };
-            elem_ty = elem.as_ref().clone();
-            array_len = *len;
+            elem_ty = elem.clone();
+            array_len = len;
         }
 
         if array_len != *len {
@@ -5507,6 +5682,11 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        Self::validate_typed_fixed_string_array_address_space(
+            "str trim",
+            address_space,
+            &input_meta,
+        )?;
         let out_ty = MirType::Array {
             elem: Box::new(elem_ty.clone()),
             len: array_len,
@@ -5676,25 +5856,53 @@ impl<'a> HirToMirLowering<'a> {
         let alignment = self.fill_alignment()?;
         let fill = self.fill_character()?;
 
-        let runtime_unsigned_input_ty =
-            self.fill_runtime_unsigned_integer_type(input_reg, input_vreg);
-        let runtime_unsigned_fill_supported =
-            runtime_unsigned_input_ty.as_ref().is_some_and(|input_ty| {
-                Self::runtime_unsigned_integer_fill_supported(width, alignment, &fill, input_ty)
+        if let Some(input_reg) = input_reg
+            && self.get_metadata(input_reg).is_some_and(|meta| {
+                meta.string_slot.is_some()
+                    && Self::tracked_string_fill_passthrough_supported(meta, width, &fill)
+            })
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
             });
-        if runtime_unsigned_fill_supported {
-            let input_ty = runtime_unsigned_input_ty
-                .as_ref()
-                .expect("supported runtime unsigned fill should have input type");
-            return self.lower_runtime_unsigned_integer_fill_result(
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            return Ok(());
+        }
+
+        if self.fill_runtime_bool_type(input_reg, input_vreg)
+            && Self::runtime_bool_fill_supported(width, &fill)
+        {
+            return self.lower_runtime_bool_fill_result(
                 src_dst,
                 result_vreg,
                 input_vreg,
-                input_ty,
                 width,
                 alignment,
                 &fill,
             );
+        }
+
+        let runtime_integer_input_ty = self.fill_runtime_integer_type(input_reg, input_vreg);
+        let runtime_integer_input_max_digits = runtime_integer_input_ty
+            .as_ref()
+            .map(|input_ty| self.fill_runtime_integer_decimal_digits(input_reg, input_ty));
+        let runtime_integer_fill_supported =
+            runtime_integer_input_max_digits.is_some_and(|input_max_digits| {
+                Self::runtime_integer_fill_supported(width, alignment, &fill, input_max_digits)
+            });
+        if runtime_integer_fill_supported {
+            let input_max_digits = runtime_integer_input_max_digits
+                .expect("supported runtime integer fill should have input digit bound");
+            return self.lower_runtime_integer_fill_result(RuntimeIntegerFillResult {
+                src_dst,
+                result_vreg,
+                input_vreg,
+                input_max_digits,
+                width,
+                alignment,
+                fill: &fill,
+            });
         }
 
         match self.fill_input(input_reg)? {
@@ -5712,14 +5920,174 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn fill_runtime_unsigned_integer_type(
+    fn tracked_string_fill_passthrough_supported(
+        meta: &RegMetadata,
+        width: usize,
+        fill: &str,
+    ) -> bool {
+        width == 0
+            || fill.is_empty()
+            || meta
+                .string_char_width_min
+                .is_some_and(|min_width| min_width >= width)
+    }
+
+    fn fill_runtime_bool_type(&self, input_reg: Option<RegId>, input_vreg: VReg) -> bool {
+        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg)) else {
+            return false;
+        };
+        if meta.constant_value.is_some()
+            || meta.literal_int.is_some()
+            || meta.literal_string.is_some()
+            || meta.string_slot.is_some()
+            || meta.list_buffer.is_some()
+        {
+            return false;
+        }
+
+        let input_ty = meta
+            .field_type
+            .as_ref()
+            .or_else(|| self.vreg_type_hints.get(&input_vreg));
+        matches!(input_ty, Some(MirType::Bool))
+    }
+
+    fn runtime_bool_fill_supported(width: usize, fill: &str) -> bool {
+        Self::runtime_bool_fill_string_len_bound(width, fill.len())
+            .is_some_and(|bound| bound <= MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH)
+    }
+
+    fn lower_runtime_bool_fill_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_vreg: VReg,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+    ) -> Result<(), CompileError> {
+        let string_len_bound = Self::runtime_bool_fill_string_len_bound(width, fill.len())
+            .expect("supported runtime bool fill should have a string length bound");
+        let aligned_len = align_to_eight(string_len_bound + 1).clamp(16, MAX_STRING_SIZE);
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        };
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::I64);
+
+        let true_block = self.func.alloc_block();
+        let false_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: input_vreg,
+            if_true: true_block,
+            if_false: false_block,
+        });
+
+        self.current_block = true_block;
+        self.emit_runtime_bool_fill_branch(slot, len_vreg, "true", width, alignment, fill);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = false_block;
+        self.emit_runtime_bool_fill_branch(slot, len_vreg, "false", width, alignment, fill);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(string_len_bound);
+        meta.string_char_width_min = Some(Self::runtime_bool_fill_min_width(width, fill));
+        meta.field_type = Some(array_ty);
+        Ok(())
+    }
+
+    fn runtime_bool_fill_min_width(width: usize, fill: &str) -> usize {
+        let fill_chars = fill.chars().count();
+        if fill_chars == 0 {
+            return 4;
+        }
+
+        ["true", "false"]
+            .into_iter()
+            .map(|input| {
+                let input_width = input.chars().count();
+                input_width + fill_chars.saturating_mul(width.saturating_sub(input_width))
+            })
+            .min()
+            .unwrap_or(4)
+            .max(4)
+    }
+
+    fn runtime_bool_fill_string_len_bound(width: usize, fill_len: usize) -> Option<usize> {
+        let true_len = Self::runtime_bool_fill_output_len(width, fill_len, "true")?;
+        let false_len = Self::runtime_bool_fill_output_len(width, fill_len, "false")?;
+        Some(true_len.max(false_len))
+    }
+
+    fn runtime_bool_fill_output_len(width: usize, fill_len: usize, input: &str) -> Option<usize> {
+        let input_width = input.chars().count();
+        let pad_width = width.saturating_sub(input_width);
+        fill_len.checked_mul(pad_width)?.checked_add(input.len())
+    }
+
+    fn emit_runtime_bool_fill_branch(
+        &mut self,
+        slot: StackSlotId,
+        len_vreg: VReg,
+        input: &str,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+    ) {
+        let input_width = input.chars().count();
+        let (left_pad, right_pad) = Self::runtime_fill_pad_counts(width, alignment, input_width);
+        if !fill.is_empty() {
+            for _ in 0..left_pad {
+                self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+            }
+        }
+        self.emit_runtime_fill_padding_literal(slot, len_vreg, input);
+        if !fill.is_empty() {
+            for _ in 0..right_pad {
+                self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+            }
+        }
+    }
+
+    fn fill_runtime_integer_type(
         &self,
         input_reg: Option<RegId>,
         input_vreg: VReg,
     ) -> Option<MirType> {
-        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg)) else {
-            return None;
-        };
+        let meta = input_reg.and_then(|reg| self.get_metadata(reg))?;
         if meta.constant_value.is_some()
             || meta.literal_int.is_some()
             || meta.literal_string.is_some()
@@ -5737,20 +6105,86 @@ impl<'a> HirToMirLowering<'a> {
             Some(ty @ (MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64)) => {
                 Some(ty.clone())
             }
+            Some(ty @ (MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64))
+                if Self::runtime_integer_meta_proven_nonnegative(meta, ty) =>
+            {
+                Some(ty.clone())
+            }
             _ => None,
         }
     }
 
-    fn runtime_unsigned_integer_fill_supported(
+    fn runtime_integer_meta_proven_nonnegative(meta: &RegMetadata, input_ty: &MirType) -> bool {
+        if meta
+            .bounded_range
+            .is_some_and(|range| range.start.min(range.end) >= 0)
+        {
+            return true;
+        }
+        input_ty
+            .scalar_value_range()
+            .is_some_and(|(lower, _)| lower >= 0)
+    }
+
+    fn fill_runtime_integer_decimal_digits(
+        &self,
+        input_reg: Option<RegId>,
+        input_ty: &MirType,
+    ) -> usize {
+        let type_digits = Self::runtime_integer_decimal_digits(input_ty);
+        let Some(range) = input_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|meta| meta.bounded_range)
+        else {
+            return type_digits;
+        };
+        let Some((min, max)) = Self::fill_bounded_range_min_max(range) else {
+            return type_digits;
+        };
+        if min < 0 {
+            return type_digits;
+        }
+
+        Self::nonnegative_decimal_digits(max).min(type_digits)
+    }
+
+    fn fill_bounded_range_min_max(range: BoundedRange) -> Option<(i64, i64)> {
+        if range.step == 0 {
+            return None;
+        }
+        let last = if range.inclusive {
+            range.end
+        } else {
+            range.end.checked_sub(range.step.signum())?
+        };
+        Some((range.start.min(last), range.start.max(last)))
+    }
+
+    fn nonnegative_decimal_digits(value: i64) -> usize {
+        let mut value = value.max(0);
+        let mut digits = 1;
+        while value >= 10 {
+            digits += 1;
+            value /= 10;
+        }
+        digits
+    }
+
+    fn runtime_integer_fill_supported(
         width: usize,
         alignment: FillAlignment,
         fill: &str,
-        input_ty: &MirType,
+        input_max_digits: usize,
     ) -> bool {
         if width <= 1 || fill.is_empty() {
             return true;
         }
-        let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+        if fill.len() != 1
+            && !Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits)
+                .is_empty()
+        {
+            return false;
+        }
         let Some(string_len_bound) =
             Self::runtime_fill_string_len_bound(width, fill.len(), input_max_digits)
         else {
@@ -5769,25 +6203,27 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn lower_runtime_unsigned_integer_fill_result(
+    fn lower_runtime_integer_fill_result(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_vreg: VReg,
-        input_ty: &MirType,
-        width: usize,
-        alignment: FillAlignment,
-        fill: &str,
+        fill_result: RuntimeIntegerFillResult<'_>,
     ) -> Result<(), CompileError> {
-        let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+        let RuntimeIntegerFillResult {
+            src_dst,
+            result_vreg,
+            input_vreg,
+            input_max_digits,
+            width,
+            alignment,
+            fill,
+        } = fill_result;
+
         let string_len_bound =
             Self::runtime_fill_string_len_bound(width, fill.len(), input_max_digits)
                 .unwrap_or(input_max_digits)
                 .min(MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH);
         let stack_len_bound = string_len_bound.max(MAX_INT_STRING_LEN);
-        let aligned_len = align_to_eight(stack_len_bound.saturating_add(1))
-            .min(MAX_STRING_SIZE)
-            .max(16);
+        let aligned_len =
+            align_to_eight(stack_len_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
         let slot = self
             .func
             .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
@@ -5804,7 +6240,6 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
         if !fill.is_empty() {
-            let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
             let (guaranteed_left_pad, conditional_left_thresholds) =
                 Self::runtime_fill_left_padding(width, alignment, input_max_digits);
             for _ in 0..guaranteed_left_pad {
@@ -5827,7 +6262,6 @@ impl<'a> HirToMirLowering<'a> {
             val_type: StringAppendType::Integer,
         });
         if !fill.is_empty() {
-            let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
             for threshold in
                 Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits)
             {
@@ -5857,8 +6291,26 @@ impl<'a> HirToMirLowering<'a> {
         meta.string_slot = Some(slot);
         meta.string_len_vreg = Some(len_vreg);
         meta.string_len_bound = Some(string_len_bound);
+        meta.string_char_width_min = Some(Self::runtime_integer_fill_min_width(
+            width,
+            fill,
+            input_max_digits,
+        ));
         meta.field_type = Some(array_ty);
         Ok(())
+    }
+
+    fn runtime_integer_fill_min_width(width: usize, fill: &str, input_max_digits: usize) -> usize {
+        let fill_chars = fill.chars().count();
+        if fill_chars == 0 {
+            return 1;
+        }
+
+        (1..=input_max_digits.max(1))
+            .map(|digits| digits + fill_chars.saturating_mul(width.saturating_sub(digits)))
+            .min()
+            .unwrap_or(1)
+            .max(1)
     }
 
     fn runtime_fill_string_len_bound(
@@ -5910,11 +6362,12 @@ impl<'a> HirToMirLowering<'a> {
         true
     }
 
-    fn runtime_unsigned_integer_decimal_digits(input_ty: &MirType) -> usize {
+    fn runtime_integer_decimal_digits(input_ty: &MirType) -> usize {
         match input_ty {
-            MirType::U8 => 3,
-            MirType::U16 => 5,
-            MirType::U32 => 10,
+            MirType::I8 | MirType::U8 => 3,
+            MirType::I16 | MirType::U16 => 5,
+            MirType::I32 | MirType::U32 => 10,
+            MirType::I64 => 19,
             MirType::U64 => 20,
             _ => MAX_INT_STRING_LEN,
         }
@@ -5987,12 +6440,18 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn emit_runtime_fill_padding_literal(&mut self, slot: StackSlotId, len_vreg: VReg, fill: &str) {
+        let bytes = fill.as_bytes().to_vec();
         self.emit(MirInst::StringAppend {
             dst_buffer: slot,
             dst_len: len_vreg,
             val: MirValue::Const(0),
-            val_type: StringAppendType::Literal {
-                bytes: fill.as_bytes().to_vec(),
+            val_type: if bytes.contains(&0) {
+                StringAppendType::LiteralExact {
+                    bytes,
+                    len: fill.len(),
+                }
+            } else {
+                StringAppendType::Literal { bytes }
             },
         });
     }
@@ -6045,7 +6504,8 @@ impl<'a> HirToMirLowering<'a> {
                 | nu_protocol::Value::Glob { .. }
                 | nu_protocol::Value::Int { .. }
                 | nu_protocol::Value::Float { .. }
-                | nu_protocol::Value::Filesize { .. }) => {
+                | nu_protocol::Value::Filesize { .. }
+                | nu_protocol::Value::Bool { .. }) => {
                     Ok(KnownFillInput::Scalar(Self::fill_value_text(value, None)?))
                 }
                 nu_protocol::Value::List { vals, .. } => vals
@@ -6088,6 +6548,7 @@ impl<'a> HirToMirLowering<'a> {
             nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
             nu_protocol::Value::Float { val, .. } => Ok(val.to_string()),
             nu_protocol::Value::Filesize { val, .. } => Ok(val.get().to_string()),
+            nu_protocol::Value::Bool { val, .. } => Ok(val.to_string()),
             other => {
                 let supported = "string, int, float, and filesize";
                 match list_index {
@@ -6156,11 +6617,6 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(" ".to_string());
         };
         let fill = self.literal_string_arg(character_reg, "fill --character")?;
-        if fill.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "fill --character does not support NUL bytes in eBPF".into(),
-            ));
-        }
         Ok(fill)
     }
 
@@ -6989,11 +7445,6 @@ impl<'a> HirToMirLowering<'a> {
         let input_max_len = self.string_input_max_len(&input_meta, input_slot_size);
 
         let needle = self.literal_string_arg(needle_reg, command)?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{command} does not support NUL bytes in the substring in eBPF"
-            )));
-        }
         let needle_meta = self.get_metadata(needle_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "{command} requires a tracked string substring in eBPF"
@@ -7039,5 +7490,168 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::Binary { val, .. }) => String::from_utf8(val.clone()).ok(),
             _ => meta.literal_string.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn with_test_lowering<R>(test: impl FnOnce(&mut HirToMirLowering<'_>) -> R) -> R {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+        test(&mut lowering)
+    }
+
+    fn register_kernel_string_array(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        slot_len: usize,
+        array_len: usize,
+        trusted_btf: bool,
+    ) -> VReg {
+        let elem_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 8 + slot_len,
+        };
+        let array_ty = MirType::Array {
+            elem: Box::new(elem_ty),
+            len: array_len,
+        };
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(array_ty),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                annotated_semantics: Some(AnnotatedValueSemantics::FixedArray {
+                    elem: Box::new(AnnotatedValueSemantics::String {
+                        slot_len,
+                        content_cap: slot_len.saturating_sub(1),
+                    }),
+                    len: array_len,
+                }),
+                trusted_btf,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn count_loads(lowering: &HirToMirLowering<'_>, ty: MirType) -> usize {
+        lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| matches!(inst, MirInst::Load { ty: load_ty, .. } if *load_ty == ty))
+            .count()
+    }
+
+    #[test]
+    fn str_length_accepts_trusted_kernel_fixed_string_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_kernel_string_array(lowering, input_reg, 8, 2, true);
+            let src_dst = RegId::new(2);
+            let result_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_typed_fixed_string_array_lengths(
+                        src_dst,
+                        result_vreg,
+                        input_reg,
+                        input_vreg,
+                        StringLengthMode::Utf8Bytes,
+                    )
+                    .expect("trusted kernel fixed string-array lengths should lower")
+            );
+
+            assert_eq!(count_loads(lowering, MirType::I64), 2);
+            assert!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.list_buffer)
+                    .is_some()
+            );
+        });
+    }
+
+    #[test]
+    fn str_join_accepts_trusted_kernel_fixed_string_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_kernel_string_array(lowering, input_reg, 8, 2, true);
+            let src_dst = RegId::new(2);
+            let result_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_typed_fixed_string_array_join(
+                        src_dst,
+                        result_vreg,
+                        input_reg,
+                        input_vreg,
+                        "-"
+                    )
+                    .expect("trusted kernel fixed string-array join should lower")
+            );
+
+            assert!(count_loads(lowering, MirType::U64) > 0);
+            assert!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.string_slot)
+                    .is_some()
+            );
+        });
+    }
+
+    #[test]
+    fn typed_fixed_string_array_rejects_untrusted_kernel() {
+        let meta = RegMetadata::default();
+        let err = HirToMirLowering::validate_typed_fixed_string_array_address_space(
+            "str length",
+            AddressSpace::Kernel,
+            &meta,
+        )
+        .expect_err("untrusted kernel string-array pointer should be rejected");
+
+        let CompileError::UnsupportedInstruction(message) = err else {
+            panic!("expected unsupported-instruction error");
+        };
+        assert!(message.contains("requires trusted BTF provenance"));
     }
 }

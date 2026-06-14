@@ -3,18 +3,43 @@ use crate::compiler::ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_t
 use crate::compiler::instruction::BpfHelper;
 use crate::kernel_btf::KernelBtf;
 
+pub(in crate::compiler::ir_to_mir) struct HelperBackedTypedProjection<'a> {
+    pub(in crate::compiler::ir_to_mir) dst_reg: RegId,
+    pub(in crate::compiler::ir_to_mir) dst_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) base_vreg: VReg,
+    pub(in crate::compiler::ir_to_mir) base_runtime_ty: &'a MirType,
+    pub(in crate::compiler::ir_to_mir) path_members: &'a [PathMember],
+    pub(in crate::compiler::ir_to_mir) path_desc: &'a str,
+    pub(in crate::compiler::ir_to_mir) root_ctx_field: Option<&'a CtxField>,
+    pub(in crate::compiler::ir_to_mir) projected_semantics: Option<&'a AnnotatedValueSemantics>,
+}
+
+struct SocketHelperProjection<'a> {
+    dst_reg: RegId,
+    dst_vreg: VReg,
+    base_vreg: VReg,
+    path_members: &'a [PathMember],
+    path_desc: &'a str,
+    root_ctx_field: Option<&'a CtxField>,
+    projected_semantics: Option<&'a AnnotatedValueSemantics>,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(in crate::compiler::ir_to_mir) fn try_lower_helper_backed_typed_projection(
         &mut self,
-        dst_reg: RegId,
-        dst_vreg: VReg,
-        base_vreg: VReg,
-        base_runtime_ty: &MirType,
-        path_members: &[PathMember],
-        path_desc: &str,
-        root_ctx_field: Option<&CtxField>,
-        projected_semantics: Option<&AnnotatedValueSemantics>,
+        projection: HelperBackedTypedProjection<'_>,
     ) -> Result<Option<MirType>, CompileError> {
+        let HelperBackedTypedProjection {
+            dst_reg,
+            dst_vreg,
+            base_vreg,
+            base_runtime_ty,
+            path_members,
+            path_desc,
+            root_ctx_field,
+            projected_semantics,
+        } = projection;
+
         if let Some(projected_ty) = self.try_lower_socket_cgroup_projection(
             dst_vreg,
             base_vreg,
@@ -25,15 +50,17 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(Some(projected_ty));
         }
 
-        if let Some(projected_ty) = self.try_lower_socket_helper_projection(
-            dst_reg,
-            dst_vreg,
-            base_vreg,
-            path_members,
-            path_desc,
-            root_ctx_field,
-            projected_semantics,
-        )? {
+        if let Some(projected_ty) =
+            self.try_lower_socket_helper_projection(SocketHelperProjection {
+                dst_reg,
+                dst_vreg,
+                base_vreg,
+                path_members,
+                path_desc,
+                root_ctx_field,
+                projected_semantics,
+            })?
+        {
             return Ok(Some(projected_ty));
         }
 
@@ -143,14 +170,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn try_lower_socket_helper_projection(
         &mut self,
-        dst_reg: RegId,
-        dst_vreg: VReg,
-        base_vreg: VReg,
-        path_members: &[PathMember],
-        path_desc: &str,
-        root_ctx_field: Option<&CtxField>,
-        projected_semantics: Option<&AnnotatedValueSemantics>,
+        projection: SocketHelperProjection<'_>,
     ) -> Result<Option<MirType>, CompileError> {
+        let SocketHelperProjection {
+            dst_reg,
+            dst_vreg,
+            base_vreg,
+            path_members,
+            path_desc,
+            root_ctx_field,
+            projected_semantics,
+        } = projection;
+
         let socket_helper_projection = if matches!(
             root_ctx_field,
             Some(CtxField::Socket | CtxField::MigratingSocket)

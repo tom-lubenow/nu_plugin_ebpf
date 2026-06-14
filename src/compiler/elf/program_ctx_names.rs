@@ -426,7 +426,7 @@ fn push_unique_ctx_field_name_entries(
         }
 
         out.push(ContextFieldNameEntry {
-            name: *name,
+            name,
             field: field.clone(),
         });
     }
@@ -442,7 +442,7 @@ fn push_tracepoint_preserved_ctx_field_name_entries(out: &mut Vec<ContextFieldNa
             continue;
         };
 
-        out.push(ContextFieldNameEntry { name: *name, field });
+        out.push(ContextFieldNameEntry { name, field });
     }
 }
 
@@ -560,16 +560,65 @@ mod tests {
     }
 
     fn verifier_diff_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
-        let marker = format!("const {name} = {delimiter}");
-        let start = source
-            .find(&marker)
+        verifier_diff_const_body_opt(source, name, delimiter)
             .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
-            + marker.len();
+    }
+
+    fn verifier_diff_const_body_opt<'a>(
+        source: &'a str,
+        name: &str,
+        delimiter: char,
+    ) -> Option<&'a str> {
+        let marker = format!("const {name} = {delimiter}");
+        let start = source.find(&marker)? + marker.len();
         let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
-        let end = source[start..]
-            .find(&end_marker)
-            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
-        &source[start..start + end]
+        let end = source[start..].find(&end_marker)?;
+        Some(&source[start..start + end])
+    }
+
+    fn verifier_diff_let_array_body_opt<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+        let marker = format!("let {name} = (");
+        let start = source.find(&marker)? + marker.len();
+        let rest = &source[start..];
+        let array_start = rest.find('[')? + 1;
+        let array_rest = &rest[array_start..];
+        let end = array_rest
+            .find("\n    ]")
+            .or_else(|| array_rest.find("\n]"))?;
+        Some(&array_rest[..end])
+    }
+
+    fn verifier_diff_array_body<'a>(source: &'a str, name: &str) -> &'a str {
+        verifier_diff_const_body_opt(source, name, '[')
+            .or_else(|| verifier_diff_let_array_body_opt(source, name))
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu array {name}"))
+    }
+
+    fn verifier_diff_append_names(source: &str, name: &str) -> Vec<String> {
+        let Some(start) = source.find(&format!("let {name} = (")) else {
+            return Vec::new();
+        };
+        let declaration = &source[start..];
+        let declaration = declaration
+            .split_once("\n)")
+            .map(|(body, _)| body)
+            .unwrap_or(declaration);
+        declaration
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("| append $")
+                    .map(|name| name.trim().to_string())
+            })
+            .collect()
+    }
+
+    fn verifier_diff_array_bodies<'a>(source: &'a str, name: &str) -> Vec<&'a str> {
+        let mut bodies = vec![verifier_diff_array_body(source, name)];
+        for append_name in verifier_diff_append_names(source, name) {
+            bodies.push(verifier_diff_array_body(source, &append_name));
+        }
+        bodies
     }
 
     fn verifier_diff_quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
@@ -714,10 +763,10 @@ mod tests {
     fn test_verifier_diff_generic_context_field_metadata_matches_rust() {
         let verifier_diff =
             crate::compiler::verifier_diff_test_support::verifier_diff_metadata_source();
-        let table_body =
-            verifier_diff_const_body(&verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES", '[');
+        let table_bodies =
+            verifier_diff_array_bodies(&verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES");
 
-        for line in table_body.lines() {
+        for line in table_bodies.into_iter().flat_map(str::lines) {
             let Some(field_name) = verifier_diff_quoted_field(line, "field") else {
                 continue;
             };

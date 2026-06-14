@@ -47,13 +47,13 @@ impl BranchOptimization {
 
         // First pass: find blocks that are pure jumps (no instructions, just Jump terminator)
         for block in &func.blocks {
-            if block.instructions.is_empty() {
-                if let MirInst::Jump { target } = &block.terminator {
-                    if target_phi_mentions_predecessor(func, *target, block.id) {
-                        continue;
-                    }
-                    jump_targets.insert(block.id, *target);
+            if block.instructions.is_empty()
+                && let MirInst::Jump { target } = &block.terminator
+            {
+                if target_phi_mentions_predecessor(func, *target, block.id) {
+                    continue;
                 }
+                jump_targets.insert(block.id, *target);
             }
         }
 

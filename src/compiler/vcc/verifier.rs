@@ -5,6 +5,16 @@ mod execution;
 #[path = "verifier/refinement.rs"]
 mod refinement;
 
+struct VccPropagateState<'a, 'states, 'worklist, 'updates> {
+    pred: VccBlockId,
+    block: VccBlockId,
+    func: &'a VccFunction,
+    state: &'a VccState,
+    in_states: &'states mut HashMap<VccBlockId, VccState>,
+    worklist: &'worklist mut VecDeque<VccBlockId>,
+    update_counts: &'updates mut HashMap<VccBlockId, usize>,
+}
+
 impl VccVerifier {
     const MAX_STATE_UPDATES_PER_BLOCK: usize = 64;
 
@@ -46,15 +56,15 @@ impl VccVerifier {
 
             match &block.terminator {
                 VccTerminator::Jump { target } => {
-                    self.propagate_state(
-                        block_id,
-                        *target,
+                    self.propagate_state(VccPropagateState {
+                        pred: block_id,
+                        block: *target,
                         func,
-                        &state,
-                        &mut in_states,
-                        &mut worklist,
-                        &mut update_counts,
-                    );
+                        state: &state,
+                        in_states: &mut in_states,
+                        worklist: &mut worklist,
+                        update_counts: &mut update_counts,
+                    });
                 }
                 VccTerminator::Branch {
                     cond,
@@ -62,24 +72,24 @@ impl VccVerifier {
                     if_false,
                 } => {
                     let (true_state, false_state) = self.refine_branch_states(*cond, &state);
-                    self.propagate_state(
-                        block_id,
-                        *if_true,
+                    self.propagate_state(VccPropagateState {
+                        pred: block_id,
+                        block: *if_true,
                         func,
-                        &true_state,
-                        &mut in_states,
-                        &mut worklist,
-                        &mut update_counts,
-                    );
-                    self.propagate_state(
-                        block_id,
-                        *if_false,
+                        state: &true_state,
+                        in_states: &mut in_states,
+                        worklist: &mut worklist,
+                        update_counts: &mut update_counts,
+                    });
+                    self.propagate_state(VccPropagateState {
+                        pred: block_id,
+                        block: *if_false,
                         func,
-                        &false_state,
-                        &mut in_states,
-                        &mut worklist,
-                        &mut update_counts,
-                    );
+                        state: &false_state,
+                        in_states: &mut in_states,
+                        worklist: &mut worklist,
+                        update_counts: &mut update_counts,
+                    });
                 }
                 VccTerminator::Return { .. } => {}
             }
@@ -92,16 +102,17 @@ impl VccVerifier {
         }
     }
 
-    fn propagate_state(
-        &mut self,
-        pred: VccBlockId,
-        block: VccBlockId,
-        func: &VccFunction,
-        state: &VccState,
-        in_states: &mut HashMap<VccBlockId, VccState>,
-        worklist: &mut VecDeque<VccBlockId>,
-        update_counts: &mut HashMap<VccBlockId, usize>,
-    ) {
+    fn propagate_state(&mut self, propagation: VccPropagateState<'_, '_, '_, '_>) {
+        let VccPropagateState {
+            pred,
+            block,
+            func,
+            state,
+            in_states,
+            worklist,
+            update_counts,
+        } = propagation;
+
         if !state.is_reachable() {
             return;
         }

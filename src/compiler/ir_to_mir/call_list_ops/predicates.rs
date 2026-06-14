@@ -1,5 +1,17 @@
 use super::*;
 
+struct TypedFixedArrayAllOrAny<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: &'a RegMetadata,
+    closure_block_id: NuBlockId,
+    closure_ir: &'a HirFunction,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(in crate::compiler::ir_to_mir) fn lower_stack_list_all_or_any(
         &mut self,
@@ -49,17 +61,17 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_all_or_any(
+            && self.lower_typed_fixed_array_all_or_any(TypedFixedArrayAllOrAny {
                 cmd_name,
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
+                input_meta: &input_meta,
                 closure_block_id,
                 closure_ir,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -166,16 +178,20 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_typed_fixed_array_all_or_any(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        input_meta: &RegMetadata,
-        closure_block_id: NuBlockId,
-        closure_ir: &HirFunction,
+        lowering: TypedFixedArrayAllOrAny<'_>,
     ) -> Result<bool, CompileError> {
+        let TypedFixedArrayAllOrAny {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            mut input_vreg,
+            input_meta,
+            closure_block_id,
+            closure_ir,
+        } = lowering;
+
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
@@ -189,11 +205,8 @@ impl<'a> HirToMirLowering<'a> {
         let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
             return Ok(false);
         };
-        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
-            .and_then(|ty| match ty {
-                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
-                _ => None,
-            })
+        let Some((elem_ty, array_len)) =
+            Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty)
         else {
             return Ok(false);
         };
@@ -206,7 +219,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            && Self::typed_fixed_array_stack_list_array_type(&base_runtime_ty).is_some()
         {
             input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
             base_runtime_ty = self
@@ -223,14 +236,11 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array pointer input in eBPF"
             )));
         };
-        if !matches!(
+        Self::validate_typed_fixed_array_stack_list_address_space(
+            cmd_name,
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            input_meta,
+        )?;
 
         let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
@@ -339,5 +349,126 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(raw_vreg, elem_ty.clone());
         Ok(raw_vreg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::hir::{
+        HirBlock, HirBlockId, HirFunction, HirLiteral, HirStmt, HirTerminator,
+    };
+    use std::collections::HashMap;
+
+    fn constant_bool_closure(value: bool) -> HirFunction {
+        let result_reg = RegId::new(0);
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: result_reg,
+                    lit: HirLiteral::Bool(value),
+                }],
+                terminator: HirTerminator::Return { src: result_reg },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 1,
+            file_count: 0,
+        }
+    }
+
+    #[test]
+    fn all_accepts_trusted_kernel_fixed_array() {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 2,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let input_reg = RegId::new(1);
+        let input_vreg = lowering.get_vreg(input_reg);
+        lowering.vreg_type_hints.insert(input_vreg, ptr_ty.clone());
+        let input_meta = RegMetadata {
+            field_type: Some(ptr_ty),
+            trusted_btf: true,
+            ..Default::default()
+        };
+
+        let src_dst = RegId::new(2);
+        let dst_vreg = lowering.get_vreg(src_dst);
+        let closure_ir = constant_bool_closure(true);
+        lowering
+            .lower_typed_fixed_array_all_or_any(TypedFixedArrayAllOrAny {
+                cmd_name: "all",
+                src_dst,
+                dst_vreg,
+                src_dst_had_value: false,
+                input_reg,
+                input_vreg,
+                input_meta: &input_meta,
+                closure_block_id: NuBlockId::new(0),
+                closure_ir: &closure_ir,
+            })
+            .expect("trusted kernel fixed-array all should lower");
+
+        let load_count = lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| {
+                matches!(
+                    inst,
+                    MirInst::Load {
+                        ptr,
+                        ty: MirType::U32,
+                        ..
+                    } if *ptr == input_vreg
+                )
+            })
+            .count();
+        assert_eq!(load_count, 2);
+        assert_eq!(
+            lowering
+                .reg_metadata
+                .get(&src_dst.get())
+                .and_then(|meta| meta.field_type.as_ref()),
+            Some(&MirType::Bool)
+        );
+        assert_eq!(
+            lowering.vreg_type_hints.get(&dst_vreg),
+            Some(&MirType::Bool)
+        );
     }
 }

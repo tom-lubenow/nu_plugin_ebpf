@@ -11455,19 +11455,13 @@ fn test_lower_global_define_type_string_array_get_preserves_string_semantics() {
         .expect("typed string array get consumed by str length should compile through codegen");
 }
 
-#[test]
-fn test_lower_global_define_type_string_array_str_join_materializes_tracked_string() {
-    let define_decl = DeclId::new(10_544);
-    let global_get_decl = DeclId::new(10_545);
-    let join_decl = DeclId::new(10_546);
-    let length_decl = DeclId::new(10_547);
-    let decl_names = HashMap::from([
-        (define_decl, "global-define".to_string()),
-        (global_get_decl, "global-get".to_string()),
-        (join_decl, "str join".to_string()),
-        (length_decl, "str length".to_string()),
-    ]);
-
+fn make_global_define_type_string_array_str_join_program(
+    define_decl: DeclId,
+    global_get_decl: DeclId,
+    join_decl: DeclId,
+    length_decl: DeclId,
+    separator: Vec<u8>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -11499,7 +11493,7 @@ fn test_lower_global_define_type_string_array_str_join_materializes_tracked_stri
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(4),
-                    lit: HirLiteral::String("-".into()),
+                    lit: HirLiteral::String(separator),
                 },
                 HirStmt::Call {
                     decl_id: join_decl,
@@ -11528,7 +11522,29 @@ fn test_lower_global_define_type_string_array_str_join_materializes_tracked_stri
         register_count: 7,
         file_count: 0,
     };
-    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_str_join_materializes_tracked_string() {
+    let define_decl = DeclId::new(10_544);
+    let global_get_decl = DeclId::new(10_545);
+    let join_decl = DeclId::new(10_546);
+    let length_decl = DeclId::new(10_547);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let hir = make_global_define_type_string_array_str_join_program(
+        define_decl,
+        global_get_decl,
+        join_decl,
+        length_decl,
+        b"-".to_vec(),
+    );
 
     let result = lower_hir_to_mir_with_hints(
         &hir,
@@ -11579,6 +11595,76 @@ fn test_lower_global_define_type_string_array_str_join_materializes_tracked_stri
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str join consumed by str length should compile through codegen",
     );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_str_join_accepts_nul_separator() {
+    let define_decl = DeclId::new(12_544);
+    let global_get_decl = DeclId::new(12_545);
+    let join_decl = DeclId::new(12_546);
+    let length_decl = DeclId::new(12_547);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+    let hir = make_global_define_type_string_array_str_join_program(
+        define_decl,
+        global_get_decl,
+        join_decl,
+        length_decl,
+        b"\0".to_vec(),
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type array{string:N:N} str join should accept NUL separators");
+
+    let string_slot_appends = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::StringSlot { max_len: 8, .. },
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(
+        string_slot_appends, 2,
+        "expected str join to append both fixed-array string elements"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::LiteralExact { bytes, len },
+                    ..
+                } if *len == 1 && bytes == b"\0"
+            )),
+        "expected str join to append the NUL separator with an exact length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed string array str join with NUL separator should compile through codegen");
 }
 
 #[test]
@@ -12070,7 +12156,7 @@ fn test_lower_global_define_type_string_array_str_length_rejects_over_capacity_l
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_starts_with_materializes_bool_list() {
+fn test_lower_global_define_type_string_array_str_starts_with_supports_nul_prefix() {
     let define_decl = DeclId::new(10_561);
     let global_get_decl = DeclId::new(10_562);
     let starts_with_decl = DeclId::new(10_563);
@@ -12098,9 +12184,9 @@ fn test_lower_global_define_type_string_array_str_starts_with_materializes_bool_
                     dst: RegId::new(2),
                     val: Box::new(Value::list(
                         vec![
-                            Value::string("aa".to_string(), Span::unknown()),
-                            Value::string("ab".to_string(), Span::unknown()),
-                            Value::string("ba".to_string(), Span::unknown()),
+                            Value::string("\0a".to_string(), Span::unknown()),
+                            Value::string("\0b".to_string(), Span::unknown()),
+                            Value::string("a\0".to_string(), Span::unknown()),
                         ],
                         Span::unknown(),
                     )),
@@ -12125,7 +12211,7 @@ fn test_lower_global_define_type_string_array_str_starts_with_materializes_bool_
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::String("a".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: starts_with_decl,
@@ -12366,7 +12452,7 @@ fn test_lower_global_define_type_string_array_str_starts_with_rejects_over_capac
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_ends_with_materializes_bool_list() {
+fn test_lower_global_define_type_string_array_str_ends_with_supports_nul_suffix() {
     let define_decl = DeclId::new(10_571);
     let global_get_decl = DeclId::new(10_572);
     let ends_with_decl = DeclId::new(10_573);
@@ -12394,9 +12480,9 @@ fn test_lower_global_define_type_string_array_str_ends_with_materializes_bool_li
                     dst: RegId::new(2),
                     val: Box::new(Value::list(
                         vec![
-                            Value::string("aa".to_string(), Span::unknown()),
-                            Value::string("ba".to_string(), Span::unknown()),
-                            Value::string("bb".to_string(), Span::unknown()),
+                            Value::string("a\0".to_string(), Span::unknown()),
+                            Value::string("b\0".to_string(), Span::unknown()),
+                            Value::string("\0b".to_string(), Span::unknown()),
                         ],
                         Span::unknown(),
                     )),
@@ -12421,7 +12507,7 @@ fn test_lower_global_define_type_string_array_str_ends_with_materializes_bool_li
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::String("a".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: ends_with_decl,
@@ -12655,7 +12741,7 @@ fn test_lower_global_define_type_string_array_str_ends_with_rejects_over_capacit
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_contains_materializes_bool_list() {
+fn test_lower_global_define_type_string_array_str_contains_supports_nul_substring() {
     let define_decl = DeclId::new(10_581);
     let global_get_decl = DeclId::new(10_582);
     let contains_decl = DeclId::new(10_583);
@@ -12683,9 +12769,9 @@ fn test_lower_global_define_type_string_array_str_contains_materializes_bool_lis
                     dst: RegId::new(2),
                     val: Box::new(Value::list(
                         vec![
-                            Value::string("aa".to_string(), Span::unknown()),
+                            Value::string("a\0".to_string(), Span::unknown()),
                             Value::string("bb".to_string(), Span::unknown()),
-                            Value::string("ca".to_string(), Span::unknown()),
+                            Value::string("\0c".to_string(), Span::unknown()),
                         ],
                         Span::unknown(),
                     )),
@@ -12710,7 +12796,7 @@ fn test_lower_global_define_type_string_array_str_contains_materializes_bool_lis
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::String("a".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: contains_decl,
@@ -12944,7 +13030,7 @@ fn test_lower_global_define_type_string_array_str_contains_rejects_over_capacity
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_index_of_materializes_numeric_list() {
+fn test_lower_global_define_type_string_array_str_index_of_supports_nul_substring() {
     let define_decl = DeclId::new(10_591);
     let global_get_decl = DeclId::new(10_592);
     let index_of_decl = DeclId::new(10_593);
@@ -12972,9 +13058,9 @@ fn test_lower_global_define_type_string_array_str_index_of_materializes_numeric_
                     dst: RegId::new(2),
                     val: Box::new(Value::list(
                         vec![
-                            Value::string("xa".to_string(), Span::unknown()),
-                            Value::string("ba".to_string(), Span::unknown()),
-                            Value::string("aa".to_string(), Span::unknown()),
+                            Value::string("x\0".to_string(), Span::unknown()),
+                            Value::string("b\0".to_string(), Span::unknown()),
+                            Value::string("\0a".to_string(), Span::unknown()),
                         ],
                         Span::unknown(),
                     )),
@@ -12999,7 +13085,7 @@ fn test_lower_global_define_type_string_array_str_index_of_materializes_numeric_
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::String("a".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: index_of_decl,
@@ -13760,7 +13846,7 @@ fn test_lower_global_define_type_string_array_str_substring_negative_range_rejec
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_replace_all_feeds_join() {
+fn test_lower_global_define_type_string_array_str_replace_all_supports_nul_bytes_and_feeds_join() {
     let define_decl = DeclId::new(10_617);
     let global_get_decl = DeclId::new(10_618);
     let replace_decl = DeclId::new(10_619);
@@ -13790,8 +13876,8 @@ fn test_lower_global_define_type_string_array_str_replace_all_feeds_join() {
                     dst: RegId::new(2),
                     val: Box::new(Value::list(
                         vec![
-                            Value::string("aa".to_string(), Span::unknown()),
-                            Value::string("aba".to_string(), Span::unknown()),
+                            Value::string("\0a".to_string(), Span::unknown()),
+                            Value::string("b\0b".to_string(), Span::unknown()),
                         ],
                         Span::unknown(),
                     )),
@@ -13816,11 +13902,11 @@ fn test_lower_global_define_type_string_array_str_replace_all_feeds_join() {
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::String("a".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(6),
-                    lit: HirLiteral::String("z".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: replace_decl,
@@ -13897,12 +13983,12 @@ fn test_lower_global_define_type_string_array_str_replace_all_feeds_join() {
             .any(|inst| matches!(
                 inst,
                 MirInst::StoreSlot {
-                    val: MirValue::Const(122),
+                    val: MirValue::Const(0),
                     ty: MirType::U8,
                     ..
                 }
             )),
-        "expected str replace to store replacement byte 'z'"
+        "expected str replace to store replacement NUL byte"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str replace result consumed by str join should compile through codegen",
@@ -14277,7 +14363,7 @@ fn test_lower_global_define_type_string_array_str_trim_left_char_feeds_join() {
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_trim_char_feeds_join() {
+fn test_lower_global_define_type_string_array_str_trim_supports_nul_char_and_feeds_join() {
     let define_decl = DeclId::new(11_046);
     let global_get_decl = DeclId::new(11_047);
     let trim_decl = DeclId::new(11_048);
@@ -14322,7 +14408,7 @@ fn test_lower_global_define_type_string_array_str_trim_char_feeds_join() {
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(4),
-                    lit: HirLiteral::String("x".into()),
+                    lit: HirLiteral::String(b"\0".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: trim_decl,
@@ -16303,13 +16389,423 @@ fn test_lower_global_define_type_string_array_compact_is_passthrough() {
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_compact_empty_rejects() {
+fn test_lower_global_define_type_string_array_compact_empty_feeds_length_shape() {
     let (hir, decl_names) = make_global_define_type_array_compact_length_program(
         "array{string:8:2}",
         "names",
         10_990,
         vec![b"empty".to_vec()],
     );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on fixed string arrays should feed shape-only length consumers");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected compact --empty to conditionally push kept string elements into a shape list"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected length to consume the compacted shape list"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Gt,
+                    ..
+                }
+            )),
+        "expected compact --empty to test each fixed-string element length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_compact_empty_feeds_is_empty_shape() {
+    let base_decl = 10_992;
+    let (hir, mut decl_names) = make_global_define_type_array_compact_length_program(
+        "array{string:8:2}",
+        "names",
+        base_decl,
+        vec![b"empty".to_vec()],
+    );
+    decl_names.insert(DeclId::new(base_decl + 3), "is-empty".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on fixed string arrays should feed shape-only empty predicates");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected compact --empty to conditionally push kept string elements into a shape list"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected is-empty to consume the compacted shape list length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array compact --empty consumed by is-empty should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_compact_empty_feeds_describe_type() {
+    let define_decl = DeclId::new(10_986);
+    let global_get_decl = DeclId::new(10_987);
+    let compact_decl = DeclId::new(10_988);
+    let describe_decl = DeclId::new(10_989);
+    let starts_with_decl = DeclId::new(10_990);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (compact_decl, "compact".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: compact_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("list<string>".into()),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(6)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on fixed string arrays should feed type-only describe consumers");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<string>\0")
+            )),
+        "expected describe to materialize list<string> from fixed-array element metadata"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. } | MirInst::ListLen { .. })),
+        "type-only describe should not require a compacted runtime shape list"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Gt,
+                    ..
+                }
+            )),
+        "type-only describe should not inspect per-element string lengths"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array compact --empty consumed by describe should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_numeric_list_array_compact_empty_known_empty_shape() {
+    let (hir, decl_names) = make_global_define_type_array_compact_length_program(
+        "array{list:int:4:2}",
+        "samples",
+        10_996,
+        vec![b"empty".to_vec()],
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on fixed numeric-list arrays should feed shape-only length consumers");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "zero-initialized fixed numeric-list elements should fold to an empty shape list"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected length to consume the compacted empty shape list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed numeric-list array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_bytes_array_compact_empty_is_passthrough() {
+    let (hir, decl_names) = make_global_define_type_array_compact_length_program(
+        "array{bytes:4:2}",
+        "chunks",
+        10_994,
+        vec![b"empty".to_vec()],
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty on fixed non-empty binary arrays should preserve metadata");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Copy { .. })),
+        "expected typed binary fixed-array compact --empty to pass through the input pointer"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Gt,
+                    ..
+                }
+            )),
+        "fixed non-empty binary elements should not need runtime empty filtering"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed binary array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_compact_empty_rejects_materialized_result() {
+    let define_decl = DeclId::new(10_998);
+    let global_get_decl = DeclId::new(10_999);
+    let compact_decl = DeclId::new(11_000);
+    let get_decl = DeclId::new(11_001);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (compact_decl, "compact".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: compact_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(5)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
     let err = lower_hir_to_mir_with_hints(
         &hir,
@@ -16319,13 +16815,13 @@ fn test_lower_global_define_type_string_array_compact_empty_rejects() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("compact --empty on mutable global fixed string arrays should remain unsupported");
+    .expect_err("materialized compact --empty string-array results should remain unsupported");
 
     assert!(
         err.to_string().contains(
-            "compact --empty on typed fixed arrays is only a safe identity for numeric or bool elements"
+            "variable-length filtering for fixed-array elements is supported only for metadata-only shape consumers"
         ),
-        "expected targeted compact --empty fixed-array diagnostic, got: {err}"
+        "expected targeted materialization diagnostic, got: {err}"
     );
 }
 
@@ -21217,7 +21713,7 @@ fn test_lower_global_define_type_record_columns_uses_typed_field_names() {
 }
 
 #[test]
-fn test_lower_global_define_type_record_values_first_does_not_use_shape_placeholder() {
+fn test_lower_global_define_type_record_values_first_projects_scalar_field() {
     let define_decl = DeclId::new(10_340);
     let global_get_decl = DeclId::new(10_341);
     let values_decl = DeclId::new(10_342);
@@ -21296,7 +21792,7 @@ fn test_lower_global_define_type_record_values_first_does_not_use_shape_placehol
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -21304,17 +21800,649 @@ fn test_lower_global_define_type_record_values_first_does_not_use_shape_placehol
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("values | first must not use field-count-only placeholder values");
+    .expect("values | first should project only the first typed record field");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        format!("{err:?}")
-            .contains("values on typed record input currently supports only scalar output fields"),
-        "expected values | first to reject non-scalar typed record fields without shape-only lowering, got {err:?}"
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+        )),
+        "values | first on a typed record should not materialize the full values list"
     );
     assert!(
-        format!("{err:?}").contains("comm"),
-        "expected values | first rejection to name the non-scalar field, got {err:?}"
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )),
+        "is-empty on the projected scalar value should lower to false"
     );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed record values | first should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_define_type_record_values_last_projects_string_field() {
+    let define_decl = DeclId::new(10_345);
+    let global_get_decl = DeclId::new(10_346);
+    let values_decl = DeclId::new(10_347);
+    let last_decl = DeclId::new(10_348);
+    let is_empty_decl = DeclId::new(10_349);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (last_decl, "last".to_string()),
+        (is_empty_decl, "is-empty".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: values_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: last_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: is_empty_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values | last should project only the last typed record field");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+        )),
+        "values | last on a typed record should not materialize the full values list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load {
+                offset: 8,
+                ty: MirType::U64,
+                ..
+            }
+        )),
+        "expected last string field projection to load the tracked string length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed record values | last should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_define_type_record_values_get_projects_indexed_field() {
+    let define_decl = DeclId::new(10_350);
+    let global_get_decl = DeclId::new(10_351);
+    let values_decl = DeclId::new(10_352);
+    let get_decl = DeclId::new(10_353);
+    let is_empty_decl = DeclId::new(10_354);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+        (is_empty_decl, "is-empty".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: values_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: is_empty_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(6)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values | get should project the indexed typed record field");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+        )),
+        "values | get on a typed record should not materialize the full values list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load {
+                offset: 8,
+                ty: MirType::U64,
+                ..
+            }
+        )),
+        "expected indexed string field projection to load the tracked string length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed record values | get should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_define_type_record_values_get_rejects_out_of_bounds_index() {
+    let define_decl = DeclId::new(10_355);
+    let global_get_decl = DeclId::new(10_356);
+    let values_decl = DeclId::new(10_357);
+    let get_decl = DeclId::new(10_358);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    for (raw_index, expected_error) in [
+        (
+            2_i64,
+            "get index 2 is out of bounds for typed record values",
+        ),
+        (
+            -1_i64,
+            "get index must be non-negative for typed record values",
+        ),
+    ] {
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(raw_index),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(5)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 7,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("values | get should reject an invalid typed record index");
+        assert!(
+            format!("{err}").contains(expected_error),
+            "unexpected error for typed record values get {raw_index}: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_global_define_type_record_values_reverse_direct_consumers_project_fields() {
+    let define_decl = DeclId::new(10_359);
+    let global_get_decl = DeclId::new(10_360);
+    let values_decl = DeclId::new(10_361);
+    let reverse_decl = DeclId::new(10_362);
+    let first_decl = DeclId::new(10_363);
+    let last_decl = DeclId::new(10_364);
+    let get_decl = DeclId::new(10_365);
+    let is_empty_decl = DeclId::new(10_366);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (reverse_decl, "reverse".to_string()),
+        (first_decl, "first".to_string()),
+        (last_decl, "last".to_string()),
+        (get_decl, "get".to_string()),
+        (is_empty_decl, "is-empty".to_string()),
+    ]);
+
+    for (case_name, consumer_decl, consumer_positional, expect_string_field) in [
+        ("reverse first", first_decl, Vec::new(), true),
+        ("reverse last", last_decl, Vec::new(), false),
+        ("reverse get", get_decl, vec![RegId::new(2)], true),
+    ] {
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: reverse_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(5)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: consumer_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(6)),
+                            positional: consumer_positional.clone(),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: is_empty_decl,
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(7)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(8) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 9,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("values | {case_name} should project through reverse: {err}"));
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            !instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+            )),
+            "values | {case_name} on a typed record should not materialize the values list"
+        );
+        if expect_string_field {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::Load {
+                        offset: 8,
+                        ty: MirType::U64,
+                        ..
+                    }
+                )),
+                "expected values | {case_name} to project the original last string field"
+            );
+        } else {
+            assert!(
+                !instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::Load {
+                        offset: 8,
+                        ty: MirType::U64,
+                        ..
+                    }
+                )),
+                "expected values | {case_name} to project the original first scalar field"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record values | {case_name} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_global_define_type_record_values_reverse_get_rejects_invalid_index() {
+    let define_decl = DeclId::new(10_367);
+    let global_get_decl = DeclId::new(10_368);
+    let values_decl = DeclId::new(10_369);
+    let reverse_decl = DeclId::new(10_370);
+    let get_decl = DeclId::new(10_371);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (reverse_decl, "reverse".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    for (raw_index, expected_error) in [
+        (
+            2_i64,
+            "get index 2 is out of bounds for typed record values",
+        ),
+        (
+            -1_i64,
+            "get index must be non-negative for typed record values",
+        ),
+    ] {
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(raw_index),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: reverse_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(5)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(6)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 8,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("values | reverse | get should reject an invalid typed record index");
+        assert!(
+            format!("{err}").contains(expected_error),
+            "unexpected error for typed record values reverse get {raw_index}: {err}"
+        );
+    }
 }
 
 #[test]

@@ -202,6 +202,30 @@ pub(crate) struct SubfunctionSummary {
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
+struct SubfunctionSummaryParts {
+    return_arg: Option<usize>,
+    required_return_range: Option<ScalarValueRange>,
+    context_field_return: Option<CtxField>,
+    ringbuf_record_return: bool,
+    kfunc_ref_return_kind: Option<KfuncRefKind>,
+    rcu_read_lock_delta: i8,
+    preempt_disable_delta: i8,
+    local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
+    iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
+    dynptr_required_args: u8,
+    dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
+    dynptr_maybe_initialized_args: u8,
+    unknown_stack_object_required: [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_deltas: [Option<SubfunctionUnknownStackObjectDelta>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_maybe_initialized:
+        [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    map_value_map_fd_requirements: Vec<SubfunctionMapValueMapFdRequirement>,
+    changes_packet_data: bool,
+    ringbuf_record_release_args: u8,
+    ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
+    kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
+}
+
 impl SubfunctionSummary {
     pub(crate) fn unknown() -> Self {
         Self {
@@ -374,31 +398,29 @@ impl SubfunctionSummary {
         }
     }
 
-    fn from_parts(
-        return_arg: Option<usize>,
-        required_return_range: Option<ScalarValueRange>,
-        context_field_return: Option<CtxField>,
-        ringbuf_record_return: bool,
-        kfunc_ref_return_kind: Option<KfuncRefKind>,
-        rcu_read_lock_delta: i8,
-        preempt_disable_delta: i8,
-        local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
-        iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
-        dynptr_required_args: u8,
-        dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
-        dynptr_maybe_initialized_args: u8,
-        unknown_stack_object_required: [Option<SubfunctionUnknownStackObjectType>;
-            SUMMARY_ARG_SLOTS],
-        unknown_stack_object_deltas: [Option<SubfunctionUnknownStackObjectDelta>;
-            SUMMARY_ARG_SLOTS],
-        unknown_stack_object_maybe_initialized: [Option<SubfunctionUnknownStackObjectType>;
-            SUMMARY_ARG_SLOTS],
-        map_value_map_fd_requirements: Vec<SubfunctionMapValueMapFdRequirement>,
-        changes_packet_data: bool,
-        ringbuf_record_release_args: u8,
-        ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
-        kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
-    ) -> Self {
+    fn from_parts(parts: SubfunctionSummaryParts) -> Self {
+        let SubfunctionSummaryParts {
+            return_arg,
+            required_return_range,
+            context_field_return,
+            ringbuf_record_return,
+            kfunc_ref_return_kind,
+            rcu_read_lock_delta,
+            preempt_disable_delta,
+            local_irq_deltas,
+            iter_deltas,
+            dynptr_required_args,
+            dynptr_deltas,
+            dynptr_maybe_initialized_args,
+            unknown_stack_object_required,
+            unknown_stack_object_deltas,
+            unknown_stack_object_maybe_initialized,
+            map_value_map_fd_requirements,
+            changes_packet_data,
+            ringbuf_record_release_args,
+            ringbuf_dynptr_deltas,
+            kfunc_ref_release_args,
+        } = parts;
         Self {
             return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
             required_return_range,
@@ -534,8 +556,12 @@ fn summarize_function(
     let mut worklist: VecDeque<BlockId> = VecDeque::new();
 
     let mut entry_state = vec![AliasSource::Unknown; total_vregs];
-    for idx in 0..func.param_count.min(total_vregs) {
-        entry_state[idx] = AliasSource::Param(idx);
+    for (idx, state) in entry_state
+        .iter_mut()
+        .enumerate()
+        .take(func.param_count.min(total_vregs))
+    {
+        *state = AliasSource::Param(idx);
     }
     let param_stack_aliases: HashMap<_, _> = func
         .param_stack_slots
@@ -773,28 +799,31 @@ fn summarize_function(
         _ => None,
     };
 
-    SubfunctionSummary::from_parts(
+    SubfunctionSummary::from_parts(SubfunctionSummaryParts {
         return_arg,
-        func.required_return_range,
+        required_return_range: func.required_return_range,
         context_field_return,
-        returned_ringbuf_record.unwrap_or(false),
-        returned_kfunc_ref.flatten(),
-        returned_rcu_delta.flatten().unwrap_or(0),
-        returned_preempt_delta.flatten().unwrap_or(0),
-        finalize_delta_args(returned_local_irq_deltas),
-        finalize_iter_delta_args(returned_iter_deltas),
-        returned_dynptr_required.unwrap_or(0),
-        finalize_delta_args(returned_dynptr_deltas),
+        ringbuf_record_return: returned_ringbuf_record.unwrap_or(false),
+        kfunc_ref_return_kind: returned_kfunc_ref.flatten(),
+        rcu_read_lock_delta: returned_rcu_delta.flatten().unwrap_or(0),
+        preempt_disable_delta: returned_preempt_delta.flatten().unwrap_or(0),
+        local_irq_deltas: finalize_delta_args(returned_local_irq_deltas),
+        iter_deltas: finalize_iter_delta_args(returned_iter_deltas),
+        dynptr_required_args: returned_dynptr_required.unwrap_or(0),
+        dynptr_deltas: finalize_delta_args(returned_dynptr_deltas),
         dynptr_maybe_initialized_args,
-        returned_unknown_stack_object_required.unwrap_or_else(|| std::array::from_fn(|_| None)),
-        finalize_unknown_stack_object_delta_args(returned_unknown_stack_object_deltas),
+        unknown_stack_object_required: returned_unknown_stack_object_required
+            .unwrap_or_else(|| std::array::from_fn(|_| None)),
+        unknown_stack_object_deltas: finalize_unknown_stack_object_delta_args(
+            returned_unknown_stack_object_deltas,
+        ),
         unknown_stack_object_maybe_initialized,
-        returned_map_value_map_fd_requirements.unwrap_or_default(),
+        map_value_map_fd_requirements: returned_map_value_map_fd_requirements.unwrap_or_default(),
         changes_packet_data,
-        returned_record_releases.unwrap_or(0),
-        finalize_delta_args(returned_ringbuf_dynptr_deltas),
-        returned_kfunc_releases.unwrap_or([None; SUMMARY_ARG_SLOTS]),
-    )
+        ringbuf_record_release_args: returned_record_releases.unwrap_or(0),
+        ringbuf_dynptr_deltas: finalize_delta_args(returned_ringbuf_dynptr_deltas),
+        kfunc_ref_release_args: returned_kfunc_releases.unwrap_or([None; SUMMARY_ARG_SLOTS]),
+    })
 }
 
 fn propagate_alias_state(

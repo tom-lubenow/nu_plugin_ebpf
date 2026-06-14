@@ -96,8 +96,8 @@ pub struct Substitution {
 /// Unification error
 #[derive(Debug, Clone)]
 pub struct UnifyError {
-    pub expected: HMType,
-    pub actual: HMType,
+    pub expected: Box<HMType>,
+    pub actual: Box<HMType>,
     pub message: String,
 }
 

@@ -1,6 +1,6 @@
 const VERIFIER_DIFF_FIXTURES_2364_2364 = [
     {
-        name: "arena-map-put-rejects-unmodeled-map-kind"
+        name: "arena-map-put-rejects-generic-arena-operation"
         category: "maps"
         tags: [maps arena map-put diagnostics reject]
         target: "raw_tracepoint:sys_enter"
@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2364_2364 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arena map_extra/mmap support is not modeled yet"
+        error_contains: "map-put --kind arena names an arena map"
     }
 ]

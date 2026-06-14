@@ -3360,37 +3360,37 @@ impl ProgramSpec {
             }
         }
 
-        if let ProgramSpec::CgroupSockAddr { target } = self {
-            if target.attach_type.address_family() == ProgramAttachAddressFamily::Unix {
-                push_compatibility_requirement(
-                    &mut requirements,
-                    ProgramCompatibilityRequirement::CgroupUnixSockAddr,
-                );
-            }
+        if let ProgramSpec::CgroupSockAddr { target } = self
+            && target.attach_type.address_family() == ProgramAttachAddressFamily::Unix
+        {
+            push_compatibility_requirement(
+                &mut requirements,
+                ProgramCompatibilityRequirement::CgroupUnixSockAddr,
+            );
         }
 
-        if let ProgramSpec::SkReuseport { target } = self {
-            if target.mode == SkReuseportMode::Migrate {
-                push_compatibility_requirement(
-                    &mut requirements,
-                    ProgramCompatibilityRequirement::SkReuseportMigration,
-                );
-            }
+        if let ProgramSpec::SkReuseport { target } = self
+            && target.mode == SkReuseportMode::Migrate
+        {
+            push_compatibility_requirement(
+                &mut requirements,
+                ProgramCompatibilityRequirement::SkReuseportMigration,
+            );
         }
 
-        if let ProgramSpec::Netfilter { target } = self {
-            if target.defrag {
-                push_compatibility_requirement(
-                    &mut requirements,
-                    ProgramCompatibilityRequirement::NetfilterDefrag,
-                );
-            }
+        if let ProgramSpec::Netfilter { target } = self
+            && target.defrag
+        {
+            push_compatibility_requirement(
+                &mut requirements,
+                ProgramCompatibilityRequirement::NetfilterDefrag,
+            );
         }
 
-        if let ProgramSpec::Iter { target } = self {
-            if let Some(requirement) = target.compatibility_requirement() {
-                push_compatibility_requirement(&mut requirements, requirement);
-            }
+        if let ProgramSpec::Iter { target } = self
+            && let Some(requirement) = target.compatibility_requirement()
+        {
+            push_compatibility_requirement(&mut requirements, requirement);
         }
 
         requirements
@@ -3474,25 +3474,25 @@ impl ProgramSpec {
     }
 
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
-        if let ProgramSpec::LsmCgroup { target } = self {
-            if target.cgroup_path.is_some() {
-                return ProgramLiveAttachPolicy {
-                    loader_supported: true,
-                    default_allowed: true,
-                    requires_opt_in: false,
-                    unsupported_reason: None,
-                    opt_in_reason: None,
-                    note: None,
-                };
-            }
+        if let ProgramSpec::LsmCgroup { target } = self
+            && target.cgroup_path.is_some()
+        {
+            return ProgramLiveAttachPolicy {
+                loader_supported: true,
+                default_allowed: true,
+                requires_opt_in: false,
+                unsupported_reason: None,
+                opt_in_reason: None,
+                note: None,
+            };
         }
 
-        if let ProgramSpec::Xdp { target } = self {
-            if !target.is_interface() {
-                return ProgramLiveAttachPolicy::unsupported(
-                    ProgramLiveAttachUnsupportedReason::XdpMapProgram,
-                );
-            }
+        if let ProgramSpec::Xdp { target } = self
+            && !target.is_interface()
+        {
+            return ProgramLiveAttachPolicy::unsupported(
+                ProgramLiveAttachUnsupportedReason::XdpMapProgram,
+            );
         }
         if matches!(self, ProgramSpec::StructOpsCallback { .. }) {
             return ProgramLiveAttachPolicy::unsupported(
@@ -5141,13 +5141,13 @@ mod tests {
         }
         for reason in ProgramLiveAttachUnsupportedReason::all() {
             assert!(
-                seen_unsupported_reasons.contains(&reason),
+                seen_unsupported_reasons.contains(reason),
                 "unsupported live-attach reason {reason:?} should be covered by a modeled spec"
             );
         }
         for reason in ProgramLiveAttachOptInReason::all() {
             assert!(
-                seen_opt_in_reasons.contains(&reason),
+                seen_opt_in_reasons.contains(reason),
                 "unsafe live-attach opt-in reason {reason:?} should be covered"
             );
         }

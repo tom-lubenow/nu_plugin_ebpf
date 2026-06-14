@@ -1,3 +1,6 @@
+use super::call_list_ops::{
+    TypedFixedArrayAppendOrPrepend, TypedFixedArrayEachLowering, TypedFixedArrayWhereLowering,
+};
 use super::*;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
@@ -20,6 +23,60 @@ const MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS: usize = 60;
 enum SeqNumericArg {
     Int(i64),
     Float(f64),
+}
+
+struct FixedBinaryIndexSearch<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    result_vreg: VReg,
+    input_reg: RegId,
+    input_vreg: VReg,
+    pattern: &'a [u8],
+    search_from_end: bool,
+}
+
+struct FixedBinaryAdd<'a> {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    data: &'a [u8],
+    index: usize,
+    from_end: bool,
+}
+
+struct FixedBinaryReplace<'a> {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    pattern: &'a [u8],
+    replacement: &'a [u8],
+    apply_all: bool,
+}
+
+struct FieldPathGet {
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: RegId,
+    input_vreg: VReg,
+    input_meta: Option<RegMetadata>,
+    path: CellPath,
+}
+
+struct StackListAppendOrPrependMaterialized<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_reg: Option<RegId>,
+    input_vreg: VReg,
+    input_meta: RegMetadata,
+    item_vreg: VReg,
+    item_reg: RegId,
 }
 
 impl SeqNumericArg {
@@ -58,13 +115,19 @@ impl<'a> HirToMirLowering<'a> {
             })?;
         let MirType::Ptr {
             pointee,
-            address_space: AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context,
+            address_space,
         } = input_ty
         else {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires stack/map/context-backed fixed-size binary input in eBPF"
+                "{cmd_name} requires pointer-backed fixed-size binary input in eBPF"
             )));
         };
+        Self::validate_fixed_binary_pointer_address_space(
+            cmd_name,
+            "typed fixed-size binary",
+            address_space,
+            &input_meta,
+        )?;
         if pointee.byte_array_len() != Some(input_len) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires fixed-size binary input with matching byte-array layout in eBPF"
@@ -72,6 +135,31 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(Some(input_len))
+    }
+
+    fn validate_fixed_binary_pointer_address_space(
+        cmd_name: &str,
+        input_kind: &str,
+        address_space: AddressSpace,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
+        if matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Ok(());
+        }
+        if address_space == AddressSpace::Kernel && input_meta.trusted_btf {
+            return Ok(());
+        }
+        if address_space == AddressSpace::Kernel {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on {input_kind} kernel pointers requires trusted BTF provenance in eBPF"
+            )));
+        }
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{cmd_name} on {input_kind} pointers in {address_space:?} address space is not yet supported in eBPF"
+        )))
     }
 
     fn lower_fixed_binary_pattern_match(
@@ -228,14 +316,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array binary pointer input in eBPF"
             )));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            cmd_name,
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed-array binary pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -328,14 +414,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_binary_index_of(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        input_vreg: VReg,
-        pattern: &[u8],
-        search_from_end: bool,
+        search: FixedBinaryIndexSearch<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryIndexSearch {
+            cmd_name,
+            src_dst,
+            result_vreg,
+            input_reg,
+            input_vreg,
+            pattern,
+            search_from_end,
+        } = search;
+
         let Some(input_len) = self.fixed_binary_input_len(cmd_name, input_reg, input_vreg)? else {
             return Ok(false);
         };
@@ -414,14 +504,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_binary_array_index_of(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        pattern: &[u8],
-        search_from_end: bool,
+        search: FixedBinaryIndexSearch<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryIndexSearch {
+            cmd_name,
+            src_dst,
+            result_vreg,
+            input_reg,
+            mut input_vreg,
+            pattern,
+            search_from_end,
+        } = search;
+
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires compiler-tracked list<binary> input in eBPF"
@@ -468,14 +562,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires typed fixed-array binary pointer input in eBPF"
             )));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            cmd_name,
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed-array binary pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -607,14 +699,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_binary_index_of_all(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        result_vreg: VReg,
-        input_reg: RegId,
-        input_vreg: VReg,
-        pattern: &[u8],
-        search_from_end: bool,
+        search: FixedBinaryIndexSearch<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryIndexSearch {
+            cmd_name,
+            src_dst,
+            result_vreg,
+            input_reg,
+            input_vreg,
+            pattern,
+            search_from_end,
+        } = search;
+
         let Some(input_len) = self.fixed_binary_input_len(cmd_name, input_reg, input_vreg)? else {
             return Ok(false);
         };
@@ -810,7 +906,7 @@ impl<'a> HirToMirLowering<'a> {
 
     fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
         let (start, end) = Self::bytes_at_bounds(input.len(), range);
-        input[start as usize..end as usize].to_vec()
+        input[start..end].to_vec()
     }
 
     fn lower_fixed_binary_at(
@@ -918,14 +1014,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes at requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes at",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes at on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -1127,14 +1221,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes reverse requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes reverse",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes reverse on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -1234,15 +1326,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_binary_add(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        data: &[u8],
-        index: usize,
-        from_end: bool,
+        request: FixedBinaryAdd<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryAdd {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            data,
+            index,
+            from_end,
+        } = request;
         let Some(input_len) = self.fixed_binary_input_len("bytes add", input_reg, input_vreg)?
         else {
             return Ok(false);
@@ -1318,15 +1413,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_array_binary_add(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        data: &[u8],
-        index: usize,
-        from_end: bool,
+        request: FixedBinaryAdd<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryAdd {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            data,
+            index,
+            from_end,
+        } = request;
+        let mut input_vreg = input_vreg;
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -1371,14 +1470,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes add requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes add",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes add on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -1626,14 +1723,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes remove requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes remove",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes remove on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -1695,15 +1790,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_binary_replace(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        pattern: &[u8],
-        replacement: &[u8],
-        apply_all: bool,
+        request: FixedBinaryReplace<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryReplace {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            pattern,
+            replacement,
+            apply_all,
+        } = request;
         let Some(input_len) =
             self.fixed_binary_input_len("bytes replace", input_reg, input_vreg)?
         else {
@@ -1835,15 +1933,19 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_fixed_array_binary_replace(
         &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        mut input_vreg: VReg,
-        pattern: &[u8],
-        replacement: &[u8],
-        apply_all: bool,
+        request: FixedBinaryReplace<'_>,
     ) -> Result<bool, CompileError> {
+        let FixedBinaryReplace {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            pattern,
+            replacement,
+            apply_all,
+        } = request;
+        let mut input_vreg = input_vreg;
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -1889,14 +1991,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes replace requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes replace",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes replace on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -2115,14 +2215,12 @@ impl<'a> HirToMirLowering<'a> {
                 "bytes collect requires typed fixed-array pointer input in eBPF".into(),
             ));
         };
-        if !matches!(
+        Self::validate_fixed_binary_pointer_address_space(
+            "bytes collect",
+            "typed fixed-array binary",
             address_space,
-            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "bytes collect on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
-            )));
-        }
+            &input_meta,
+        )?;
         let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
             return Ok(false);
         };
@@ -2387,16 +2485,16 @@ impl<'a> HirToMirLowering<'a> {
         result
     }
 
-    fn lower_field_path_get(
-        &mut self,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: RegId,
-        input_vreg: VReg,
-        input_meta: Option<RegMetadata>,
-        path: CellPath,
-    ) -> Result<(), CompileError> {
+    fn lower_field_path_get(&mut self, request: FieldPathGet) -> Result<(), CompileError> {
+        let FieldPathGet {
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+            path,
+        } = request;
         if input_meta.as_ref().is_some_and(|meta| meta.is_context) {
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)
@@ -2516,15 +2614,17 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 return self.lower_stack_list_append_or_prepend_materialized(
-                    cmd_name,
-                    src_dst,
-                    dst_vreg,
-                    src_dst_had_value,
-                    Some(builder_reg),
-                    input_vreg,
-                    input_meta,
-                    item_vreg,
-                    item_reg,
+                    StackListAppendOrPrependMaterialized {
+                        cmd_name,
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        input_reg: Some(builder_reg),
+                        input_vreg,
+                        input_meta,
+                        item_vreg,
+                        item_reg,
+                    },
                 );
             };
             let mut vals = values;
@@ -2546,7 +2646,7 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
 
-        self.lower_stack_list_append_or_prepend_materialized(
+        self.lower_stack_list_append_or_prepend_materialized(StackListAppendOrPrependMaterialized {
             cmd_name,
             src_dst,
             dst_vreg,
@@ -2556,35 +2656,39 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             item_vreg,
             item_reg,
-        )
+        })
     }
 
     fn lower_stack_list_append_or_prepend_materialized(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_reg: Option<RegId>,
-        input_vreg: VReg,
-        input_meta: RegMetadata,
-        item_vreg: VReg,
-        item_reg: RegId,
+        request: StackListAppendOrPrependMaterialized<'_>,
     ) -> Result<(), CompileError> {
         const MAX_STACK_LIST_CAPACITY: usize = 60;
 
+        let StackListAppendOrPrependMaterialized {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            input_meta,
+            item_vreg,
+            item_reg,
+        } = request;
+
         if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_array_append_or_prepend(
+            && self.lower_typed_fixed_array_append_or_prepend(TypedFixedArrayAppendOrPrepend {
                 cmd_name,
                 src_dst,
                 dst_vreg,
                 src_dst_had_value,
                 input_reg,
                 input_vreg,
-                &input_meta,
+                input_meta: &input_meta,
                 item_reg,
                 item_vreg,
-            )?
+            })?
         {
             return Ok(());
         }
@@ -2805,10 +2909,17 @@ impl<'a> HirToMirLowering<'a> {
             _ => unreachable!("seq argument count was validated"),
         };
 
-        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+        self.lower_compile_time_list_transform_result(
+            src_dst,
+            &nu_protocol::Value::list(values, Span::unknown()),
+        )
     }
 
-    fn lower_seq_char_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
+    fn lower_seq_char_constant(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+    ) -> Result<(), CompileError> {
         const MAX_SEQ_STRING_LIST_CAPACITY: usize = 60;
 
         if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
@@ -2842,12 +2953,10 @@ impl<'a> HirToMirLowering<'a> {
             (end..=start).rev().collect::<Vec<_>>()
         }
         .into_iter()
-        .map(|byte| {
-            nu_protocol::Value::string(char::from(byte).to_string(), nu_protocol::Span::unknown())
-        })
+        .map(|byte| char::from(byte).to_string())
         .collect();
 
-        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+        self.lower_known_string_list_result(src_dst, dst_vreg, values)
     }
 
     fn lower_seq_date_constant(
@@ -2916,11 +3025,12 @@ impl<'a> HirToMirLowering<'a> {
         let step = self
             .seq_date_increment()?
             .unwrap_or_else(|| Duration::days(1));
-        if step <= Duration::zero() {
+        if step.is_zero() {
             return Err(CompileError::UnsupportedInstruction(
-                "seq date --increment requires a positive duration in eBPF".into(),
+                "seq date --increment requires a non-zero duration in eBPF".into(),
             ));
         }
+        let step = step.abs();
 
         let values = if let Some(periods) =
             self.seq_date_integer_named_arg("periods", "p", "seq date --periods")?
@@ -2975,14 +3085,13 @@ impl<'a> HirToMirLowering<'a> {
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
                 })?;
-            let values = Self::seq_date_values_between(
+            Self::seq_date_values_between(
                 begin,
                 end,
                 step,
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
-            )?;
-            values
+            )?
         } else {
             let end_raw = self
                 .seq_date_string_named_arg("end-date", "e", "seq date --end-date")?
@@ -3168,12 +3277,6 @@ impl<'a> HirToMirLowering<'a> {
         output_format: &str,
     ) -> Result<String, CompileError> {
         let output = timestamp.format(output_format).to_string();
-        if output.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "seq date --output-format produced NUL bytes, which are not supported in eBPF"
-                    .into(),
-            ));
-        }
         if output.len().saturating_add(1) > MAX_STRING_SIZE {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "seq date --output-format produced {} bytes; eBPF lowering supports at most {} bytes",
@@ -3199,11 +3302,10 @@ impl<'a> HirToMirLowering<'a> {
     fn seq_integer_arg(&self, reg: RegId) -> Result<i64, CompileError> {
         self.get_metadata(reg)
             .and_then(|meta| {
-                meta.literal_int
-                    .or_else(|| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                        _ => None,
-                    })
+                meta.literal_int.or(match meta.constant_value.as_ref() {
+                    Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                    _ => None,
+                })
             })
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
@@ -3215,15 +3317,15 @@ impl<'a> HirToMirLowering<'a> {
     fn seq_numeric_arg(&self, reg: RegId) -> Result<SeqNumericArg, CompileError> {
         self.get_metadata(reg)
             .and_then(|meta| {
-                meta.literal_int.map(SeqNumericArg::Int).or_else(|| {
-                    match meta.constant_value.as_ref() {
+                meta.literal_int
+                    .map(SeqNumericArg::Int)
+                    .or(match meta.constant_value.as_ref() {
                         Some(nu_protocol::Value::Int { val, .. }) => Some(SeqNumericArg::Int(*val)),
                         Some(nu_protocol::Value::Float { val, .. }) => {
                             Some(SeqNumericArg::Float(*val))
                         }
                         _ => None,
-                    }
-                })
+                    })
             })
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
@@ -3320,6 +3422,190 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(values)
+    }
+
+    fn bounded_runtime_index_range(
+        idx_meta: Option<&RegMetadata>,
+        value_count: usize,
+    ) -> Result<Option<(usize, usize)>, CompileError> {
+        let Some(range) = idx_meta.and_then(|meta| meta.bounded_range) else {
+            return Ok(None);
+        };
+        if range.step == 0 {
+            return Ok(None);
+        }
+        let last = if range.inclusive {
+            range.end
+        } else {
+            range.end.checked_sub(range.step.signum()).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "get runtime index range end overflowed in eBPF".into(),
+                )
+            })?
+        };
+        let min = range.start.min(last);
+        let max = range.start.max(last);
+        if min < 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "get runtime index range must be non-negative for compile-time known fixed lists in eBPF"
+                    .into(),
+            ));
+        }
+        let min_idx = usize::try_from(min).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "get runtime index range start is too large for compile-time known fixed-list lowering"
+                    .into(),
+            )
+        })?;
+        let max_idx = usize::try_from(max).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "get runtime index range end is too large for compile-time known fixed-list lowering"
+                    .into(),
+            )
+        })?;
+        if max_idx >= value_count {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "get runtime index range {min}..={max} is out of bounds for compile-time known fixed list with length {value_count} in eBPF"
+            )));
+        }
+        Ok(Some((min_idx, max_idx)))
+    }
+
+    fn compile_time_string_list_bytes(values: &[nu_protocol::Value]) -> Option<Vec<Vec<u8>>> {
+        values
+            .iter()
+            .map(|value| match value {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    Some(val.as_bytes().to_vec())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn string_literal_append_type(bytes: &[u8], aligned_len: usize) -> StringAppendType {
+        let mut literal_bytes = vec![0u8; aligned_len];
+        literal_bytes[..bytes.len()].copy_from_slice(bytes);
+        if bytes.contains(&0) {
+            StringAppendType::LiteralExact {
+                bytes: literal_bytes,
+                len: bytes.len(),
+            }
+        } else {
+            StringAppendType::Literal {
+                bytes: literal_bytes,
+            }
+        }
+    }
+
+    fn emit_runtime_indexed_compile_time_string_list_get(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        idx: MirValue,
+        min_idx: usize,
+        max_idx: usize,
+        values: &[Vec<u8>],
+    ) -> Result<(), CompileError> {
+        let Some(output_bound) = values[min_idx..=max_idx].iter().map(Vec::len).max() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "get runtime index range is empty for compile-time known fixed list in eBPF".into(),
+            ));
+        };
+        let max_content_len = MAX_STRING_SIZE.saturating_sub(1);
+        if output_bound > max_content_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "get runtime string-list item length {output_bound} exceeds eBPF string buffer content limit {max_content_len}"
+            )));
+        }
+
+        let aligned_len = align_to_eight(output_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        };
+        self.record_stack_slot_type(slot, array_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+        let continuation_block = self.func.alloc_block();
+        for (index, value_bytes) in values.iter().enumerate().take(max_idx + 1).skip(min_idx) {
+            let is_last = index == max_idx;
+            if !is_last {
+                let matches_index = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: matches_index,
+                    op: BinOpKind::Eq,
+                    lhs: idx.clone(),
+                    rhs: MirValue::Const(index as i64),
+                });
+                self.vreg_type_hints.insert(matches_index, MirType::Bool);
+
+                let item_block = self.func.alloc_block();
+                let next_block = self.func.alloc_block();
+                self.terminate(MirInst::Branch {
+                    cond: matches_index,
+                    if_true: item_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = item_block;
+                self.emit(MirInst::StringAppend {
+                    dst_buffer: slot,
+                    dst_len: len_vreg,
+                    val: MirValue::Const(0),
+                    val_type: Self::string_literal_append_type(value_bytes, aligned_len),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = next_block;
+            } else {
+                self.emit(MirInst::StringAppend {
+                    dst_buffer: slot,
+                    dst_len: len_vreg,
+                    val: MirValue::Const(0),
+                    val_type: Self::string_literal_append_type(value_bytes, aligned_len),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+            }
+        }
+
+        self.current_block = continuation_block;
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(output_bound);
+        meta.string_char_width_min = values[min_idx..=max_idx]
+            .iter()
+            .filter_map(|bytes| std::str::from_utf8(bytes).ok())
+            .map(|value| value.chars().count())
+            .min();
+        meta.field_type = Some(array_ty);
+        Ok(())
     }
 
     pub(super) fn lower_call(
@@ -3430,21 +3716,52 @@ impl<'a> HirToMirLowering<'a> {
                 let key_reg = self.pipeline_input_reg.unwrap_or(src_dst);
                 let mut key_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                 self.reject_context_pointer_payload(Some(key_reg), "count key")?;
-                let key_type = self
-                    .get_metadata(key_reg)
+                let key_meta = self.get_metadata(key_reg).cloned();
+                let raw_key_type = key_meta
+                    .as_ref()
                     .and_then(|m| {
                         m.field_type
                             .clone()
                             .or_else(|| Self::metadata_record_layout(m))
                     })
-                    .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned())
-                    .map(|ty| self.stored_generic_map_value_type(&ty));
+                    .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned());
+                let kernel_aggregate_key = matches!(
+                    raw_key_type.as_ref(),
+                    Some(MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Kernel,
+                    }) if matches!(
+                        pointee.as_ref(),
+                        MirType::Array { .. } | MirType::Struct { .. }
+                    )
+                );
+                let key_type = raw_key_type.as_ref().map(|ty| {
+                    self.stored_generic_or_trusted_kernel_map_value_type(ty, key_meta.as_ref())
+                });
 
-                if let Some(key_type) = key_type.as_ref()
-                    && Self::aggregate_call_value_type(key_type).is_some()
+                if key_type
+                    .as_ref()
+                    .is_some_and(|key_type| Self::aggregate_call_value_type(key_type).is_some())
+                    || kernel_aggregate_key
                 {
                     key_vreg = self.materialized_metadata_aggregate_vreg(key_reg, key_vreg)?;
+                    key_vreg = self.materialize_trusted_kernel_aggregate_map_operand(
+                        Some(key_reg),
+                        key_vreg,
+                        "count key",
+                    )?;
                 }
+
+                let key_type = key_type.or_else(|| {
+                    self.get_metadata(key_reg)
+                        .and_then(|m| {
+                            m.field_type
+                                .clone()
+                                .or_else(|| Self::metadata_record_layout(m))
+                        })
+                        .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned())
+                        .map(|ty| self.stored_generic_map_value_type(&ty))
+                });
 
                 // Check for --per-cpu flag
                 let per_cpu = self.named_flags.contains(&"per-cpu".to_string());
@@ -3546,7 +3863,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "seq char" => {
-                self.lower_seq_char_constant(src_dst)?;
+                self.lower_seq_char_constant(src_dst, dst_vreg)?;
             }
 
             "seq date" => {
@@ -3641,7 +3958,14 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 self.vreg_type_hints.insert(dst_vreg, output_ty.clone());
                 self.reset_call_result_metadata(src_dst);
-                self.get_or_create_metadata(src_dst).field_type = Some(output_ty);
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.field_type = Some(output_ty);
+                meta.bounded_range = output_range.map(|(start, end)| BoundedRange {
+                    start,
+                    step: 1,
+                    end,
+                    inclusive: true,
+                });
             }
 
             "read-str" => {
@@ -3670,7 +3994,7 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     requested_len
                 };
-                let aligned_len = align_to_eight(max_len).min(MAX_STRING_SIZE).max(16);
+                let aligned_len = align_to_eight(max_len).clamp(16, MAX_STRING_SIZE);
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, true, aligned_len)?;
             }
 
@@ -3700,7 +4024,7 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     requested_len
                 };
-                let aligned_len = align_to_eight(max_len).min(MAX_STRING_SIZE).max(16);
+                let aligned_len = align_to_eight(max_len).clamp(16, MAX_STRING_SIZE);
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, false, aligned_len)?;
             }
 
@@ -4599,7 +4923,14 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args(
                     "map-define",
-                    &["kind", "key-type", "value-type", "max-entries", "inner-map"],
+                    &[
+                        "kind",
+                        "key-type",
+                        "value-type",
+                        "max-entries",
+                        "map-extra",
+                        "inner-map",
+                    ],
                 )?;
                 if self.pipeline_input.is_some() {
                     return Err(CompileError::UnsupportedInstruction(
@@ -4620,6 +4951,20 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
+                if map_ref.kind == MapKind::Arena {
+                    for unsupported in ["key-type", "value-type", "inner-map"] {
+                        if self.named_args.contains_key(unsupported) {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "map-define --{unsupported} is not supported for arena maps"
+                            )));
+                        }
+                    }
+                } else if self.named_args.contains_key("map-extra") {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define --map-extra is only supported for arena maps, got {}",
+                        map_ref.kind
+                    )));
+                }
                 if map_ref.kind.is_map_in_map() && self.named_args.contains_key("value-type") {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "map-define --value-type is not supported for map-in-map outer map '{}'; use --inner-map to name a previously declared inner map template",
@@ -4672,11 +5017,24 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     self.register_named_map_max_entries(&map_ref, max_entries);
-                } else if map_ref.kind.is_map_in_map() {
+                } else if map_ref.kind.is_map_in_map() || map_ref.kind == MapKind::Arena {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "map-define --kind {} requires --max-entries for the outer map",
+                        "map-define --kind {} requires --max-entries",
                         map_ref.kind
                     )));
+                }
+                if let Some(map_extra) =
+                    self.optional_nonnegative_named_u64_arg("map-define", "map-extra")?
+                {
+                    if let Some(existing) = self.named_map_extra(&map_ref)
+                        && existing != map_extra
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define map-extra for '{}' conflicts with earlier map schema",
+                            map_ref.name
+                        )));
+                    }
+                    self.register_named_map_extra(&map_ref, map_extra);
                 }
                 if let Some((_, key_type_reg)) = self.named_args.get("key-type").copied() {
                     let key_type_spec =
@@ -4773,6 +5131,8 @@ impl<'a> HirToMirLowering<'a> {
                         "map-define --inner-map",
                     )?;
                     self.declared_map_inner_templates.insert(map_ref.clone());
+                } else if map_ref.kind == MapKind::Arena {
+                    self.declared_arena_maps.insert(map_ref.clone());
                 } else {
                     let (_, type_reg) =
                         self.named_args.get("value-type").copied().ok_or_else(|| {
@@ -5052,6 +5412,11 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         value_vreg
                     };
+                    let stored_value_vreg = self.materialize_trusted_kernel_aggregate_map_operand(
+                        value_reg,
+                        stored_value_vreg,
+                        "map-put dynamic map value",
+                    )?;
 
                     self.emit(MirInst::MapUpdateDynamic {
                         map_ptr: map_arg_vreg,
@@ -5105,6 +5470,12 @@ impl<'a> HirToMirLowering<'a> {
                         } else {
                             value_vreg
                         };
+                        let stored_value_vreg = self
+                            .materialize_trusted_kernel_aggregate_map_operand(
+                                value_reg,
+                                stored_value_vreg,
+                                "map-put value",
+                            )?;
 
                         self.emit(MirInst::MapUpdate {
                             map: map_ref.clone(),
@@ -5163,6 +5534,11 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     value_vreg
                 };
+                let stored_value_vreg = self.materialize_trusted_kernel_aggregate_map_operand(
+                    value_reg,
+                    stored_value_vreg,
+                    "map-push value",
+                )?;
                 self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-push")?;
 
                 self.emit(MirInst::MapPush {
@@ -5630,10 +6006,15 @@ impl<'a> HirToMirLowering<'a> {
                             return Ok(());
                         }
                         if let Some(input_reg) = input_reg
-                            && self.lower_typed_fixed_array_where(
-                                src_dst, dst_vreg, input_reg, input_vreg, &meta, block_id,
+                            && self.lower_typed_fixed_array_where(TypedFixedArrayWhereLowering {
+                                src_dst,
+                                dst_vreg,
+                                input_reg,
+                                input_vreg,
+                                input_meta: &meta,
+                                closure_block_id: block_id,
                                 closure_ir,
-                            )?
+                            })?
                         {
                             return Ok(());
                         }
@@ -5774,10 +6155,15 @@ impl<'a> HirToMirLowering<'a> {
                             return Ok(());
                         }
                         if let Some(input_reg) = input_reg
-                            && self.lower_typed_fixed_array_each(
-                                src_dst, dst_vreg, input_reg, input_vreg, &meta, block_id,
+                            && self.lower_typed_fixed_array_each(TypedFixedArrayEachLowering {
+                                src_dst,
+                                dst_vreg,
+                                input_reg,
+                                input_vreg,
+                                input_meta: &meta,
+                                closure_block_id: block_id,
                                 closure_ir,
-                            )?
+                            })?
                         {
                             return Ok(());
                         }
@@ -5792,13 +6178,11 @@ impl<'a> HirToMirLowering<'a> {
                     });
 
                     // Copy metadata from input to output
-                    if let Some(reg) = input_reg {
-                        if let Some(meta) = self.get_metadata(reg).cloned() {
-                            let out_meta = self.get_or_create_metadata(src_dst);
-                            out_meta.field_type = meta.field_type;
-                            out_meta.string_slot = meta.string_slot;
-                            out_meta.record_fields = meta.record_fields;
-                        }
+                    if let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) {
+                        let out_meta = self.get_or_create_metadata(src_dst);
+                        out_meta.field_type = meta.field_type;
+                        out_meta.string_slot = meta.string_slot;
+                        out_meta.record_fields = meta.record_fields;
                     }
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
@@ -5932,14 +6316,17 @@ impl<'a> HirToMirLowering<'a> {
                             | AnnotatedValueSemantics::NumericList { .. }
                             | AnnotatedValueSemantics::Record(_) => None,
                         }
+                    } else if meta
+                        .field_type
+                        .as_ref()
+                        .is_some_and(MirType::is_scalar_like)
+                    {
+                        Some(false)
                     } else if let Some(len) =
                         (!matches!(meta.constant_value, Some(nu_protocol::Value::List { .. })))
                             .then(|| {
                                 meta.field_type.as_ref().and_then(|ty| {
-                                    Self::aggregate_call_value_type(ty).and_then(|ty| match ty {
-                                        MirType::Array { len, .. } => Some(*len),
-                                        _ => None,
-                                    })
+                                    Self::typed_fixed_array_array_type(ty).map(|(_, len)| len)
                                 })
                             })
                             .flatten()
@@ -6032,12 +6419,7 @@ impl<'a> HirToMirLowering<'a> {
                             (!matches!(meta.constant_value, Some(nu_protocol::Value::List { .. })))
                                 .then(|| {
                                     meta.field_type.as_ref().and_then(|ty| {
-                                        Self::aggregate_call_value_type(ty).and_then(
-                                            |ty| match ty {
-                                                MirType::Array { len, .. } => Some(*len),
-                                                _ => None,
-                                            },
-                                        )
+                                        Self::typed_fixed_array_array_type(ty).map(|(_, len)| len)
                                     })
                                 })
                                 .flatten()
@@ -6367,15 +6749,15 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                        if !self.lower_fixed_binary_index_of_all(
-                            &cmd_name,
+                        if !self.lower_fixed_binary_index_of_all(FixedBinaryIndexSearch {
+                            cmd_name: &cmd_name,
                             src_dst,
                             result_vreg,
                             input_reg,
                             input_vreg,
-                            &pattern,
+                            pattern: &pattern,
                             search_from_end,
-                        )? {
+                        })? {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes index-of requires compile-time known binary or list<binary> input in eBPF"
                                     .into(),
@@ -6494,26 +6876,26 @@ impl<'a> HirToMirLowering<'a> {
                                 )
                             })?;
                             let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                            if self.lower_fixed_binary_array_index_of(
-                                &cmd_name,
+                            if self.lower_fixed_binary_array_index_of(FixedBinaryIndexSearch {
+                                cmd_name: &cmd_name,
                                 src_dst,
                                 result_vreg,
                                 input_reg,
                                 input_vreg,
-                                &pattern,
+                                pattern: &pattern,
                                 search_from_end,
-                            )? {
+                            })? {
                                 return Ok(());
                             }
-                            if !self.lower_fixed_binary_index_of(
-                                &cmd_name,
+                            if !self.lower_fixed_binary_index_of(FixedBinaryIndexSearch {
+                                cmd_name: &cmd_name,
                                 src_dst,
                                 result_vreg,
                                 input_reg,
                                 input_vreg,
-                                &pattern,
+                                pattern: &pattern,
                                 search_from_end,
-                            )? {
+                            })? {
                                 return Err(CompileError::UnsupportedInstruction(
                                     "bytes index-of requires compile-time known binary or list<binary> input in eBPF"
                                         .into(),
@@ -6869,11 +7251,10 @@ impl<'a> HirToMirLowering<'a> {
                 let index = if let Some((_, index_reg)) = self.named_args.get("index").copied() {
                     self.get_metadata(index_reg)
                         .and_then(|meta| {
-                            meta.literal_int
-                                .or_else(|| match meta.constant_value.as_ref() {
-                                    Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                                    _ => None,
-                                })
+                            meta.literal_int.or(match meta.constant_value.as_ref() {
+                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                                _ => None,
+                            })
                         })
                         .ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
@@ -6973,28 +7354,28 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                        if self.lower_fixed_array_binary_add(
+                        if self.lower_fixed_array_binary_add(FixedBinaryAdd {
                             src_dst,
                             dst_vreg,
                             src_dst_had_value,
                             input_reg,
                             input_vreg,
-                            &data,
+                            data: &data,
                             index,
                             from_end,
-                        )? {
+                        })? {
                             return Ok(());
                         }
-                        if !self.lower_fixed_binary_add(
+                        if !self.lower_fixed_binary_add(FixedBinaryAdd {
                             src_dst,
                             dst_vreg,
                             src_dst_had_value,
                             input_reg,
                             input_vreg,
-                            &data,
+                            data: &data,
                             index,
                             from_end,
-                        )? {
+                        })? {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes add requires compile-time known binary or list<binary> input in eBPF"
                                     .into(),
@@ -7171,28 +7552,28 @@ impl<'a> HirToMirLowering<'a> {
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                         let lowered = if cmd_name == "bytes replace" {
-                            if self.lower_fixed_array_binary_replace(
+                            if self.lower_fixed_array_binary_replace(FixedBinaryReplace {
                                 src_dst,
                                 dst_vreg,
                                 src_dst_had_value,
                                 input_reg,
                                 input_vreg,
-                                &pattern,
-                                &replacement,
+                                pattern: &pattern,
+                                replacement: &replacement,
                                 apply_all,
-                            )? {
+                            })? {
                                 true
                             } else {
-                                self.lower_fixed_binary_replace(
+                                self.lower_fixed_binary_replace(FixedBinaryReplace {
                                     src_dst,
                                     dst_vreg,
                                     src_dst_had_value,
                                     input_reg,
                                     input_vreg,
-                                    &pattern,
-                                    &replacement,
+                                    pattern: &pattern,
+                                    replacement: &replacement,
                                     apply_all,
-                                )?
+                                })?
                             }
                         } else {
                             if self.lower_fixed_array_binary_remove(
@@ -7656,7 +8037,7 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                        self.lower_field_path_get(
+                        self.lower_field_path_get(FieldPathGet {
                             src_dst,
                             dst_vreg,
                             src_dst_had_value,
@@ -7664,7 +8045,7 @@ impl<'a> HirToMirLowering<'a> {
                             input_vreg,
                             input_meta,
                             path,
-                        )?;
+                        })?;
                         return Ok(());
                     }
 
@@ -7696,7 +8077,32 @@ impl<'a> HirToMirLowering<'a> {
                         .map(MirValue::Const)
                         .unwrap_or(MirValue::VReg(idx_vreg));
                     let mut handled_list_get = false;
-                    if let Some(meta) = input_meta {
+                    if let Some(input_reg) = input_reg
+                        && let Some(meta) = input_meta.as_ref()
+                        && let Some(DirectListProjection::Index(projected_index)) =
+                            meta.direct_projected_list_consumer
+                        && let MirValue::Const(raw_idx) = &idx
+                        && *raw_idx == projected_index
+                    {
+                        self.emit(MirInst::Copy {
+                            dst: result_vreg,
+                            src: MirValue::VReg(input_vreg),
+                        });
+                        if let Some(ty) = meta.field_type.clone() {
+                            self.vreg_type_hints.insert(result_vreg, ty);
+                        }
+                        self.propagate_passthrough_reg_metadata(
+                            src_dst,
+                            result_vreg,
+                            input_reg,
+                            input_vreg,
+                        );
+                        if let Some(out_meta) = self.reg_metadata.get_mut(&src_dst.get()) {
+                            out_meta.direct_projected_list_consumer = None;
+                        }
+                        handled_list_get = true;
+                    }
+                    if !handled_list_get && let Some(meta) = input_meta {
                         if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
                             self.compile_time_only_list_builder_values(reg, input_vreg)
                                 .map(|values| (reg, values.to_vec()))
@@ -7722,6 +8128,28 @@ impl<'a> HirToMirLowering<'a> {
                                 })?;
 
                                 self.lower_compile_time_list_transform_result(src_dst, &projected)?;
+                                handled_list_get = true;
+                            } else if let Some(string_values) =
+                                Self::compile_time_string_list_bytes(&values)
+                            {
+                                let Some((min_idx, max_idx)) = Self::bounded_runtime_index_range(
+                                    self.get_metadata(idx_reg),
+                                    values.len(),
+                                )?
+                                else {
+                                    return Err(CompileError::UnsupportedInstruction(
+                                        "get index must be compile-time constant or range-proven in bounds for compile-time known string lists in eBPF"
+                                            .into(),
+                                    ));
+                                };
+                                self.emit_runtime_indexed_compile_time_string_list_get(
+                                    src_dst,
+                                    result_vreg,
+                                    idx.clone(),
+                                    min_idx,
+                                    max_idx,
+                                    &string_values,
+                                )?;
                                 handled_list_get = true;
                             } else {
                                 let materialized =
@@ -7807,6 +8235,7 @@ impl<'a> HirToMirLowering<'a> {
                                 list: input_vreg,
                                 idx: idx.clone(),
                             });
+                            self.vreg_type_hints.insert(result_vreg, MirType::I64);
 
                             self.reset_call_result_metadata(src_dst);
                             let out_meta = self.get_or_create_metadata(src_dst);
@@ -8025,6 +8454,18 @@ impl<'a> HirToMirLowering<'a> {
                     pointee,
                     address_space: AddressSpace::Stack | AddressSpace::Map,
                 }) if pointee.as_ref() == &key_ty => Ok(key_vreg),
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Kernel,
+                }) if pointee.as_ref() == &key_ty => {
+                    let key_context = format!("{context} key for '{}'", map_ref.name);
+                    self.materialize_trusted_kernel_aggregate_pointer_to_stack(
+                        key_reg,
+                        key_vreg,
+                        pointee,
+                        &key_context,
+                    )
+                }
                 Some(observed) if self.stored_generic_map_value_type(observed) == key_ty => {
                     let Some(key_reg) = key_reg else {
                         return Err(CompileError::UnsupportedInstruction(format!(
@@ -8138,7 +8579,8 @@ impl<'a> HirToMirLowering<'a> {
         context: &str,
     ) -> Result<(), CompileError> {
         self.reject_context_pointer_payload(value_reg, context)?;
-        let value_ty = if let Some(meta) = value_reg.and_then(|reg| self.get_metadata(reg)) {
+        let value_meta = value_reg.and_then(|reg| self.get_metadata(reg).cloned());
+        let value_ty = if let Some(meta) = value_meta.as_ref() {
             Self::metadata_fixed_array_layout(meta)?
                 .or_else(|| meta.field_type.clone())
                 .or_else(|| Self::metadata_record_layout(meta))
@@ -8153,7 +8595,8 @@ impl<'a> HirToMirLowering<'a> {
             .transpose()?
             .flatten();
         if let Some(value_ty) = value_ty {
-            let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
+            let stored_value_ty = self
+                .stored_generic_or_trusted_kernel_map_value_type(&value_ty, value_meta.as_ref());
             let explicit_schema = self.declared_map_value_types.contains(map_ref);
             if (self.externally_seeded_map_value_types.contains(map_ref) || explicit_schema)
                 && let Some(existing) = self.named_map_value_type(map_ref)
@@ -8192,6 +8635,27 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         Ok(())
+    }
+
+    fn stored_generic_or_trusted_kernel_map_value_type(
+        &self,
+        ty: &MirType,
+        meta: Option<&RegMetadata>,
+    ) -> MirType {
+        match ty {
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            } if meta.is_some_and(|meta| meta.trusted_btf)
+                && matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                ) =>
+            {
+                pointee.as_ref().clone()
+            }
+            _ => self.stored_generic_map_value_type(ty),
+        }
     }
 
     fn lower_socket_map_put(
@@ -9038,6 +9502,14 @@ impl<'a> HirToMirLowering<'a> {
         context: &str,
     ) -> Result<(VReg, MirType), CompileError> {
         self.reject_context_pointer_payload(value_reg, context)?;
+        let value_vreg_ty = self.vreg_type_hints.get(&value_vreg).cloned();
+        if let Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        }) = value_vreg_ty.as_ref()
+        {
+            return Ok((value_vreg, pointee.as_ref().clone()));
+        }
         let value_ty = value_reg
             .and_then(|reg| self.get_metadata(reg))
             .and_then(|meta| {
@@ -9045,7 +9517,7 @@ impl<'a> HirToMirLowering<'a> {
                     .clone()
                     .or_else(|| Self::metadata_record_layout(meta))
             })
-            .or_else(|| self.vreg_type_hints.get(&value_vreg).cloned())
+            .or(value_vreg_ty)
             .unwrap_or(MirType::U64);
 
         match value_ty {
@@ -9053,6 +9525,20 @@ impl<'a> HirToMirLowering<'a> {
                 pointee,
                 address_space: AddressSpace::Stack | AddressSpace::Map,
             } => Ok((value_vreg, pointee.as_ref().clone())),
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+            {
+                let stored_ty = pointee.as_ref().clone();
+                let ptr_vreg = self.materialize_trusted_kernel_aggregate_pointer_to_stack(
+                    value_reg, value_vreg, &stored_ty, context,
+                )?;
+                Ok((ptr_vreg, stored_ty))
+            }
             MirType::Ptr { address_space, .. } => Err(CompileError::UnsupportedInstruction(
                 format!("{context} value pointer must be stack/map backed, got {address_space:?}"),
             )),
@@ -9110,6 +9596,104 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} value must be scalar or stack/map-backed aggregate, got {other:?}"
             ))),
         }
+    }
+
+    fn materialize_trusted_kernel_aggregate_pointer_to_stack(
+        &mut self,
+        value_reg: Option<RegId>,
+        value_vreg: VReg,
+        pointee: &MirType,
+        context: &str,
+    ) -> Result<VReg, CompileError> {
+        if !matches!(pointee, MirType::Array { .. } | MirType::Struct { .. }) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} kernel pointer must reference a fixed aggregate, got {pointee:?}"
+            )));
+        }
+        let Some(value_reg) = value_reg else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} kernel aggregate pointer requires trusted BTF provenance metadata"
+            )));
+        };
+        if !self
+            .get_metadata(value_reg)
+            .is_some_and(|meta| meta.trusted_btf)
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} kernel aggregate pointer requires trusted BTF provenance in eBPF"
+            )));
+        }
+
+        let size = pointee.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} empty kernel aggregate pointers are not supported in eBPF"
+            )));
+        }
+
+        let slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, pointee.clone());
+        let stack_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: stack_ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            stack_ptr,
+            MirType::Ptr {
+                pointee: Box::new(pointee.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(slot, 0, value_vreg, 0, size)?;
+        Ok(stack_ptr)
+    }
+
+    fn materialize_trusted_kernel_aggregate_map_operand(
+        &mut self,
+        value_reg: Option<RegId>,
+        value_vreg: VReg,
+        context: &str,
+    ) -> Result<VReg, CompileError> {
+        let value_vreg_ty = self.vreg_type_hints.get(&value_vreg).cloned();
+        if matches!(
+            value_vreg_ty,
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+                ..
+            })
+        ) {
+            return Ok(value_vreg);
+        }
+        let value_ty = value_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|meta| {
+                meta.field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+            })
+            .or(value_vreg_ty);
+
+        let Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Kernel,
+        }) = value_ty
+        else {
+            return Ok(value_vreg);
+        };
+        if !matches!(
+            pointee.as_ref(),
+            MirType::Array { .. } | MirType::Struct { .. }
+        ) {
+            return Ok(value_vreg);
+        }
+
+        let pointee = pointee.as_ref().clone();
+        self.materialize_trusted_kernel_aggregate_pointer_to_stack(
+            value_reg, value_vreg, &pointee, context,
+        )
     }
 
     fn materialize_helper_map_fd_arg(
@@ -9230,17 +9814,9 @@ impl<'a> HirToMirLowering<'a> {
             dst: map_vreg,
             map: map_ref.clone(),
         });
-        if matches!(map_kind, MapKind::SockMap) {
-            self.vreg_type_hints.insert(
-                map_vreg,
-                MirType::MapRef {
-                    key_ty: Box::new(MirType::U32),
-                    val_ty: Box::new(MirType::U32),
-                },
-            );
-        } else if matches!(
+        if matches!(
             map_kind,
-            MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray
+            MapKind::SockMap | MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray
         ) || map_kind.is_array_index_map()
         {
             self.vreg_type_hints.insert(
@@ -9314,16 +9890,27 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn storage_helper_init_value_type_from_reg(&self, value_reg: RegId) -> Option<MirType> {
-        let value_ty = self.get_metadata(value_reg).and_then(|meta| {
-            meta.field_type
-                .clone()
-                .or_else(|| Self::metadata_record_layout(meta))
-        })?;
+        let meta = self.get_metadata(value_reg)?;
+        let value_ty = meta
+            .field_type
+            .clone()
+            .or_else(|| Self::metadata_record_layout(meta))?;
         match value_ty {
             MirType::Ptr {
                 pointee,
                 address_space: AddressSpace::Stack | AddressSpace::Map,
             } => Some(pointee.as_ref().clone()),
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            } if meta.trusted_btf
+                && matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                ) =>
+            {
+                Some(pointee.as_ref().clone())
+            }
             MirType::Array { .. } | MirType::Struct { .. } => Some(value_ty),
             _ => None,
         }
@@ -9447,5 +10034,624 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn with_test_lowering<R>(test: impl FnOnce(&mut HirToMirLowering<'_>) -> R) -> R {
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+        test(&mut lowering)
+    }
+
+    fn with_named_test_lowering<R>(
+        command_name: &str,
+        test: impl FnOnce(&mut HirToMirLowering<'_>, DeclId) -> R,
+    ) -> R {
+        let decl_id = DeclId::new(7000);
+        let mut decl_names = HashMap::new();
+        decl_names.insert(decl_id, command_name.to_string());
+        let closure_irs = HashMap::new();
+        let closure_param_sources = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+        let entry = lowering.func.alloc_block();
+        lowering.func.entry = entry;
+        lowering.current_block = entry;
+        test(&mut lowering, decl_id)
+    }
+
+    fn register_trusted_kernel_binary(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        len: usize,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                annotated_semantics: Some(AnnotatedValueSemantics::Binary { len }),
+                trusted_btf: true,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn register_trusted_kernel_binary_array(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        elem_len: usize,
+        array_len: usize,
+    ) -> VReg {
+        let elem_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: elem_len,
+        };
+        let array_ty = MirType::Array {
+            elem: Box::new(elem_ty),
+            len: array_len,
+        };
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(array_ty),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                annotated_semantics: Some(AnnotatedValueSemantics::FixedArray {
+                    elem: Box::new(AnnotatedValueSemantics::Binary { len: elem_len }),
+                    len: array_len,
+                }),
+                trusted_btf: true,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn register_trusted_kernel_unannotated_fixed_array(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        elem_ty: MirType,
+        array_len: usize,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(elem_ty),
+                len: array_len,
+            }),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                trusted_btf: true,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn register_kernel_aggregate_value(
+        lowering: &mut HirToMirLowering<'_>,
+        reg: RegId,
+        pointee: MirType,
+        trusted_btf: bool,
+    ) -> VReg {
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(pointee),
+            address_space: AddressSpace::Kernel,
+        };
+        let vreg = lowering.get_vreg(reg);
+        lowering.vreg_type_hints.insert(vreg, ptr_ty.clone());
+        lowering.reg_metadata.insert(
+            reg.get(),
+            RegMetadata {
+                field_type: Some(ptr_ty),
+                trusted_btf,
+                ..Default::default()
+            },
+        );
+        vreg
+    }
+
+    fn count_loads_from(lowering: &HirToMirLowering<'_>, ptr_vreg: VReg) -> usize {
+        lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|inst| matches!(inst, MirInst::Load { ptr, .. } if *ptr == ptr_vreg))
+            .count()
+    }
+
+    fn has_const_copy_to(lowering: &HirToMirLowering<'_>, dst: VReg, value: i64) -> bool {
+        lowering
+            .func
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::Copy {
+                        dst: copy_dst,
+                        src: MirValue::Const(copy_value),
+                    } if *copy_dst == dst && *copy_value == value
+                )
+            })
+    }
+
+    fn assert_stack_ptr_hint(lowering: &HirToMirLowering<'_>, vreg: VReg, pointee_ty: &MirType) {
+        assert!(matches!(
+            lowering.vreg_type_hints.get(&vreg),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            }) if pointee.as_ref() == pointee_ty
+        ));
+    }
+
+    fn aggregate_key_ty() -> MirType {
+        MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 4,
+        }
+    }
+
+    #[test]
+    fn map_key_schema_materializes_trusted_kernel_aggregate_key() {
+        with_test_lowering(|lowering| {
+            let map_ref = MapRef {
+                name: "agg_keys".into(),
+                kind: MapKind::Hash,
+            };
+            let key_ty = aggregate_key_ty();
+            lowering.register_named_map_key_type(&map_ref, &key_ty);
+            let key_reg = RegId::new(1);
+            let key_vreg = register_kernel_aggregate_value(lowering, key_reg, key_ty.clone(), true);
+
+            let out_vreg = lowering
+                .map_key_vreg_for_named_schema(&map_ref, key_vreg, Some(key_reg), "map-put")
+                .expect("trusted kernel aggregate key should materialize");
+
+            assert_ne!(out_vreg, key_vreg);
+            assert_stack_ptr_hint(lowering, out_vreg, &key_ty);
+            assert!(count_loads_from(lowering, key_vreg) > 0);
+        });
+    }
+
+    #[test]
+    fn map_key_schema_rejects_untrusted_kernel_aggregate_key() {
+        with_test_lowering(|lowering| {
+            let map_ref = MapRef {
+                name: "agg_keys".into(),
+                kind: MapKind::Hash,
+            };
+            let key_ty = aggregate_key_ty();
+            lowering.register_named_map_key_type(&map_ref, &key_ty);
+            let key_reg = RegId::new(1);
+            let key_vreg =
+                register_kernel_aggregate_value(lowering, key_reg, key_ty.clone(), false);
+
+            let err = lowering
+                .map_key_vreg_for_named_schema(&map_ref, key_vreg, Some(key_reg), "map-put")
+                .expect_err("untrusted kernel aggregate key should be rejected");
+
+            assert!(format!("{err:?}").contains("trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn map_value_probe_materializes_trusted_kernel_aggregate_value() {
+        with_test_lowering(|lowering| {
+            let value_ty = aggregate_key_ty();
+            let value_reg = RegId::new(1);
+            let value_vreg =
+                register_kernel_aggregate_value(lowering, value_reg, value_ty.clone(), true);
+
+            let (ptr_vreg, stored_ty) = lowering
+                .materialize_map_value_probe_pointer(Some(value_reg), value_vreg, "map-put")
+                .expect("trusted kernel aggregate value should materialize");
+
+            assert_ne!(ptr_vreg, value_vreg);
+            assert_eq!(stored_ty, value_ty);
+            assert_stack_ptr_hint(lowering, ptr_vreg, &stored_ty);
+            assert!(count_loads_from(lowering, value_vreg) > 0);
+        });
+    }
+
+    #[test]
+    fn map_value_probe_rejects_untrusted_kernel_aggregate_value() {
+        with_test_lowering(|lowering| {
+            let value_ty = aggregate_key_ty();
+            let value_reg = RegId::new(1);
+            let value_vreg = register_kernel_aggregate_value(lowering, value_reg, value_ty, false);
+
+            let err = lowering
+                .materialize_map_value_probe_pointer(Some(value_reg), value_vreg, "map-put")
+                .expect_err("untrusted kernel aggregate value should be rejected");
+
+            assert!(format!("{err:?}").contains("trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn map_update_operand_materializes_trusted_kernel_aggregate_value() {
+        with_test_lowering(|lowering| {
+            let value_ty = aggregate_key_ty();
+            let value_reg = RegId::new(1);
+            let value_vreg =
+                register_kernel_aggregate_value(lowering, value_reg, value_ty.clone(), true);
+
+            let ptr_vreg = lowering
+                .materialize_trusted_kernel_aggregate_map_operand(
+                    Some(value_reg),
+                    value_vreg,
+                    "map-put value",
+                )
+                .expect("trusted kernel aggregate map operand should materialize");
+
+            assert_ne!(ptr_vreg, value_vreg);
+            assert_stack_ptr_hint(lowering, ptr_vreg, &value_ty);
+            assert!(count_loads_from(lowering, value_vreg) > 0);
+        });
+    }
+
+    #[test]
+    fn map_update_operand_rejects_untrusted_kernel_aggregate_value() {
+        with_test_lowering(|lowering| {
+            let value_ty = aggregate_key_ty();
+            let value_reg = RegId::new(1);
+            let value_vreg = register_kernel_aggregate_value(lowering, value_reg, value_ty, false);
+
+            let err = lowering
+                .materialize_trusted_kernel_aggregate_map_operand(
+                    Some(value_reg),
+                    value_vreg,
+                    "map-put value",
+                )
+                .expect_err("untrusted kernel aggregate map operand should be rejected");
+
+            assert!(format!("{err:?}").contains("trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn count_materializes_trusted_kernel_aggregate_key() {
+        with_named_test_lowering("count", |lowering, count_decl| {
+            let key_ty = aggregate_key_ty();
+            let key_reg = RegId::new(1);
+            let key_vreg = register_kernel_aggregate_value(lowering, key_reg, key_ty.clone(), true);
+            lowering.pipeline_input = Some(key_vreg);
+            lowering.pipeline_input_reg = Some(key_reg);
+
+            let src_dst = RegId::new(2);
+            lowering
+                .lower_call(count_decl, src_dst)
+                .expect("count should materialize trusted kernel aggregate keys");
+
+            let (map_name, map_key) = lowering
+                .func
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .find_map(|inst| match inst {
+                    MirInst::MapUpdate { map, key, .. } => Some((map.name.as_str(), *key)),
+                    _ => None,
+                })
+                .expect("count should emit a counter map update");
+
+            assert_eq!(map_name, BYTES_COUNTER_MAP_NAME);
+            assert_ne!(map_key, key_vreg);
+            assert_stack_ptr_hint(lowering, map_key, &key_ty);
+            assert!(count_loads_from(lowering, key_vreg) > 0);
+        });
+    }
+
+    #[test]
+    fn count_rejects_untrusted_kernel_aggregate_key() {
+        with_named_test_lowering("count", |lowering, count_decl| {
+            let key_ty = aggregate_key_ty();
+            let key_reg = RegId::new(1);
+            let key_vreg =
+                register_kernel_aggregate_value(lowering, key_reg, key_ty.clone(), false);
+            lowering.pipeline_input = Some(key_vreg);
+            lowering.pipeline_input_reg = Some(key_reg);
+
+            let err = lowering
+                .lower_call(count_decl, RegId::new(2))
+                .expect_err("count should reject untrusted kernel aggregate keys");
+
+            assert!(format!("{err:?}").contains("trusted BTF provenance"));
+        });
+    }
+
+    #[test]
+    fn map_value_schema_records_trusted_kernel_aggregate_pointee() {
+        with_test_lowering(|lowering| {
+            let map_ref = MapRef {
+                name: "agg_values".into(),
+                kind: MapKind::BloomFilter,
+            };
+            let value_ty = aggregate_key_ty();
+            let value_reg = RegId::new(1);
+            register_kernel_aggregate_value(lowering, value_reg, value_ty.clone(), true);
+
+            lowering
+                .record_named_map_value_schema_from_reg(&map_ref, Some(value_reg), "map-contains")
+                .expect("trusted kernel aggregate schema should record pointee type");
+
+            assert_eq!(lowering.named_map_value_type(&map_ref), Some(&value_ty));
+        });
+    }
+
+    #[test]
+    fn length_uses_kernel_fixed_array_pointer_type_without_annotations() {
+        with_named_test_lowering("length", |lowering, length_decl| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_trusted_kernel_unannotated_fixed_array(
+                lowering,
+                input_reg,
+                MirType::U32,
+                3,
+            );
+            lowering.pipeline_input = Some(input_vreg);
+            lowering.pipeline_input_reg = Some(input_reg);
+
+            let src_dst = RegId::new(2);
+            lowering
+                .lower_call(length_decl, src_dst)
+                .expect("length should fold typed fixed-array pointer length");
+            let result_vreg = *lowering
+                .reg_map
+                .get(&src_dst.get())
+                .expect("length result vreg should be registered");
+
+            assert!(has_const_copy_to(lowering, result_vreg, 3));
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::I64)
+            );
+        });
+    }
+
+    #[test]
+    fn is_empty_uses_kernel_fixed_array_pointer_type_without_annotations() {
+        with_named_test_lowering("is-empty", |lowering, is_empty_decl| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_trusted_kernel_unannotated_fixed_array(
+                lowering,
+                input_reg,
+                MirType::U32,
+                3,
+            );
+            lowering.pipeline_input = Some(input_vreg);
+            lowering.pipeline_input_reg = Some(input_reg);
+
+            let src_dst = RegId::new(2);
+            lowering
+                .lower_call(is_empty_decl, src_dst)
+                .expect("is-empty should fold typed fixed-array pointer length");
+            let result_vreg = *lowering
+                .reg_map
+                .get(&src_dst.get())
+                .expect("is-empty result vreg should be registered");
+
+            assert!(has_const_copy_to(lowering, result_vreg, 0));
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&MirType::Bool)
+            );
+        });
+    }
+
+    #[test]
+    fn fixed_binary_predicate_accepts_trusted_kernel_binary() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_trusted_kernel_binary(lowering, input_reg, 4);
+            let src_dst = RegId::new(2);
+            let result_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_fixed_binary_predicate(
+                        "bytes starts-with",
+                        src_dst,
+                        result_vreg,
+                        input_reg,
+                        input_vreg,
+                        &[0xaa],
+                    )
+                    .expect("trusted kernel fixed binary predicate should lower")
+            );
+
+            assert_eq!(count_loads_from(lowering, input_vreg), 1);
+            assert_eq!(
+                lowering.vreg_type_hints.get(&result_vreg),
+                Some(&MirType::Bool)
+            );
+        });
+    }
+
+    #[test]
+    fn fixed_binary_array_predicate_accepts_trusted_kernel_fixed_array() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_trusted_kernel_binary_array(lowering, input_reg, 4, 2);
+            let src_dst = RegId::new(2);
+            let result_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_fixed_binary_array_predicate(
+                        "bytes starts-with",
+                        src_dst,
+                        result_vreg,
+                        input_reg,
+                        input_vreg,
+                        &[0xaa],
+                    )
+                    .expect("trusted kernel fixed-array binary predicate should lower")
+            );
+
+            let byte_loads = lowering
+                .func
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .filter(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::Load {
+                            ty: MirType::U8,
+                            ..
+                        }
+                    )
+                })
+                .count();
+            assert_eq!(byte_loads, 2);
+            assert!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.list_buffer)
+                    .is_some()
+            );
+        });
+    }
+
+    #[test]
+    fn bytes_at_accepts_trusted_kernel_fixed_array_binary() {
+        with_test_lowering(|lowering| {
+            let input_reg = RegId::new(1);
+            let input_vreg = register_trusted_kernel_binary_array(lowering, input_reg, 4, 2);
+            let src_dst = RegId::new(2);
+            let dst_vreg = lowering.get_vreg(src_dst);
+
+            assert!(
+                lowering
+                    .lower_fixed_array_binary_at(
+                        src_dst,
+                        dst_vreg,
+                        false,
+                        input_reg,
+                        input_vreg,
+                        MaybeOpenRange {
+                            start: Some(1),
+                            step: 1,
+                            end: Some(2),
+                            inclusive: true,
+                        },
+                    )
+                    .expect("trusted kernel fixed-array binary slice should lower")
+            );
+
+            assert!(
+                count_loads_from(lowering, input_vreg) > 0,
+                "expected bytes at to copy from the trusted kernel fixed-array input"
+            );
+            let out_elem_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 2,
+            };
+            let out_ty = MirType::Array {
+                elem: Box::new(out_elem_ty),
+                len: 2,
+            };
+            assert_eq!(
+                lowering
+                    .reg_metadata
+                    .get(&src_dst.get())
+                    .and_then(|meta| meta.field_type.as_ref()),
+                Some(&out_ty)
+            );
+        });
+    }
+
+    #[test]
+    fn fixed_binary_pointer_rejects_untrusted_kernel() {
+        let meta = RegMetadata::default();
+        let err = HirToMirLowering::validate_fixed_binary_pointer_address_space(
+            "bytes at",
+            "typed fixed-array binary",
+            AddressSpace::Kernel,
+            &meta,
+        )
+        .expect_err("untrusted kernel binary pointer should be rejected");
+
+        let CompileError::UnsupportedInstruction(message) = err else {
+            panic!("expected unsupported-instruction error");
+        };
+        assert!(message.contains("requires trusted BTF provenance"));
     }
 }

@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2491_2496 = [
         error_contains: "str starts-with requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-starts-with-rejects-nul-prefix"
+        name: "core-string-starts-with-nul-prefix"
         category: "language-core"
-        tags: [string str starts-with diagnostics reject]
+        tags: [string str starts-with nul accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str starts-with "\u{0}"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str starts-with does not support NUL bytes in the prefix in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-starts-with-rejects-ignore-case-runtime-input"

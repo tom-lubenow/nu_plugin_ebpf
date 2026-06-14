@@ -488,9 +488,7 @@ impl<'a> TypeInference<'a> {
         }
 
         let total_vregs = func.vreg_count.max(func.param_count as u32);
-        if let Err(errors) = self.validate_hints(func, total_vregs) {
-            return Err(errors);
-        }
+        self.validate_hints(func, total_vregs)?;
 
         // Phase 1: Assign fresh type variables to all vregs
         for i in 0..total_vregs {

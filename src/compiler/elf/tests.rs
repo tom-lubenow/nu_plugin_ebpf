@@ -1354,8 +1354,12 @@ fn test_program_type_metadata_for_syscall() {
     assert_eq!(info.context_family, ProgramContextFamily::Syscall);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(!EbpfProgramType::Syscall.supports_capability(ProgramCapability::Counters));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::Counters));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::Histograms));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::Timers));
     assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::HelperCalls));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::GenericMaps));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::Globals));
 }
 
 #[test]
@@ -2828,10 +2832,6 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_sys_bpf' is only valid in syscall programs".to_string())
     );
     assert_eq!(
-        EbpfProgramType::Syscall.helper_call_error(BpfHelper::GetCurrentPidTgid),
-        Some("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs".to_string())
-    );
-    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
             "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
@@ -3429,6 +3429,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     for helper in [
+        BpfHelper::MapLookupElem,
+        BpfHelper::MapUpdateElem,
+        BpfHelper::MapDeleteElem,
+        BpfHelper::MapPushElem,
+        BpfHelper::MapPopElem,
+        BpfHelper::MapPeekElem,
+        BpfHelper::GetCurrentPidTgid,
+        BpfHelper::KtimeGetNs,
         BpfHelper::SysBpf,
         BpfHelper::BtfFindByNameKind,
         BpfHelper::SysClose,
@@ -4165,7 +4173,7 @@ fn test_helper_backed_ctx_field_surface_stays_within_helper_surface() {
         let ctx = ProbeContext::new(program_type, target);
 
         for (field, helper) in &helper_backed_fields {
-            if ctx.ctx_field_access_error(&field).is_none() {
+            if ctx.ctx_field_access_error(field).is_none() {
                 assert!(
                     program_type.helper_call_error(*helper).is_none(),
                     "ctx.{} is available on {} but helper '{}' is rejected",
@@ -4337,6 +4345,26 @@ fn test_probe_context_main_return_type_defaults_to_i64_outside_struct_ops() {
             .main_function_expected_return_type()
             .expect("struct_ops object return contract should not use callback BTF"),
         Some(HMType::I64)
+    );
+}
+
+#[test]
+fn test_struct_ops_aggregate_return_contract_reports_kernel_trampoline_limit() {
+    let err = probe_context::struct_ops_callback_expected_return_type(
+        "demo_ops",
+        "pick",
+        Some(crate::kernel_btf::TypeInfo::Struct {
+            name: "demo_ret".to_string(),
+            btf_type_id: Some(7),
+            size: 8,
+            fields: Vec::new(),
+        }),
+    )
+    .expect_err("aggregate struct_ops returns should be rejected");
+
+    assert!(
+        err.contains("kernel BPF trampoline function models reject"),
+        "unexpected aggregate return diagnostic: {err}"
     );
 }
 
@@ -4973,6 +5001,17 @@ fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::KfuncCall));
     assert!(EbpfProgramType::Tc.supports_intrinsic(ProgramIntrinsic::KfuncCall));
     assert!(!EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::MapGet));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::MapPut));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::MapDelete));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::MapContains));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::Count));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::Histogram));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::StartTimer));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::StopTimer));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::GlobalDefine));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::GlobalGet));
+    assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::GlobalSet));
     assert!(!EbpfProgramType::Extension.supports_intrinsic(ProgramIntrinsic::KfuncCall));
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::AdjustPacket));
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::Redirect));
@@ -5670,7 +5709,7 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
 
     let elf = program.to_elf().expect("typed map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse typed map BTF");
-    assert!(aya.maps.get("locks").is_some());
+    assert!(aya.maps.contains_key("locks"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
@@ -5754,7 +5793,7 @@ fn test_elf_local_storage_map_btf_emits_required_typed_key_value_and_flags() {
 
     let elf = program.to_elf().expect("local-storage map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse local-storage map BTF");
-    assert!(aya.maps.get("task_state").is_some());
+    assert!(aya.maps.contains_key("task_state"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let maps_section = parsed
@@ -5855,7 +5894,7 @@ fn test_elf_map_btf_emits_kptr_value_type_tag() {
 
     let elf = program.to_elf().expect("typed map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse kptr typed map BTF");
-    assert!(aya.maps.get("task_slots").is_some());
+    assert!(aya.maps.contains_key("task_slots"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
@@ -5980,7 +6019,7 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
         .to_elf()
         .expect("graph root typed map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse graph root typed map BTF");
-    assert!(aya.maps.get("graph_roots").is_some());
+    assert!(aya.maps.contains_key("graph_roots"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
@@ -6090,7 +6129,7 @@ fn test_elf_map_btf_emits_bpf_wq_value_type() {
 
     let elf = program.to_elf().expect("typed map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse bpf_wq typed map BTF");
-    assert!(aya.maps.get("work_items").is_some());
+    assert!(aya.maps.contains_key("work_items"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
@@ -6154,7 +6193,7 @@ fn test_elf_map_btf_emits_bpf_refcount_value_type() {
 
     let elf = program.to_elf().expect("typed map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse bpf_refcount typed map BTF");
-    assert!(aya.maps.get("refcounted_items").is_some());
+    assert!(aya.maps.contains_key("refcounted_items"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
@@ -6214,8 +6253,8 @@ fn test_elf_map_btf_emits_map_in_map_inner_template_values_member() {
 
     let elf = program.to_elf().expect("map-in-map ELF should emit");
     let aya = AyaObject::parse(&elf).expect("Aya should parse map-in-map BTF object metadata");
-    assert!(aya.maps.get("inner").is_some());
-    assert!(aya.maps.get("outer").is_some());
+    assert!(aya.maps.contains_key("inner"));
+    assert!(aya.maps.contains_key("outer"));
 
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let maps_section = parsed
@@ -6249,6 +6288,120 @@ fn test_elf_map_btf_emits_map_in_map_inner_template_values_member() {
             .windows(b"values\0".len())
             .any(|w| w == b"values\0"),
         "map-in-map BTF should expose libbpf-compatible __array(values, inner) metadata"
+    );
+}
+
+#[test]
+fn test_elf_arena_map_btf_emits_map_extra() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+    use object::ObjectSymbol as _;
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let arena_ref = MapRef {
+        name: "arena_pages".to_string(),
+        kind: MapKind::Arena,
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "arena_obj",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "arena_pages".to_string(),
+            def: BpfMapDef::arena(64),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    )
+    .with_generic_map_max_entries(HashMap::from([(arena_ref.clone(), 64)]))
+    .with_generic_map_extras(HashMap::from([(arena_ref, 0x100000000)]));
+
+    let elf = program.to_elf().expect("arena ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse arena BTF object metadata");
+    assert!(aya.maps.contains_key("arena_pages"));
+
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let maps_section = parsed
+        .section_by_name(".maps")
+        .expect("expected .maps section");
+    assert_eq!(
+        maps_section
+            .data()
+            .expect(".maps section should be readable")
+            .len(),
+        56,
+        "arena map_extra metadata should add one fixed BTF map member"
+    );
+    let arena_symbol = parsed
+        .symbols()
+        .find(|symbol| symbol.name() == Ok("arena_pages"))
+        .expect("expected arena map symbol");
+    assert_eq!(arena_symbol.size(), 56);
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+    assert!(
+        btf_data
+            .windows(b"map_extra\0".len())
+            .any(|w| w == b"map_extra\0"),
+        "arena BTF should expose libbpf-compatible map_extra metadata"
+    );
+}
+
+#[test]
+fn test_elf_arena_map_extra_conflicts_across_program_sections() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let arena_ref = MapRef {
+        name: "arena_pages".to_string(),
+        kind: MapKind::Arena,
+    };
+    let first = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "first",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "arena_pages".to_string(),
+            def: BpfMapDef::arena(64),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    )
+    .with_generic_map_extras(HashMap::from([(arena_ref.clone(), 0x100000000)]));
+    let conflicting = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "conflict", bytecode)
+        .with_generic_map_extras(HashMap::from([(arena_ref, 0x200000000)]))
+        .into_program_section();
+
+    let mut object = first.into_object();
+    object.programs.push(conflicting);
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("conflicting object-wide arena map_extra values should fail");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(ref msg) if msg.contains("conflicting map_extra declarations for runtime map 'arena_pages'")),
+        "unexpected conflict error: {err:?}"
     );
 }
 
@@ -11120,7 +11273,7 @@ fn test_validate_runtime_artifacts_rejects_missing_emit_capability_for_events_ma
 }
 
 #[test]
-fn test_validate_runtime_artifacts_requires_generic_maps_for_arbitrary_maps() {
+fn test_validate_runtime_artifacts_accepts_syscall_generic_maps() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Syscall,
         "demo",
@@ -11139,13 +11292,105 @@ fn test_validate_runtime_artifacts_requires_generic_maps_for_arbitrary_maps() {
         HashMap::new(),
     );
 
-    let err = program
+    program
         .validate_runtime_artifacts()
-        .expect_err("expected generic map capability validation error");
+        .expect("syscall programs should accept generic runtime maps");
+}
 
-    assert!(
-        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("syscall programs do not support generic map operations required by runtime map 'scratch'"))
+#[test]
+fn test_validate_runtime_artifacts_accepts_syscall_globals() {
+    let program = EbpfProgram::from_bytecode(EbpfProgramType::Syscall, "demo", "test", vec![])
+        .with_readonly_globals(vec![ReadonlyGlobal {
+            name: "threshold".to_string(),
+            data: vec![1, 0, 0, 0],
+        }])
+        .with_data_globals(vec![DataGlobal {
+            name: "counter".to_string(),
+            data: vec![0; 8],
+        }])
+        .with_bss_globals(vec![BssGlobal {
+            name: "state".to_string(),
+            size: 16,
+        }]);
+
+    program
+        .validate_runtime_artifacts()
+        .expect("syscall programs should accept compiler-managed globals");
+}
+
+#[test]
+fn test_validate_runtime_artifacts_accepts_syscall_counters() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Syscall,
+        "demo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: COUNTER_MAP_NAME.to_string(),
+            def: BpfMapDef::hash(8, 8, 1024),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
     );
+
+    program
+        .validate_runtime_artifacts()
+        .expect("syscall programs should accept counter runtime maps");
+}
+
+#[test]
+fn test_validate_runtime_artifacts_accepts_syscall_histograms() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Syscall,
+        "demo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: HISTOGRAM_MAP_NAME.to_string(),
+            def: BpfMapDef::histogram_hash(),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    program
+        .validate_runtime_artifacts()
+        .expect("syscall programs should accept histogram runtime maps");
+}
+
+#[test]
+fn test_validate_runtime_artifacts_accepts_syscall_timers() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Syscall,
+        "demo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: TIMESTAMP_MAP_NAME.to_string(),
+            def: BpfMapDef::timestamp_hash(),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    program
+        .validate_runtime_artifacts()
+        .expect("syscall programs should accept timer runtime maps");
 }
 
 #[test]
@@ -12598,10 +12843,6 @@ fn test_validate_runtime_artifacts_rejects_known_unmodeled_runtime_map_types() {
             "requires map-in-map inner template metadata",
         ),
         (BpfMapType::StructOps, "reserved for struct_ops objects"),
-        (
-            BpfMapType::Arena,
-            "arena map_extra/mmap support is not modeled",
-        ),
         (
             BpfMapType::CgroupStorage,
             "deprecated cgroup-storage map type",

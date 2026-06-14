@@ -209,20 +209,20 @@ fn read_u32(raw: &[u8], offset: usize, endianness: BtfEndianness) -> Option<u32>
 
 fn btf_kind_payload_len(kind: u32, vlen: u32) -> Option<u32> {
     match kind {
-        1 => Some(4),                    // BTF_KIND_INT
-        2 => Some(0),                    // BTF_KIND_PTR
-        3 => Some(12),                   // BTF_KIND_ARRAY
-        4 | 5 => vlen.checked_mul(12),   // BTF_KIND_STRUCT / UNION
-        6 => vlen.checked_mul(8),        // BTF_KIND_ENUM
-        7 => Some(0),                    // BTF_KIND_FWD
-        8 | 9 | 10 | 11 | 12 => Some(0), // TYPEDEF / VOLATILE / CONST / RESTRICT / FUNC
-        13 => vlen.checked_mul(8),       // BTF_KIND_FUNC_PROTO
-        14 => Some(4),                   // BTF_KIND_VAR
-        15 => vlen.checked_mul(12),      // BTF_KIND_DATASEC
-        16 => Some(0),                   // BTF_KIND_FLOAT
-        17 => Some(4),                   // BTF_KIND_DECL_TAG
-        18 => Some(0),                   // BTF_KIND_TYPE_TAG
-        19 => vlen.checked_mul(12),      // BTF_KIND_ENUM64
+        1 => Some(4),                  // BTF_KIND_INT
+        2 => Some(0),                  // BTF_KIND_PTR
+        3 => Some(12),                 // BTF_KIND_ARRAY
+        4 | 5 => vlen.checked_mul(12), // BTF_KIND_STRUCT / UNION
+        6 => vlen.checked_mul(8),      // BTF_KIND_ENUM
+        7 => Some(0),                  // BTF_KIND_FWD
+        8..=12 => Some(0),             // TYPEDEF / VOLATILE / CONST / RESTRICT / FUNC
+        13 => vlen.checked_mul(8),     // BTF_KIND_FUNC_PROTO
+        14 => Some(4),                 // BTF_KIND_VAR
+        15 => vlen.checked_mul(12),    // BTF_KIND_DATASEC
+        16 => Some(0),                 // BTF_KIND_FLOAT
+        17 => Some(4),                 // BTF_KIND_DECL_TAG
+        18 => Some(0),                 // BTF_KIND_TYPE_TAG
+        19 => vlen.checked_mul(12),    // BTF_KIND_ENUM64
         _ => None,
     }
 }

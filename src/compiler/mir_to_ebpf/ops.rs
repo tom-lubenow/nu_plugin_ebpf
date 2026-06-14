@@ -1037,21 +1037,17 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::RemoteIp6 => {
-                match self
+                if let Some(SocketContextLayout::SockAddr) = self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_tuple_context_layout())
                 {
-                    Some(SocketContextLayout::SockAddr) => {
-                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
-                        else {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.remote_ip6 is only available on cgroup_sock_addr connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6 hooks".to_string(),
-                            ));
-                        };
-                        return self.compile_load_ctx_field(dst, &alias_field, slot);
-                    }
-                    _ => {}
+                    let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field) else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.remote_ip6 is only available on cgroup_sock_addr connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6 hooks".to_string(),
+                        ));
+                    };
+                    return self.compile_load_ctx_field(dst, &alias_field, slot);
                 }
                 self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.remote_ip6")?;
             }
@@ -1131,21 +1127,17 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::LocalIp6 => {
-                match self
+                if let Some(SocketContextLayout::SockAddr) = self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_tuple_context_layout())
                 {
-                    Some(SocketContextLayout::SockAddr) => {
-                        let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
-                        else {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "ctx.local_ip6 is only available on cgroup_sock_addr bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6 hooks".to_string(),
-                            ));
-                        };
-                        return self.compile_load_ctx_field(dst, &alias_field, slot);
-                    }
-                    _ => {}
+                    let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field) else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "ctx.local_ip6 is only available on cgroup_sock_addr bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6 hooks".to_string(),
+                        ));
+                    };
+                    return self.compile_load_ctx_field(dst, &alias_field, slot);
                 }
                 self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.local_ip6")?;
             }

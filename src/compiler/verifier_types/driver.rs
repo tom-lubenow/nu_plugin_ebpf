@@ -103,13 +103,13 @@ fn verify_mir_with_subfunction_summaries_impl(
 ) -> Result<(), Vec<VerifierTypeError>> {
     let effective_program = probe_ctx.map(|ctx| ctx.program_info()).or(program);
 
-    if let Some(program) = effective_program {
-        if let Err(errors) = validate_program_capabilities_for_info(func, program) {
-            return Err(errors
-                .into_iter()
-                .map(|err| VerifierTypeError::new(err.message))
-                .collect());
-        }
+    if let Some(program) = effective_program
+        && let Err(errors) = validate_program_capabilities_for_info(func, program)
+    {
+        return Err(errors
+            .into_iter()
+            .map(|err| VerifierTypeError::new(err.message))
+            .collect());
     }
 
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
@@ -144,9 +144,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         return Err(errors);
     }
     let total_vregs = (func.vreg_count as usize).max(func.param_count);
-    if let Err(type_map_errors) = validate_type_map_vregs(types, total_vregs) {
-        return Err(type_map_errors);
-    }
+    validate_type_map_vregs(types, total_vregs)?;
     let empty_map_value_types = HashMap::new();
     errors.extend(check_generic_map_layout_constraints(
         func,
@@ -279,32 +277,32 @@ fn verify_mir_with_subfunction_summaries_impl(
                 continue;
             }
             check_uses_initialized(inst, &state, &mut errors);
-            apply_inst(
+            apply_inst(ApplyInst {
                 inst,
                 types,
-                &slot_sizes,
+                slot_sizes: &slot_sizes,
                 subfn_summaries,
-                effective_program,
+                program: effective_program,
                 probe_ctx,
-                &mut state,
-                &mut errors,
-            );
+                state: &mut state,
+                errors: &mut errors,
+            });
         }
 
         check_uses_initialized(&block.terminator, &state, &mut errors);
 
         match &block.terminator {
             MirInst::Jump { target } => {
-                propagate_state(
-                    block_id,
-                    *target,
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *target,
                     func,
                     types,
-                    &state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
+                    state: &state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
             }
             MirInst::Branch {
                 cond,
@@ -326,71 +324,71 @@ fn verify_mir_with_subfunction_summaries_impl(
                     .or_else(|| direct_branch_guard(*cond, cond_ty));
                 let true_state = refine_on_branch(&state, guard, true);
                 let false_state = refine_on_branch(&state, guard, false);
-                propagate_state(
-                    block_id,
-                    *if_true,
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *if_true,
                     func,
                     types,
-                    &true_state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
-                propagate_state(
-                    block_id,
-                    *if_false,
+                    state: &true_state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *if_false,
                     func,
                     types,
-                    &false_state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
+                    state: &false_state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
             }
             MirInst::LoopHeader { body, exit, .. } => {
                 let mut body_state = state.clone();
-                apply_inst(
-                    &block.terminator,
+                apply_inst(ApplyInst {
+                    inst: &block.terminator,
                     types,
-                    &slot_sizes,
+                    slot_sizes: &slot_sizes,
                     subfn_summaries,
-                    effective_program,
+                    program: effective_program,
                     probe_ctx,
-                    &mut body_state,
-                    &mut errors,
-                );
-                propagate_state(
-                    block_id,
-                    *body,
+                    state: &mut body_state,
+                    errors: &mut errors,
+                });
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *body,
                     func,
                     types,
-                    &body_state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
-                propagate_state(
-                    block_id,
-                    *exit,
+                    state: &body_state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *exit,
                     func,
                     types,
-                    &state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
+                    state: &state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
             }
             MirInst::LoopBack { header, .. } => {
-                propagate_state(
-                    block_id,
-                    *header,
+                propagate_state(PropagateState {
+                    pred: block_id,
+                    block: *header,
                     func,
                     types,
-                    &state,
-                    &mut errors,
-                    &mut in_states,
-                    &mut worklist,
-                );
+                    state: &state,
+                    errors: &mut errors,
+                    in_states: &mut in_states,
+                    worklist: &mut worklist,
+                });
             }
             MirInst::Return { val } => {
                 check_required_return_range(
@@ -982,16 +980,29 @@ fn check_required_return_range(
     }
 }
 
-fn propagate_state(
+struct PropagateState<'a, 'errors, 'states, 'worklist> {
     pred: BlockId,
     block: BlockId,
-    func: &MirFunction,
-    types: &HashMap<VReg, MirType>,
-    state: &VerifierState,
-    errors: &mut Vec<VerifierTypeError>,
-    in_states: &mut HashMap<BlockId, VerifierState>,
-    worklist: &mut VecDeque<BlockId>,
-) {
+    func: &'a MirFunction,
+    types: &'a HashMap<VReg, MirType>,
+    state: &'a VerifierState,
+    errors: &'errors mut Vec<VerifierTypeError>,
+    in_states: &'states mut HashMap<BlockId, VerifierState>,
+    worklist: &'worklist mut VecDeque<BlockId>,
+}
+
+fn propagate_state(propagation: PropagateState<'_, '_, '_, '_>) {
+    let PropagateState {
+        pred,
+        block,
+        func,
+        types,
+        state,
+        errors,
+        in_states,
+        worklist,
+    } = propagation;
+
     if !state.is_reachable() {
         return;
     }

@@ -470,7 +470,7 @@ pub(crate) fn infer_instruction_def_type(
             };
             lhs_ptr
                 .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                .map(|ty| {
+                .and_then(|ty| {
                     let offset = match (op, rhs) {
                         (BinOpKind::Add, MirValue::Const(offset)) => Some(*offset),
                         (BinOpKind::Sub, MirValue::Const(offset)) => offset.checked_neg(),
@@ -478,19 +478,17 @@ pub(crate) fn infer_instruction_def_type(
                     };
                     recover_pointer_arith_result_hint(ty, offset)
                 })
-                .flatten()
                 .or_else(|| {
                     if matches!(op, BinOpKind::Add) {
                         rhs_ptr
                             .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                            .map(|ty| {
+                            .and_then(|ty| {
                                 let offset = match lhs {
                                     MirValue::Const(offset) => Some(*offset),
                                     _ => None,
                                 };
                                 recover_pointer_arith_result_hint(ty, offset)
                             })
-                            .flatten()
                     } else {
                         None
                     }

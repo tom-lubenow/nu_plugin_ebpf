@@ -1070,25 +1070,20 @@ fn context_projection_compatibility_requirement(
     let mut effective =
         ContextFieldCompatibilityRequirement::for_field_on_program_spec(root_field, spec);
 
-    if matches!(root_field, CtxField::Socket | CtxField::MigratingSocket) {
-        if let Some(member_field) = ctx_field_for_bpf_sock_projection_member(member) {
-            let member_requirement =
-                ContextFieldCompatibilityRequirement::for_field_on_program_spec(
-                    &member_field,
-                    spec,
-                );
-            if let Some(member_requirement) = member_requirement {
-                let should_replace = match effective.as_ref() {
-                    Some(current) => ContextFieldCompatibilityRequirement::kernel_version_at_least(
-                        member_requirement.minimum_kernel(),
-                        current.minimum_kernel(),
-                    ),
-                    None => true,
-                };
-                if should_replace {
-                    effective = Some(member_requirement);
-                }
-            }
+    if matches!(root_field, CtxField::Socket | CtxField::MigratingSocket)
+        && let Some(member_field) = ctx_field_for_bpf_sock_projection_member(member)
+        && let Some(member_requirement) =
+            ContextFieldCompatibilityRequirement::for_field_on_program_spec(&member_field, spec)
+    {
+        let should_replace = match effective.as_ref() {
+            Some(current) => ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                member_requirement.minimum_kernel(),
+                current.minimum_kernel(),
+            ),
+            None => true,
+        };
+        if should_replace {
+            effective = Some(member_requirement);
         }
     }
 
