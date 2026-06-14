@@ -377,6 +377,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-unit-reducer-values"
+        category: "language-core"
+        tags: [aggregate list math sum min max filesize duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((([1kb 2kb] | math sum) == 3000) and (([1sec 2sec] | math sum) == 3000000000)) and ((([1kb 2] | math max) == 1000) and (([1sec 2] | math min) == 2))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-median"
         category: "language-core"
         tags: [aggregate list math median]
