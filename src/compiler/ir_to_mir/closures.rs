@@ -998,6 +998,9 @@ impl<'a> HirToMirLowering<'a> {
         let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
         let old_type_hints = std::mem::take(&mut self.current_type_hints);
         let entry_block = self.current_block;
+        let mut saw_return = false;
+        let mut result_type_hint: Option<MirType> = None;
+        let mut result_type_is_consistent = true;
 
         self.current_type_hints = self
             .closure_type_hints
@@ -1036,6 +1039,16 @@ impl<'a> HirToMirLowering<'a> {
             match &block.terminator {
                 HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => {
                     let src_vreg = self.get_vreg(*src);
+                    let src_type_hint = self.typed_value_runtime_type(*src, src_vreg);
+                    if saw_return {
+                        if result_type_hint != src_type_hint {
+                            result_type_is_consistent = false;
+                            result_type_hint = None;
+                        }
+                    } else {
+                        saw_return = true;
+                        result_type_hint = src_type_hint;
+                    }
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
                         src: MirValue::VReg(src_vreg),
@@ -1085,6 +1098,10 @@ impl<'a> HirToMirLowering<'a> {
             } else {
                 self.var_mapping_metadata.remove(&var_id);
             }
+        }
+
+        if result_type_is_consistent && let Some(result_type_hint) = result_type_hint {
+            self.vreg_type_hints.insert(result_vreg, result_type_hint);
         }
 
         self.current_block = continuation_block;

@@ -342,6 +342,14 @@ impl<'a> HirToMirLowering<'a> {
                     elem_vreg,
                     elem_meta,
                 )?;
+                if matches!(elem_ty, MirType::U64)
+                    && matches!(self.vreg_type_hints.get(&transformed), Some(MirType::U64))
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "each on typed fixed arrays with u64 elements requires the closure to return a bool, signed integer, or <=32-bit unsigned integer value in eBPF"
+                            .into(),
+                    ));
+                }
                 self.emit(MirInst::ListPush {
                     list: dst_vreg,
                     item: transformed,
@@ -395,12 +403,12 @@ impl<'a> HirToMirLowering<'a> {
         Self::typed_fixed_array_numeric_list_scalar_type(ty)
             || matches!(
                 ty,
-                MirType::Bool | MirType::Array { .. } | MirType::Struct { .. }
+                MirType::U64 | MirType::Bool | MirType::Array { .. } | MirType::Struct { .. }
             )
     }
 
     fn typed_fixed_array_each_input_type_description() -> &'static str {
-        "signed integer, bool, <=32-bit unsigned integer scalar, fixed-array, or record elements"
+        "signed integer, bool, unsigned integer scalar, fixed-array, or record elements"
     }
 
     pub(super) fn emit_typed_fixed_array_each_item(
@@ -417,6 +425,11 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|vreg| (vreg, None));
         }
         if matches!(elem_ty, MirType::Bool) {
+            return self
+                .emit_typed_fixed_array_predicate_item("each", input_vreg, elem_ty, index)
+                .map(|vreg| (vreg, None));
+        }
+        if matches!(elem_ty, MirType::U64) {
             return self
                 .emit_typed_fixed_array_predicate_item("each", input_vreg, elem_ty, index)
                 .map(|vreg| (vreg, None));
