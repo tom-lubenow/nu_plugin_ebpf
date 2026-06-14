@@ -15,6 +15,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-float-math-mode"
+        category: "language-core"
+        tags: [aggregate record values list float math mode str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { left: 2.5 right: 1.5 } | values | math mode | str join "-" | str starts-with "1.5-2.5"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-metadata-consumers"
         category: "language-core"
         tags: [aggregate record values list mixed length get string]

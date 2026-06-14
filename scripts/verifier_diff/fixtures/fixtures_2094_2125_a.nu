@@ -127,6 +127,20 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A = [
         error_contains: "values supports only numeric scalar record fields"
     }
     {
+        name: "core-record-values-mixed-math-mode-reject"
+        category: "language-core"
+        tags: [aggregate record values math mode reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | values | math mode | str join "-"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "math mode requires"
+    }
+    {
         name: "core-record-transpose-runtime-reject"
         category: "language-core"
         tags: [aggregate record transpose reject runtime]
