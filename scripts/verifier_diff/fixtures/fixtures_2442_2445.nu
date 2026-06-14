@@ -42,6 +42,20 @@ const VERIFIER_DIFF_FIXTURES_2442_2445 = [
         error_contains: "bytes index-of requires a non-empty binary pattern in eBPF"
     }
     {
+        name: "core-binary-list-bytes-index-of-all-rejects-nonhomogeneous"
+        category: "language-core"
+        tags: [binary list bytes index-of all diagnostics reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02 02] 0x[03 02]] | bytes index-of --all 0x[02]'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "constant fixed arrays require homogeneous element layouts"
+    }
+    {
         name: "core-binary-bytes-index-of-rejects-dynamic-input"
         category: "language-core"
         tags: [binary bytes index-of diagnostics reject]
