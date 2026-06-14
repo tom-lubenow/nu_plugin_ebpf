@@ -416,6 +416,21 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-transpose-default-describe-metadata"
+        category: "language-core"
+        tags: [aggregate record transpose describe metadata-only as-record ignore-titles defaults]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let record_desc = ({ pid: 7 cpu: 2 } | transpose --as-record | describe)'
+            '  let ignored_record_desc = ({ pid: 7 cpu: 2 } | transpose --as-record --ignore-titles | describe)'
+            '  ($record_desc | str starts-with "record<column0: list<string>, column1: list<int>>") and ($ignored_record_desc | str starts-with "record<column0: list<int>>")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]
