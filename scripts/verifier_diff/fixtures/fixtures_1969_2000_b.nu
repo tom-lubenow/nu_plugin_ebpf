@@ -67,6 +67,23 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_B = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-split-nested-describe-predicates"
+        category: "language-core"
+        tags: [string list split chars words nested describe is-empty is-not-empty metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let chars_desc_ok = (["ab" "cd"] | split chars | describe | str starts-with "list<list<string>>")'
+            '  let words_desc_ok = (["a b" "c d e"] | split words | describe | str starts-with "list<list<string>>")'
+            '  let chars_empty_ok = not (["ab" "cd"] | split chars | is-empty)'
+            '  let words_not_empty_ok = (["a b" "c d e"] | split words | is-not-empty)'
+            '  $chars_desc_ok and ($words_desc_ok and ($chars_empty_ok and $words_not_empty_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-list-split-options-get-metadata"
         category: "language-core"
         tags: [string list split chars words grapheme min get join metadata]
