@@ -52,6 +52,32 @@ const VERIFIER_DIFF_FIXTURES_1907_1937_A = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-collect-empty-list-predicates"
+        category: "language-core"
+        tags: [binary bytes collect empty list predicates]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([] | bytes collect | is-empty) and (not ([] | bytes collect | is-not-empty))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-collect-empty-separator-length"
+        category: "language-core"
+        tags: [binary bytes collect empty separator length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[] 0x[]] | bytes collect 0x[] | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-sort-collect"
         category: "language-core"
         tags: [binary list sort bytes collect]
