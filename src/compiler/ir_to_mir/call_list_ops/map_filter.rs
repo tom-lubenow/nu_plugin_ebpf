@@ -174,16 +174,24 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        let (input_vreg, base_runtime_ty) =
-            self.preserve_typed_fixed_array_input("where", input_reg, input_vreg, dst_vreg)?;
         let scalar_where_item = Self::typed_fixed_array_where_scalar_type(&elem_ty);
+        let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         if !scalar_where_item && !self.current_call_result_list_shape_metadata_only {
+            if matches!(constant_predicate, Some(true)) {
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(input_vreg),
+                });
+                self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, input_reg, input_vreg);
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "where on typed fixed arrays with fixed-array or record elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF, got {:?}",
                 elem_ty
             )));
         }
-        let constant_predicate = Self::constant_bool_closure_result(closure_ir);
+        let (input_vreg, base_runtime_ty) =
+            self.preserve_typed_fixed_array_input("where", input_reg, input_vreg, dst_vreg)?;
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
 
         if array_len > 0 && !matches!(constant_predicate, Some(false)) {
