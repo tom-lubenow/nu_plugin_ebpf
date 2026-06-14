@@ -221,6 +221,19 @@ const VERIFIER_DIFF_FIXTURES_1813_1843_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-shift-default-runtime"
+        category: "language-core"
+        tags: [aggregate list bits shl shr default runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((([(random int)] | bits shl 0 | length) == 1) and (([(random int)] | bits shr 0 | length) == 1)) and (([(random int)] | bits shr 1 | length) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-shift-signed-i64-runtime"
         category: "language-core"
         tags: [scalar bits shr signed number-bytes runtime]
