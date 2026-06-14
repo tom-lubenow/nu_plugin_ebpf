@@ -41,4 +41,18 @@ export const VERIFIER_DIFF_FIXTURES_3236_3237 = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "global-define-type-array-binary-each-length"
+        category: "globals"
+        tags: [globals arrays binary bytes each closure length global-define initializer accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02] 0x[03 04]] | global-define --type "array{bytes:4:2}" buffers'
+            '  (((global-get buffers) | each {|x| $x | bytes length } | get 1) == 4)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
