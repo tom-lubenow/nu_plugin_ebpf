@@ -13,6 +13,19 @@ const VERIFIER_DIFF_FIXTURES_1813_1843_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-binary-bits-not-access-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits "not" get first bytes length starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[ff] 0x[00 01]] | bits not --signed --number-bytes 8 | get 1 | bytes starts-with 0x[ff fe]) == 1) and (([0x[] 0x[01]] | bits not --signed --number-bytes 8 | first | bytes length) == 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-not-binary-empty-predicate-fold"
         category: "language-core"
         tags: [aggregate list binary bits "not" is-not-empty]
