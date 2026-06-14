@@ -140,6 +140,21 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-scalar-first-last"
+        category: "language-core"
+        tags: [aggregate record columns list string first last metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let first_ok = ({ pid: 7 cpu: 2 ok: true } | columns | first | str starts-with "pid")'
+            '  let last_ok = ({ pid: 7 cpu: 2 ok: true } | columns | last | str starts-with "ok")'
+            '  $first_ok and $last_ok'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-metadata-transforms"
         category: "language-core"
         tags: [aggregate record columns list string sort reverse find split-list str join]
