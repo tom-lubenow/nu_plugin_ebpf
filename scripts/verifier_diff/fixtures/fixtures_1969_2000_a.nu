@@ -208,6 +208,20 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-split-list-heterogeneous-metadata"
+        category: "language-core"
+        tags: [list split-list heterogeneous metadata accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let join_ok = (["a" "x" "b" "c" "x" "d"] | split list "x" | get 1 | str join "-" | str starts-with "b-c")'
+            '  $join_ok and (["a" "x" "b" "c" "x" "d"] | split list "x" | describe | str starts-with "list<list<string>>")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-split-list-heterogeneous-materialized-reject"
         category: "language-core"
         tags: [aggregate list split-list reject]
