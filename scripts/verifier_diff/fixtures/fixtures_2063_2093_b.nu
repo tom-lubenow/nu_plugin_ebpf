@@ -256,6 +256,24 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-split-list-predicates"
+        category: "language-core"
+        tags: [aggregate record columns list split-list get length is-empty is-not-empty metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let split = ({ pid: 7 cpu: 2 ok: true } | columns | split list cpu)'
+            '  let direct_not_empty_ok = not ($split | is-empty)'
+            '  let group1_length_ok = (($split | get 1 | length) == 1)'
+            '  let group1_not_empty_ok = not ($split | get 1 | is-empty)'
+            '  let group0_not_empty_ok = ($split | get 0 | is-not-empty)'
+            '  $direct_not_empty_ok and ($group1_length_ok and ($group1_not_empty_ok and $group0_not_empty_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-empty-length"
         category: "language-core"
         tags: [aggregate record columns list empty]
