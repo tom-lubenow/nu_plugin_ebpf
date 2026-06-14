@@ -74,6 +74,23 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-split-list-scalar-consumers"
+        category: "language-core"
+        tags: [aggregate record values list mixed split-list get first length is-empty is-not-empty describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let first_desc_ok = ({ pid: 7 comm: "nu" } | values | split list "nu" | first | describe | str starts-with "list<int>")'
+            '  let group0_length_ok = (({ pid: 7 comm: "nu" } | values | split list "nu" | get 0 | length) == 1)'
+            '  let group1_empty_ok = ({ pid: 7 comm: "nu" } | values | split list "nu" | get 1 | is-empty)'
+            '  let group0_not_empty_ok = ({ pid: 7 comm: "nu" } | values | split list "nu" | get 0 | is-not-empty)'
+            '  $first_desc_ok and ($group0_length_ok and ($group1_empty_ok and $group0_not_empty_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-get"
         category: "language-core"
         tags: [aggregate record columns list string]
