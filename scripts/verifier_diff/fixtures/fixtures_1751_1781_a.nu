@@ -162,6 +162,19 @@ const VERIFIER_DIFF_FIXTURES_1751_1781_A = [
         kernel: "accept"
     }
     {
+        name: "core-math-abs-float-list-fill"
+        category: "language-core"
+        tags: [aggregate list math abs float fill str join metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [-2 -1.5] | math abs | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "0002,01.5"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-div-mod-runtime"
         category: "language-core"
         tags: [scalar math divide modulo runtime]
