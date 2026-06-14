@@ -4247,6 +4247,115 @@ fn make_split_string_list_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_string_list_get_join_then_starts_with_program(
+    split_decl: DeclId,
+    get_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &[&str],
+    flags: Vec<Vec<u8>>,
+    min_word_length: Option<i64>,
+    group_index: i64,
+    join_separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let values = input
+        .iter()
+        .map(|item| Value::string((*item).to_string(), Span::test_data()))
+        .collect();
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(values, Span::test_data())),
+    }];
+    let mut named = Vec::new();
+    let mut next_reg = 2u32;
+    if let Some(min_word_length) = min_word_length {
+        let min_word_length_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: min_word_length_reg,
+            val: Box::new(Value::int(min_word_length, Span::test_data())),
+        });
+        named.push((b"min-word-length".to_vec(), min_word_length_reg));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named,
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let group_index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: group_index_reg,
+        lit: HirLiteral::Int(group_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![group_index_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let join_separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let expected_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: join_separator_reg,
+        val: Box::new(Value::string(join_separator, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![join_separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: expected_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_split_string_list_consumer_program(
     split_decl: DeclId,
     consumer_decl: DeclId,
@@ -16607,6 +16716,86 @@ fn test_lower_string_list_split_options_feed_metadata_only_str_join() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("{split_name} string-list option str join should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_string_list_split_get_feeds_metadata_only_str_join() {
+    for (case_offset, split_name, input, flags, min_word_length, group_index, expected_prefix) in [
+        (
+            0,
+            "split chars",
+            vec!["a🇯🇵", "cd"],
+            vec![b"grapheme-clusters".to_vec()],
+            None,
+            0,
+            "a-🇯🇵",
+        ),
+        (
+            10,
+            "split words",
+            vec!["aa bbb", "c éé ee"],
+            vec![b"grapheme-clusters".to_vec()],
+            Some(2),
+            1,
+            "éé-ee",
+        ),
+    ] {
+        let split_decl = DeclId::new(81240 + case_offset);
+        let get_decl = DeclId::new(81241 + case_offset);
+        let join_decl = DeclId::new(81242 + case_offset);
+        let starts_with_decl = DeclId::new(81243 + case_offset);
+        let hir = make_split_string_list_get_join_then_starts_with_program(
+            split_decl,
+            get_decl,
+            join_decl,
+            starts_with_decl,
+            &input,
+            flags,
+            min_word_length,
+            group_index,
+            "-",
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (split_decl, split_name.to_string()),
+            (get_decl, "get".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{split_name} string-list split get should feed metadata-only str join: {err}")
+        });
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected_prefix}\0").as_bytes())
+                )),
+            "expected {split_name} string-list split get to feed str join with {expected_prefix}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{split_name} string-list split get str join should compile: {err}")
             });
     }
 }
