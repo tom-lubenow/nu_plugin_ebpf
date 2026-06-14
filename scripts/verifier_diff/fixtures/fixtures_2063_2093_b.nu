@@ -457,6 +457,32 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-binary-field-length"
+        category: "language-core"
+        tags: [aggregate record binary get bytes length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (({ payload: 0x[01 02] pid: 7 } | get payload | bytes length) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-nested-list-field-get"
+        category: "language-core"
+        tags: [aggregate record list get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (({ numbers: [1 2] } | get numbers | get 1) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]
