@@ -16,4 +16,21 @@ const VERIFIER_DIFF_FIXTURES_2285_2285 = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-record-metadata-list-empty-predicate-complements"
+        category: "language-surface"
+        tags: [core record columns values is-empty is-not-empty metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let empty_columns_ok = not ({} | columns | is-not-empty)'
+            '  let empty_values_ok = not ({} | values | is-not-empty)'
+            '  let filled_columns_ok = not ({ pid: 7, comm: "nu" } | columns | is-empty)'
+            '  let filled_values_ok = not ({ pid: 7, comm: "nu" } | values | is-empty)'
+            '  $empty_columns_ok and ($empty_values_ok and ($filled_columns_ok and $filled_values_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
