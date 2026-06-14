@@ -390,6 +390,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-avg-unit-values"
+        category: "language-core"
+        tags: [aggregate list math avg filesize duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([1kb 2kb 2kb] | math avg) == 1666) and (([1sec 2sec 2sec] | math avg) == 1666666666)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-median"
         category: "language-core"
         tags: [aggregate list math median]
