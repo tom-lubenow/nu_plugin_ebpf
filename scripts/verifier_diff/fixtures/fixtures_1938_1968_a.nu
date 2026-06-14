@@ -26,6 +26,23 @@ const VERIFIER_DIFF_FIXTURES_1938_1968_A = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-split-metadata-predicates"
+        category: "language-core"
+        tags: [binary bytes split unequal empty length is-empty is-not-empty metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let unequal_len_ok = ((0x[61 20 62 62] | bytes split 0x[20] | length) == 2)'
+            '  let unequal_empty_ok = not (0x[61 20 62 62] | bytes split 0x[20] | is-empty)'
+            '  let empty_input_len_ok = ((0x[] | bytes split 0x[20] | length) == 1)'
+            '  let empty_input_not_empty_ok = (0x[] | bytes split 0x[20] | is-not-empty)'
+            '  $unequal_len_ok and ($unequal_empty_ok and ($empty_input_len_ok and $empty_input_not_empty_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-is-empty"
         category: "language-core"
         tags: [string is-empty]
