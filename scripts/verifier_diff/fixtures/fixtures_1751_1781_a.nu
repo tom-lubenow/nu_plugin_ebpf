@@ -147,6 +147,21 @@ const VERIFIER_DIFF_FIXTURES_1751_1781_A = [
         kernel: "accept"
     }
     {
+        name: "core-math-abs-float-describe"
+        category: "language-core"
+        tags: [scalar aggregate list math abs float describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let scalar_desc_ok = (-2.5 | math abs | describe | str starts-with "float")'
+            '  let list_desc_ok = ([-2 -1.5] | math abs | describe | str starts-with "list<any>")'
+            '  $scalar_desc_ok and $list_desc_ok'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-div-mod-runtime"
         category: "language-core"
         tags: [scalar math divide modulo runtime]
