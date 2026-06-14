@@ -39,6 +39,19 @@ const VERIFIER_DIFF_FIXTURES_2999_3002 = [
         kernel: "accept"
     }
     {
+        name: "core-list-sort-values-numeric-list"
+        category: "language-core"
+        tags: [list sort values numeric accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [3 1 2] | sort --values | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-split-list-rejects-invalid-split-mode"
         category: "language-core"
         tags: [list split diagnostics reject mode]
