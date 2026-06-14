@@ -117,6 +117,19 @@ const VERIFIER_DIFF_FIXTURES_1782_1812_B = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-not-signed-number-bytes"
+        category: "language-core"
+        tags: [scalar bits "not" signed number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (((4 | bits not --signed --number-bytes 1) == -5) and ((4 | bits not --signed --number-bytes 2) == -5)) and (((4 | bits not --signed --number-bytes 4) == -5) and ((4 | bits not --signed --number-bytes 8) == -5))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed-runtime"
         category: "language-core"
         tags: [scalar bits "not" signed runtime]
