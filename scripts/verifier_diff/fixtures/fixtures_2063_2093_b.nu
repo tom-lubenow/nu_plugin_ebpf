@@ -44,6 +44,23 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-mixed-transform-metadata"
+        category: "language-core"
+        tags: [aggregate record values list mixed reverse compact uniq find describe length metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let reverse_desc_ok = ({ pid: 7 comm: "nu" } | values | reverse | describe | str starts-with "list<oneof<string, int>>")'
+            '  let compact_len_ok = (({ pid: 7 comm: "nu" } | values | compact | length) == 2)'
+            '  let uniq_len_ok = (({ pid: 7 comm: "nu" } | values | uniq | length) == 2)'
+            '  let find_desc_ok = ({ pid: 7 comm: "nu" } | values | find nu | describe | str starts-with "list<string>")'
+            '  $reverse_desc_ok and ($compact_len_ok and ($uniq_len_ok and $find_desc_ok))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-split-list"
         category: "language-core"
         tags: [aggregate record values list mixed split-list length]
