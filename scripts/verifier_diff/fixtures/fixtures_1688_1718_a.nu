@@ -39,6 +39,32 @@ const VERIFIER_DIFF_FIXTURES_1688_1718_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-each-string-length"
+        category: "language-core"
+        tags: [aggregate list string each closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((["aa" "bbb"] | each {|x| $x | str length } | get 1) == 3)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-each-binary-length"
+        category: "language-core"
+        tags: [aggregate list binary bytes each closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[01 02] 0x[03 04]] | each {|x| $x | bytes length } | get 1) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-where"
         category: "language-core"
         tags: [aggregate list where closure]
