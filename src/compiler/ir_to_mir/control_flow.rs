@@ -589,6 +589,11 @@ impl<'a> HirToMirLowering<'a> {
                         &block.stmts,
                         stmt_index,
                         *src_dst,
+                    ) || self.is_compile_time_only_each_fixed_layout_builder_value(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        *item,
                     ) || self.is_compile_time_only_bits_binary_transform_builder_value(
                         &block.stmts,
                         stmt_index,
@@ -1178,6 +1183,32 @@ impl<'a> HirToMirLowering<'a> {
             stmt_index,
             dst,
             self.decl_names,
+        )
+    }
+
+    fn is_compile_time_only_each_fixed_layout_builder_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+        item: RegId,
+    ) -> bool {
+        let Some(item_value) = self
+            .get_metadata(item)
+            .and_then(|meta| meta.constant_value.as_ref())
+        else {
+            return false;
+        };
+        if crate::compiler::hir::is_numeric_constant_value(item_value) {
+            return false;
+        }
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::Each,
+            CompileTimeValueFlow::AggregateBuilder,
         )
     }
 

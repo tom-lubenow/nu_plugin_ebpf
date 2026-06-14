@@ -311,6 +311,7 @@ pub enum FixedLayoutValueConsumer {
     Slice,
     Reverse,
     AppendPrepend,
+    Each,
     Uniq,
     Sort,
     Find,
@@ -1044,6 +1045,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::AppendPrepend => {
             matches!(decl_name, Some("append" | "prepend"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::Each => {
+            decl_name == Some("each")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() == 1
                 && args.rest.is_empty()

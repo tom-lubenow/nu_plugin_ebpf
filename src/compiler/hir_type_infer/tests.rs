@@ -252,6 +252,65 @@ fn test_list_push_record_item_reports_fixed_layout_hint() {
 }
 
 #[test]
+fn test_list_push_record_item_flowing_to_each_is_compile_time_fixed_layout() {
+    let each_decl = DeclId::new(50);
+    let closure_block_id = nu_protocol::BlockId::new(1);
+
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(3) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadValue {
+        dst: RegId::new(1),
+        val: Box::new(Value::record(rec, Span::test_data())),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Closure(closure_block_id),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: each_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(each_decl, "each".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("record-list builders flowing to each should type-check as fixed-layout values");
+}
+
+#[test]
 fn test_list_push_binary_item_allowed_for_bytes_collect() {
     let collect_decl = DeclId::new(49);
     let mut func = HirFunction {

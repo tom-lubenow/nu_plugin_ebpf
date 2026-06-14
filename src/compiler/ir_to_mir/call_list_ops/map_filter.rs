@@ -50,17 +50,20 @@ impl<'a> HirToMirLowering<'a> {
         if input_meta.list_buffer.is_some() {
             return Ok(None);
         }
-        if matches!(
-            input_meta.constant_value,
-            Some(nu_protocol::Value::List { .. })
-        ) && !matches!(
-            input_meta.annotated_semantics,
-            Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) {
+        if let Some(value @ nu_protocol::Value::List { .. }) = input_meta.constant_value.as_ref()
+            && !matches!(
+                input_meta.annotated_semantics,
+                Some(AnnotatedValueSemantics::FixedArray { .. })
+            )
+            && (crate::compiler::hir::supports_numeric_constant_list(value)
+                || !crate::compiler::hir::supports_fixed_array_constant_list(value))
+        {
             return Ok(None);
         }
 
-        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+        let Some(mut base_runtime_ty) = Self::metadata_fixed_array_layout(input_meta)?
+            .or_else(|| self.typed_value_runtime_type(input_reg, input_vreg))
+        else {
             return Ok(None);
         };
         let Some((elem_ty, array_len)) =
@@ -256,8 +259,14 @@ impl<'a> HirToMirLowering<'a> {
             closure_ir,
         } = lowering;
 
-        let Some((input_vreg, elem_ty, array_len)) =
-            self.typed_fixed_array_numeric_list_input("each", input_reg, input_vreg, input_meta)?
+        let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_stack_list_input(
+            "each",
+            input_reg,
+            input_vreg,
+            input_meta,
+            Self::typed_fixed_array_each_input_type,
+            Self::typed_fixed_array_each_input_type_description(),
+        )?
         else {
             return Ok(false);
         };
@@ -279,8 +288,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 self.current_block = transform_block;
 
-                let elem_vreg =
-                    self.emit_typed_fixed_array_numeric_list_item("each", input_vreg, &elem_ty, i)?;
+                let elem_vreg = self.emit_typed_fixed_array_each_item(
+                    input_reg, input_vreg, input_meta, &elem_ty, i,
+                )?;
                 let transformed =
                     self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
                 self.emit(MirInst::ListPush {
@@ -302,6 +312,79 @@ impl<'a> HirToMirLowering<'a> {
             Some(array_len),
         );
         Ok(true)
+    }
+
+    fn typed_fixed_array_each_input_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_numeric_list_scalar_type(ty)
+            || matches!(
+                ty,
+                MirType::Bool | MirType::Array { .. } | MirType::Struct { .. }
+            )
+    }
+
+    fn typed_fixed_array_each_input_type_description() -> &'static str {
+        "signed integer, bool, <=32-bit unsigned integer scalar, fixed-array, or record elements"
+    }
+
+    fn emit_typed_fixed_array_each_item(
+        &mut self,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        elem_ty: &MirType,
+        index: usize,
+    ) -> Result<VReg, CompileError> {
+        if Self::typed_fixed_array_numeric_list_scalar_type(elem_ty) {
+            return self
+                .emit_typed_fixed_array_numeric_list_item("each", input_vreg, elem_ty, index);
+        }
+        if matches!(elem_ty, MirType::Bool) {
+            return self.emit_typed_fixed_array_predicate_item("each", input_vreg, elem_ty, index);
+        }
+
+        const SYNTHETIC_EACH_ITEM_REG: u32 = u32::MAX - 1;
+        let item_reg = RegId::new(SYNTHETIC_EACH_ITEM_REG);
+        let old_reg_mapping = self.reg_map.remove(&item_reg.get());
+        let old_meta = self.reg_metadata.remove(&item_reg.get());
+        let base_runtime_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "each requires typed fixed-array input in eBPF".into(),
+                )
+            })?;
+        let projected_semantics = match &input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => Some(elem.as_ref().clone()),
+            _ => None,
+        };
+        let root_ctx_field = input_meta.root_ctx_field.clone();
+        self.lower_dynamic_typed_numeric_get(
+            item_reg,
+            input_vreg,
+            &base_runtime_ty,
+            MirValue::Const(i64::try_from(index).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "each fixed-array index {index} does not fit in i64"
+                ))
+            })?),
+            projected_semantics.as_ref(),
+            root_ctx_field.as_ref(),
+        )?;
+        if let Some(semantics) = projected_semantics {
+            self.get_or_create_metadata(item_reg).annotated_semantics = Some(semantics);
+        }
+        let item_vreg = self.get_vreg(item_reg);
+        if let Some(old_reg_mapping) = old_reg_mapping {
+            self.reg_map.insert(item_reg.get(), old_reg_mapping);
+        } else {
+            self.reg_map.remove(&item_reg.get());
+        }
+        if let Some(old_meta) = old_meta {
+            self.reg_metadata.insert(item_reg.get(), old_meta);
+        } else {
+            self.reg_metadata.remove(&item_reg.get());
+        }
+        Ok(item_vreg)
     }
 
     fn typed_fixed_array_where_scalar_type(ty: &MirType) -> bool {

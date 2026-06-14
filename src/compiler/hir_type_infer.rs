@@ -14,10 +14,11 @@ use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    AnnotatedMutGlobal, HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
-    compile_time_list_push_item_is_constant,
+    AnnotatedMutGlobal, CompileTimeValueFlow, FixedLayoutValueConsumer, HirBlock, HirFunction,
+    HirLiteral, HirProgram, HirStmt, HirTerminator, compile_time_list_push_item_is_constant,
     compile_time_value_flows_to_bits_binary_transform_aggregate_consumer,
-    compile_time_value_flows_to_fixed_layout_aggregate_consumer, supports_numeric_constant_list,
+    compile_time_value_flows_to_fixed_layout_aggregate_consumer,
+    compile_time_value_flows_to_fixed_layout_consumer, supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
 use super::type_infer::TypeError;
@@ -218,6 +219,13 @@ impl<'a> HirTypeInference<'a> {
                         stmt_index,
                         *src_dst,
                         self.decl_names,
+                    ) || compile_time_value_flows_to_fixed_layout_consumer(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        self.decl_names,
+                        FixedLayoutValueConsumer::Each,
+                        CompileTimeValueFlow::AggregateBuilder,
                     ) || (compile_time_list_push_item_is_constant(&block.stmts, stmt_index, *item)
                         && compile_time_value_flows_to_bits_binary_transform_aggregate_consumer(
                             &block.stmts,
