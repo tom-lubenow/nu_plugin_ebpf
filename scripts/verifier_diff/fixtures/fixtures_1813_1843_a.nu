@@ -130,6 +130,19 @@ const VERIFIER_DIFF_FIXTURES_1813_1843_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-binary-bits-shift-rotate-access-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits shl ror last bytes length starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[80] 0x[01 00]] | bits shl 1 | last | bytes starts-with 0x[02 00]) == 1) and (([0x[80] 0x[01 02]] | bits ror 1 | last | bytes length) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-binary-bits-unary-shift-describe"
         category: "language-core"
         tags: [aggregate list binary bits "not" shl ror describe metadata-only]
