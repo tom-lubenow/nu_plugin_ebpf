@@ -136,6 +136,24 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-split-list-scalar-consumers"
+        category: "language-core"
+        tags: [aggregate record columns list split-list get first last length is-empty is-not-empty describe metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let direct_length_ok = (({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | length) == 2)'
+            '  let direct_last_desc_ok = ({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | last | describe | str starts-with "list<string>")'
+            '  let group0_length_ok = (({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | get 0 | length) == 1)'
+            '  let group1_not_empty_ok = ({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | get 1 | is-not-empty)'
+            '  let group0_empty_ok = not ({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | get 0 | is-empty)'
+            '  $direct_length_ok and ($direct_last_desc_ok and ($group0_length_ok and ($group1_not_empty_ok and $group0_empty_ok)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-empty-length"
         category: "language-core"
         tags: [aggregate record columns list empty]
