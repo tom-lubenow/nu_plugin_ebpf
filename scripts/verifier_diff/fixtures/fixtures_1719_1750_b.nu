@@ -260,6 +260,19 @@ const VERIFIER_DIFF_FIXTURES_1719_1750_B = [
         kernel: "accept"
     }
     {
+        name: "core-math-inverse-list-fill-arcs"
+        category: "language-core"
+        tags: [aggregate list math arcsin arccos float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([0 1] | math arcsin | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "00.0,1.570") and ([1 0] | math arccos | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "00.0,1.570")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-degrees-folded"
         category: "language-core"
         tags: [scalar aggregate list math degrees inverse sin cos tan float fill str join]
