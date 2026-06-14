@@ -130,6 +130,19 @@ const VERIFIER_DIFF_FIXTURES_1813_1843_A = [
         kernel: "accept"
     }
     {
+        name: "core-list-binary-bits-unary-shift-metadata"
+        category: "language-core"
+        tags: [aggregate list binary bits "not" shl ror length predicates metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (((([0x[] 0x[]] | bits not --signed --number-bytes 8 | length) == 2) and ([0x[] 0x[]] | bits not --signed --number-bytes 8 | is-not-empty)) and (([0x[80] 0x[01 02]] | bits shl 1 | length) == 2)) and ([0x[80] 0x[01 02]] | bits ror 1 | is-not-empty)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-shift-number-bytes"
         category: "language-core"
         tags: [aggregate list bits shl number-bytes]
