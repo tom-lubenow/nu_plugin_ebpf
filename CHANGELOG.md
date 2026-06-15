@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Improved mutable captured list diagnostics so heterogeneous constant lists name
+  the mismatching item and fixed-layout mismatch before the current support
+  policy.
 - Improved annotated mutable fixed-array global diagnostics so unsupported first
   elements name the element path, for example `element 0`, instead of falling
   back to a top-level annotated-global rejection.
