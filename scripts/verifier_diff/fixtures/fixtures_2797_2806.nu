@@ -36,9 +36,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
         default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-ends-with-rejects-runtime-suffix"
+        name: "core-operator-ends-with-accepts-runtime-suffix"
         category: "language-core"
-        tags: [operators ends-with diagnostics reject runtime]
+        tags: [operators ends-with accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -49,9 +49,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
             '  $l ends-with $r'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "ends-with operator requires a compile-time known string suffix in eBPF"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-operator-in-rejects-runtime-string-needle"
