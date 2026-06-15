@@ -2679,6 +2679,17 @@ fn test_kernel_object_compatibility_requirement_detail_reports_too_new_kfunc_win
 }
 
 #[test]
+fn test_simple_event_eight_bytes_decodes_integer() {
+    let data = EbpfState::deserialize_simple_event(&(-42i64).to_le_bytes())
+        .expect("expected integer event");
+
+    match data {
+        BpfEventData::Int(value) => assert_eq!(value, -42),
+        other => panic!("expected integer event, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_structured_event_string_respects_field_size() {
     let schema = EventSchema {
         fields: vec![

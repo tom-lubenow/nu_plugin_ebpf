@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Hardened simple loader event decoding so fixed-width integer events avoid an
+  internal unwrap.
 - Hardened checked MIR-to-LIR lowering so missing physical-register mappings
   return a compiler error instead of panicking.
 - Hardened HIR lowering so unterminated IR blocks return a compiler error

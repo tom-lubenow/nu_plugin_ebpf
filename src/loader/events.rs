@@ -168,7 +168,9 @@ impl EbpfState {
         // - 16+ bytes: string ($ctx.comm uses 16, read-str uses 128)
         if buf.len() == 8 {
             // 8 bytes = integer from emit
-            let value = i64::from_le_bytes(buf[0..8].try_into().unwrap());
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(buf);
+            let value = i64::from_le_bytes(bytes);
             Some(BpfEventData::Int(value))
         } else if buf.len() >= 16 {
             // 16+ bytes = string (from $ctx.comm | emit or read-str)
