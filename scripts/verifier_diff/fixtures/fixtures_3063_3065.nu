@@ -39,6 +39,6 @@ const VERIFIER_DIFF_FIXTURES_3063_3065 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "get index must be compile-time constant for compile-time known fixed lists in eBPF"
+        error_contains: "get index must be compile-time constant or range-proven in bounds for compile-time known string lists in eBPF"
     }
 ]
