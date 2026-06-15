@@ -4524,6 +4524,24 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_reg) = input_reg
+            && self.lower_tracked_string_replace(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                self.positional_args[0].1,
+                &find,
+                &replacement,
+                replace_all,
+                use_regex,
+                no_expand,
+                multiline,
+            )?
+        {
+            return Ok(());
+        }
+
         let input = self.exact_string_input(input_reg, "str replace")?;
         let output = Self::replace_known_string(
             &input,
@@ -4535,6 +4553,257 @@ impl<'a> HirToMirLowering<'a> {
             multiline,
         )?;
         self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lower_tracked_string_replace(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        input_vreg: VReg,
+        find_reg: RegId,
+        find: &str,
+        replacement: &str,
+        replace_all: bool,
+        use_regex: bool,
+        no_expand: bool,
+        multiline: bool,
+    ) -> Result<bool, CompileError> {
+        if use_regex || no_expand || multiline || find.is_empty() {
+            return Ok(false);
+        }
+
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        if input_meta.constant_value.is_some() || input_meta.literal_string.is_some() {
+            return Ok(false);
+        }
+        let (Some(input_slot), Some(input_len_vreg), Some(input_bound)) = (
+            input_meta.string_slot,
+            input_meta.string_len_vreg,
+            input_meta.string_len_bound,
+        ) else {
+            return Ok(false);
+        };
+
+        let find_len = find.len();
+        if find_len <= input_bound && find_len != replacement.len() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str replace on tracked strings requires replacement length to equal find length in eBPF"
+                    .into(),
+            ));
+        }
+
+        let output_slot_len =
+            align_to_eight(input_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
+        let output_slot =
+            self.func
+                .alloc_stack_slot(output_slot_len, 8, StackSlotKind::StringBuffer);
+        let output_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: output_slot_len,
+        };
+        self.record_stack_slot_type(output_slot, output_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(output_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(output_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_zero(result_vreg, 0, output_slot_len)?;
+
+        let output_len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: output_len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(output_len_vreg, MirType::I64);
+        self.emit(MirInst::StringAppend {
+            dst_buffer: output_slot,
+            dst_len: output_len_vreg,
+            val: MirValue::VReg(input_vreg),
+            val_type: StringAppendType::StringSlot {
+                slot: input_slot,
+                max_len: input_bound,
+            },
+        });
+
+        if find_len <= input_bound {
+            let find_meta = self.get_metadata(find_reg).cloned().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str replace requires a tracked string find argument in eBPF".into(),
+                )
+            })?;
+            let find_slot = find_meta.string_slot.ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str replace requires a tracked string find argument in eBPF".into(),
+                )
+            })?;
+
+            let probe_count = input_bound.saturating_sub(find_len).saturating_add(1);
+            if probe_count > MAX_TYPED_STRING_ARRAY_REPLACE_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "str replace tracked string input has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_TYPED_STRING_ARRAY_REPLACE_PROBES}"
+                )));
+            }
+
+            let last_offset = input_bound.saturating_sub(find_len);
+            let continuation_block = self.func.alloc_block();
+            if replace_all {
+                let probe_blocks = (0..=last_offset)
+                    .map(|_| self.func.alloc_block())
+                    .collect::<Vec<_>>();
+                self.terminate(MirInst::Jump {
+                    target: probe_blocks[0],
+                });
+                for offset in 0..=last_offset {
+                    self.current_block = probe_blocks[offset];
+                    let found_block = self.func.alloc_block();
+                    let next_probe = (offset < last_offset).then(|| probe_blocks[offset + 1]);
+                    let skip_next = offset + find_len;
+                    let skip_probe = (skip_next <= last_offset).then(|| probe_blocks[skip_next]);
+                    let candidate = self.lower_tracked_string_replace_match(
+                        output_slot,
+                        input_len_vreg,
+                        offset,
+                        find_slot,
+                        find_len,
+                    )?;
+                    self.terminate(MirInst::Branch {
+                        cond: candidate,
+                        if_true: found_block,
+                        if_false: next_probe.unwrap_or(continuation_block),
+                    });
+
+                    self.current_block = found_block;
+                    self.lower_tracked_string_replacement_stores(
+                        output_slot,
+                        offset,
+                        replacement.as_bytes(),
+                    )?;
+                    self.terminate(MirInst::Jump {
+                        target: skip_probe.unwrap_or(continuation_block),
+                    });
+                }
+            } else {
+                for offset in 0..=last_offset {
+                    let found_block = self.func.alloc_block();
+                    let next_block = if offset == last_offset {
+                        continuation_block
+                    } else {
+                        self.func.alloc_block()
+                    };
+                    let candidate = self.lower_tracked_string_replace_match(
+                        output_slot,
+                        input_len_vreg,
+                        offset,
+                        find_slot,
+                        find_len,
+                    )?;
+                    self.terminate(MirInst::Branch {
+                        cond: candidate,
+                        if_true: found_block,
+                        if_false: next_block,
+                    });
+
+                    self.current_block = found_block;
+                    self.lower_tracked_string_replacement_stores(
+                        output_slot,
+                        offset,
+                        replacement.as_bytes(),
+                    )?;
+                    self.terminate(MirInst::Jump {
+                        target: continuation_block,
+                    });
+
+                    self.current_block = next_block;
+                }
+            }
+            self.current_block = continuation_block;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(output_slot);
+        meta.string_len_vreg = Some(output_len_vreg);
+        meta.string_len_bound = Some(input_bound);
+        meta.field_type = Some(output_ty);
+        Ok(true)
+    }
+
+    fn lower_tracked_string_replace_match(
+        &mut self,
+        output_slot: StackSlotId,
+        input_len_vreg: VReg,
+        candidate_offset: usize,
+        find_slot: StackSlotId,
+        find_len: usize,
+    ) -> Result<VReg, CompileError> {
+        let required_len = candidate_offset.checked_add(find_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str replace tracked string candidate length overflowed in eBPF".into(),
+            )
+        })?;
+        let required_len = i64::try_from(required_len).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "str replace tracked string candidate length is too large for eBPF".into(),
+            )
+        })?;
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(input_len_vreg),
+            rhs: MirValue::Const(required_len),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+        let bytes_match = self.func.alloc_vreg();
+        self.emit(MirInst::StrCmp {
+            dst: bytes_match,
+            lhs: output_slot,
+            lhs_offset: candidate_offset,
+            rhs: find_slot,
+            rhs_offset: 0,
+            len: find_len,
+        });
+        self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+        let candidate = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: candidate,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(len_matches),
+            rhs: MirValue::VReg(bytes_match),
+        });
+        self.vreg_type_hints.insert(candidate, MirType::Bool);
+        Ok(candidate)
+    }
+
+    fn lower_tracked_string_replacement_stores(
+        &mut self,
+        output_slot: StackSlotId,
+        candidate_offset: usize,
+        replacement: &[u8],
+    ) -> Result<(), CompileError> {
+        for (index, byte) in replacement.iter().copied().enumerate() {
+            let output_offset =
+                Self::checked_byte_offset(candidate_offset, index, "string replacement")?;
+            self.emit(MirInst::StoreSlot {
+                slot: output_slot,
+                offset: Self::checked_mir_offset(output_offset, "string replacement")?,
+                val: MirValue::Const(i64::from(byte)),
+                ty: MirType::U8,
+            });
+        }
+        Ok(())
     }
 
     fn replace_known_string(

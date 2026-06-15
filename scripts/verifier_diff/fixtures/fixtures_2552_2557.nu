@@ -42,18 +42,17 @@ const VERIFIER_DIFF_FIXTURES_2552_2557 = [
         error_contains: "str replace replacement requires a compile-time string literal"
     }
     {
-        name: "core-string-str-replace-rejects-dynamic-input"
+        name: "core-string-str-replace-accepts-context-comm-input"
         category: "language-core"
-        tags: [string str replace diagnostics reject]
+        tags: [string str replace length accept runtime context]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | str replace "a" "b"'
+            '  (($ctx.comm | str replace "a" "b" | str length) >= 0)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str replace requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-str-replace-rejects-list-item-type"
