@@ -60,9 +60,9 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
         kernel: "accept"
     }
     {
-        name: "core-operator-starts-with-rejects-literal-left-runtime-right"
+        name: "core-operator-starts-with-accepts-literal-left-runtime-right"
         category: "language-core"
-        tags: [operators starts-with diagnostics reject runtime literal]
+        tags: [operators starts-with accept runtime literal]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -71,14 +71,14 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
             '  "abc" starts-with $l'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "starts-with operator requires a compile-time known string prefix in eBPF"
+        default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-ends-with-rejects-literal-left-runtime-right"
+        name: "core-operator-ends-with-accepts-literal-left-runtime-right"
         category: "language-core"
-        tags: [operators ends-with diagnostics reject runtime literal]
+        tags: [operators ends-with accept runtime literal]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -87,9 +87,9 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
             '  "abc" ends-with $l'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "ends-with operator requires a compile-time known string suffix in eBPF"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-operator-in-accepts-runtime-left-literal-right"
