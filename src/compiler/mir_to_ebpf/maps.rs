@@ -891,7 +891,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         let value_size = if map.kind.is_map_in_map() {
             4
         } else {
-            self.value_ptr_size_from_lookup_dst(dst)
+            self.generic_map_specs
+                .get(&map.name)
+                .filter(|spec| spec.kind == map.kind)
+                .map(|spec| spec.value_size as usize)
+                .or_else(|| {
+                    self.generic_map_value_types
+                        .get(map)
+                        .map(|ty| ty.size().max(1))
+                })
+                .unwrap_or_else(|| self.value_ptr_size_from_lookup_dst(dst))
         };
         self.register_generic_map_spec(map, key_size, Some(value_size))?;
 

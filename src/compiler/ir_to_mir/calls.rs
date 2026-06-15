@@ -8973,11 +8973,26 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let symbol = self.alloc_readonly_global_name();
-        self.readonly_globals.push(ReadonlyGlobal {
-            name: symbol.clone(),
-            data,
-        });
+        let cache_key = (map_ref.clone(), key_ty.clone(), data);
+        let (symbol, slot) = if let Some(materialized) =
+            self.constant_map_key_materializations.get(&cache_key)
+        {
+            materialized.clone()
+        } else {
+            let symbol = self.alloc_readonly_global_name();
+            self.readonly_globals.push(ReadonlyGlobal {
+                name: symbol.clone(),
+                data: cache_key.2.clone(),
+            });
+
+            let slot =
+                self.func
+                    .alloc_stack_slot(align_to_eight(key_ty.size()), 8, StackSlotKind::Local);
+            self.record_stack_slot_type(slot, key_ty.clone());
+            self.constant_map_key_materializations
+                .insert(cache_key, (symbol.clone(), slot));
+            (symbol, slot)
+        };
 
         let key_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadGlobal {
@@ -8993,10 +9008,6 @@ impl<'a> HirToMirLowering<'a> {
             },
         );
 
-        let slot =
-            self.func
-                .alloc_stack_slot(align_to_eight(key_ty.size()), 8, StackSlotKind::Local);
-        self.record_stack_slot_type(slot, key_ty.clone());
         let stack_key_vreg = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
             dst: stack_key_vreg,
@@ -9022,9 +9033,7 @@ impl<'a> HirToMirLowering<'a> {
         if self.named_map_value_semantics(map_ref).is_some() {
             return Ok(None);
         }
-        let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
-            self.named_map_value_type(map_ref).cloned()
-        else {
+        let Some(value_ty) = self.named_map_value_type(map_ref).cloned() else {
             return Ok(None);
         };
         let Some(value) = self
@@ -9049,11 +9058,20 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let symbol = self.alloc_readonly_global_name();
-        self.readonly_globals.push(ReadonlyGlobal {
-            name: symbol.clone(),
-            data,
-        });
+        let cache_key = (map_ref.clone(), value_ty.clone(), data);
+        let symbol = if let Some(symbol) = self.constant_map_value_materializations.get(&cache_key)
+        {
+            symbol.clone()
+        } else {
+            let symbol = self.alloc_readonly_global_name();
+            self.readonly_globals.push(ReadonlyGlobal {
+                name: symbol.clone(),
+                data: cache_key.2.clone(),
+            });
+            self.constant_map_value_materializations
+                .insert(cache_key, symbol.clone());
+            symbol
+        };
 
         let value_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadGlobal {

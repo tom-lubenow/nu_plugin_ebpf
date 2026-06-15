@@ -527,6 +527,10 @@ pub struct HirToMirLowering<'a> {
     subfunctions: Vec<MirFunction>,
     /// Compiler-generated readonly globals for `.rodata`
     readonly_globals: Vec<ReadonlyGlobal>,
+    /// Reusable stack slots for declared constant map keys, keyed by map/schema/data.
+    constant_map_key_materializations: HashMap<(MapRef, MirType, Vec<u8>), (String, StackSlotId)>,
+    /// Reusable readonly globals for declared constant map values, keyed by map/schema/data.
+    constant_map_value_materializations: HashMap<(MapRef, MirType, Vec<u8>), String>,
     /// Compiler-generated initialized writable globals for `.data`
     data_globals: Vec<DataGlobal>,
     /// Compiler-generated zero-initialized writable globals for `.bss`
@@ -693,6 +697,8 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_in_progress: HashSet::new(),
             subfunctions: Vec::new(),
             readonly_globals: Vec::new(),
+            constant_map_key_materializations: HashMap::new(),
+            constant_map_value_materializations: HashMap::new(),
             data_globals: Vec::new(),
             bss_globals: Vec::new(),
             mutable_capture_globals: HashMap::new(),

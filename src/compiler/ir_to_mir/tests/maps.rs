@@ -2,6 +2,7 @@ use super::helpers::*;
 use super::*;
 use crate::compiler::BpfHelper;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
@@ -68,6 +69,67 @@ fn path_struct_schema(map_name: &str, kind: MapKind) -> HashMap<MapRef, MirType>
             ],
         },
     )])
+}
+
+fn next_test_reg(next: &mut u32) -> RegId {
+    let reg = RegId::new(*next);
+    *next += 1;
+    reg
+}
+
+fn push_test_record_array_key_builder(stmts: &mut Vec<HirStmt>, next: &mut u32) -> RegId {
+    let list = next_test_reg(next);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: list,
+        lit: HirLiteral::List { capacity: 2 },
+    });
+
+    for (pid, cpu) in [(7, 2), (9, 3)] {
+        let record = next_test_reg(next);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: record,
+            lit: HirLiteral::Record { capacity: 2 },
+        });
+
+        let pid_key = next_test_reg(next);
+        let pid_val = next_test_reg(next);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: pid_key,
+            lit: HirLiteral::String("pid".into()),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: pid_val,
+            lit: HirLiteral::Int(pid),
+        });
+        stmts.push(HirStmt::RecordInsert {
+            src_dst: record,
+            key: pid_key,
+            val: pid_val,
+        });
+
+        let cpu_key = next_test_reg(next);
+        let cpu_val = next_test_reg(next);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: cpu_key,
+            lit: HirLiteral::String("cpu".into()),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: cpu_val,
+            lit: HirLiteral::Int(cpu),
+        });
+        stmts.push(HirStmt::RecordInsert {
+            src_dst: record,
+            key: cpu_key,
+            val: cpu_val,
+        });
+
+        stmts.push(HirStmt::ListPush {
+            src_dst: list,
+            item: record,
+        });
+    }
+
+    list
 }
 
 fn map_define_with_max_entries_hir(
@@ -3989,6 +4051,210 @@ fn test_map_define_key_type_materializes_fixed_record_array_source_list_key() {
             }),
         "compile-time map key list-of-record builders must not emit runtime list operations"
     );
+}
+
+#[test]
+fn test_declared_record_array_keys_reused_across_map_helpers_stay_within_stack_limit() {
+    let map_define_decl = DeclId::new(41);
+    let map_put_decl = DeclId::new(42);
+    let map_contains_decl = DeclId::new(43);
+    let map_delete_decl = DeclId::new(44);
+    let decl_names = HashMap::from([
+        (map_define_decl, "map-define".to_string()),
+        (map_put_decl, "map-put".to_string()),
+        (map_contains_decl, "map-contains".to_string()),
+        (map_delete_decl, "map-delete".to_string()),
+    ]);
+    let put_key_var = VarId::new(1);
+    let contains_key_var = VarId::new(2);
+    let delete_key_var = VarId::new(3);
+    let mut stmts = Vec::new();
+    let mut next = 0;
+
+    let map_name = next_test_reg(&mut next);
+    let kind = next_test_reg(&mut next);
+    let key_type = next_test_reg(&mut next);
+    let value_type = next_test_reg(&mut next);
+    let map_define_dst = next_test_reg(&mut next);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: map_name,
+        lit: HirLiteral::String("keyed_batches_ops".into()),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: kind,
+        lit: HirLiteral::String("hash".into()),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: key_type,
+        lit: HirLiteral::String("array{record{pid:int,cpu:int}:2}".into()),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: value_type,
+        lit: HirLiteral::String("int".into()),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: map_define_decl,
+        src_dst: map_define_dst,
+        args: HirCallArgs {
+            positional: vec![map_name],
+            named: vec![
+                (b"kind".to_vec(), kind),
+                (b"key-type".to_vec(), key_type),
+                (b"value-type".to_vec(), value_type),
+            ],
+            ..HirCallArgs::default()
+        },
+    });
+
+    let put_key = push_test_record_array_key_builder(&mut stmts, &mut next);
+    stmts.push(HirStmt::StoreVariable {
+        var_id: put_key_var,
+        src: put_key,
+    });
+    let put_key_load = next_test_reg(&mut next);
+    let put_value = next_test_reg(&mut next);
+    stmts.push(HirStmt::LoadVariable {
+        dst: put_key_load,
+        var_id: put_key_var,
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: put_value,
+        lit: HirLiteral::Int(42),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: map_put_decl,
+        src_dst: put_value,
+        args: HirCallArgs {
+            positional: vec![map_name, put_key_load],
+            named: vec![(b"kind".to_vec(), kind)],
+            pipeline_input: Some(put_value),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let contains_key = push_test_record_array_key_builder(&mut stmts, &mut next);
+    stmts.push(HirStmt::StoreVariable {
+        var_id: contains_key_var,
+        src: contains_key,
+    });
+    let contains_key_load = next_test_reg(&mut next);
+    let contains_dst = next_test_reg(&mut next);
+    stmts.push(HirStmt::LoadVariable {
+        dst: contains_key_load,
+        var_id: contains_key_var,
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: map_contains_decl,
+        src_dst: contains_dst,
+        args: HirCallArgs {
+            positional: vec![map_name, contains_key_load],
+            named: vec![(b"kind".to_vec(), kind)],
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut delete_stmts = Vec::new();
+    let delete_key = push_test_record_array_key_builder(&mut delete_stmts, &mut next);
+    delete_stmts.push(HirStmt::StoreVariable {
+        var_id: delete_key_var,
+        src: delete_key,
+    });
+    let delete_key_load = next_test_reg(&mut next);
+    let delete_dst = next_test_reg(&mut next);
+    let then_ret = next_test_reg(&mut next);
+    delete_stmts.push(HirStmt::LoadVariable {
+        dst: delete_key_load,
+        var_id: delete_key_var,
+    });
+    delete_stmts.push(HirStmt::Call {
+        decl_id: map_delete_decl,
+        src_dst: delete_dst,
+        args: HirCallArgs {
+            positional: vec![map_name, delete_key_load],
+            named: vec![(b"kind".to_vec(), kind)],
+            ..HirCallArgs::default()
+        },
+    });
+    delete_stmts.push(HirStmt::LoadLiteral {
+        dst: then_ret,
+        lit: HirLiteral::Int(0),
+    });
+
+    let else_ret = next_test_reg(&mut next);
+    let else_stmts = vec![HirStmt::LoadLiteral {
+        dst: else_ret,
+        lit: HirLiteral::Int(0),
+    }];
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::BranchIf {
+                    cond: contains_dst,
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: delete_stmts,
+                terminator: HirTerminator::Return { src: then_ret },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: else_stmts,
+                terminator: HirTerminator::Return { src: else_ret },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("declared record-array keys across map helpers should lower");
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::ListPush { .. } | MirInst::ListLen { .. } | MirInst::ListGet { .. }
+                )
+            }),
+        "compile-time record-array map keys must not emit runtime list operations"
+    );
+
+    let stack_bytes: usize = result
+        .program
+        .main
+        .stack_slots
+        .iter()
+        .map(|slot| slot.size)
+        .sum();
+    assert!(
+        stack_bytes <= 512,
+        "declared constant record-array keys should stay within the eBPF stack limit, got {stack_bytes} bytes"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("declared record-array map keys should compile through stack layout");
 }
 
 #[test]
