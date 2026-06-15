@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2777_2786 = [
         error_contains: "transpose requires compile-time field names in eBPF"
     }
     {
-        name: "core-record-default-empty-rejects-runtime-empty-state"
+        name: "core-record-default-empty-accepts-context-comm-input"
         category: "records"
-        tags: [records default empty diagnostics reject runtime]
+        tags: [records default empty string length accept runtime context]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | default --empty "fallback"'
+            '  (($ctx.comm | default --empty "fallback" | str length) >= 0)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "default --empty requires compiler-known empty state in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-record-default-rejects-closure-value"

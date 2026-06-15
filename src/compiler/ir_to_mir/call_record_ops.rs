@@ -2092,6 +2092,17 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| meta.constant_value.as_ref())
                     .is_none()
             {
+                if let Some(input_meta) = input_meta.as_ref()
+                    && self.lower_default_tracked_string_empty_result(
+                        src_dst,
+                        result_vreg,
+                        input_vreg,
+                        input_meta,
+                        default_reg,
+                    )?
+                {
+                    return Ok(());
+                }
                 return Err(CompileError::UnsupportedInstruction(
                     "default --empty requires compiler-known empty state in eBPF".into(),
                 ));
@@ -2215,6 +2226,125 @@ impl<'a> HirToMirLowering<'a> {
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
+    fn lower_default_tracked_string_empty_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        default_reg: RegId,
+    ) -> Result<bool, CompileError> {
+        let (Some(input_slot), Some(input_len_vreg), Some(input_bound)) = (
+            input_meta.string_slot,
+            input_meta.string_len_vreg,
+            input_meta.string_len_bound,
+        ) else {
+            return Ok(false);
+        };
+
+        let Some(default_meta) = self.get_metadata(default_reg).cloned() else {
+            return Ok(false);
+        };
+        let (Some(default_slot), Some(default_bound)) =
+            (default_meta.string_slot, default_meta.string_len_bound)
+        else {
+            return Ok(false);
+        };
+
+        let output_bound = input_bound.max(default_bound);
+        let output_slot_len =
+            align_to_eight(output_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
+        let output_slot =
+            self.func
+                .alloc_stack_slot(output_slot_len, 8, StackSlotKind::StringBuffer);
+        let output_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: output_slot_len,
+        };
+        self.record_stack_slot_type(output_slot, output_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(output_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(output_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_zero(result_vreg, 0, output_slot_len)?;
+
+        let output_len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: output_len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(output_len_vreg, MirType::I64);
+
+        let is_empty_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_empty_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(input_len_vreg),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(is_empty_vreg, MirType::Bool);
+
+        let default_block = self.func.alloc_block();
+        let input_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: is_empty_vreg,
+            if_true: default_block,
+            if_false: input_block,
+        });
+
+        self.current_block = default_block;
+        self.emit(MirInst::StringAppend {
+            dst_buffer: output_slot,
+            dst_len: output_len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::StringSlot {
+                slot: default_slot,
+                max_len: default_bound,
+            },
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = input_block;
+        self.emit(MirInst::StringAppend {
+            dst_buffer: output_slot,
+            dst_len: output_len_vreg,
+            val: MirValue::VReg(input_vreg),
+            val_type: StringAppendType::StringSlot {
+                slot: input_slot,
+                max_len: input_bound,
+            },
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(output_slot);
+        meta.string_len_vreg = Some(output_len_vreg);
+        meta.string_len_bound = Some(output_bound);
+        meta.field_type = Some(output_ty);
+        meta.string_char_width_min = match (
+            input_meta.string_char_width_min,
+            default_meta.string_char_width_min,
+        ) {
+            (Some(input_min), Some(default_min)) => Some(input_min.min(default_min)),
+            _ => None,
+        };
+        Ok(true)
     }
 
     pub(super) fn lower_metadata_record_insert_update_or_upsert(

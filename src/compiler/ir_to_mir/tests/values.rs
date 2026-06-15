@@ -52350,6 +52350,98 @@ fn test_lower_default_empty_flag_replaces_literal_empty_string() {
 }
 
 #[test]
+fn test_lower_default_empty_flag_branches_on_runtime_tracked_string() {
+    let default_decl = DeclId::new(16_900);
+    let length_decl = DeclId::new(16_901);
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("comm")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"fallback".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([
+        (default_decl, "default".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty should branch on runtime tracked strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::StringSlot { .. },
+                    ..
+                }
+            )),
+        "expected default --empty to materialize a selected tracked string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime default --empty tracked string result should compile through codegen");
+}
+
+#[test]
 fn test_lower_load_value_string_can_drive_map_get_name() {
     let map_get_decl = DeclId::new(77);
     let func = HirFunction {
