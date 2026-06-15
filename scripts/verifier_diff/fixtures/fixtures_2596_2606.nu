@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_2596_2606 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math avg compile-time list result has type float; eBPF supports only average results folded by fill"
+        error_contains: "math avg compile-time list result has type float; eBPF supports only average results folded by metadata-only consumers"
     }
     {
         name: "core-math-variance-rejects-empty-list"
