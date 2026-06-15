@@ -9006,6 +9006,74 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Ok(Some(data))
             }
+            MirType::Struct { fields, .. } => {
+                let nu_protocol::Value::Record { val: record, .. } = value else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} constant value of type {} does not match declared record schema",
+                        value.get_type()
+                    )));
+                };
+                let visible_fields = fields
+                    .iter()
+                    .filter(|field| !field.synthetic)
+                    .collect::<Vec<_>>();
+
+                for (field_name, _) in record.iter() {
+                    if !visible_fields
+                        .iter()
+                        .any(|field| field.name.as_str() == field_name.as_str())
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{context} record initializer has unexpected field '{field_name}'"
+                        )));
+                    }
+                }
+
+                let mut data = vec![0u8; ty.size()];
+                for field in visible_fields {
+                    if field.bitfield.is_some() {
+                        return Ok(None);
+                    }
+                    let Some(field_value) = record.get(&field.name) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{context} record initializer is missing declared field '{}'",
+                            field.name
+                        )));
+                    };
+                    let field_context = format!("{context} record field '{}'", field.name);
+                    let Some(field_data) = Self::constant_value_data_for_mir_type(
+                        &field.ty,
+                        field_value,
+                        &field_context,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    if field_data.len() != field.ty.size() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{field_context} encoded to {} bytes, expected {} bytes for {:?}",
+                            field_data.len(),
+                            field.ty.size(),
+                            field.ty
+                        )));
+                    }
+                    let end = field.offset.checked_add(field_data.len()).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{field_context} offset overflow while encoding declared record schema"
+                        ))
+                    })?;
+                    if end > data.len() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{field_context} encoded range {}..{} exceeds declared record size {}",
+                            field.offset,
+                            end,
+                            data.len()
+                        )));
+                    }
+                    data[field.offset..end].copy_from_slice(&field_data);
+                }
+                Ok(Some(data))
+            }
             _ => Ok(None),
         }
     }
