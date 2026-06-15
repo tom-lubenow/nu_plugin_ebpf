@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added a non-root `MANUAL_INTEGRATION_DRY_RUN_ONLY=1` mode for the manual
+  integration harness so compile-only attach-family smoke checks can run
+  without live kernel loads.
 - Added source verifier coverage for raw TCP syncookie helper calls using
   looked-up socket pointers.
 - Added source verifier coverage for raw TCP send-ack helper calls in

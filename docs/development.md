@@ -13,6 +13,15 @@ cargo build
 sudo nu ./scripts/manual_integration.nu
 ```
 
+For non-root compile/object smoke coverage, run only the dry-run steps. This
+skips live attach cases and still executes the compile-only family checks plus
+the final leaked-probe assertion:
+
+```bash
+cargo build
+MANUAL_INTEGRATION_DRY_RUN_ONLY=1 nu ./scripts/manual_integration.nu
+```
+
 Override the plugin path if needed:
 
 ```bash
