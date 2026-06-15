@@ -5337,6 +5337,19 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_reg) = input_reg
+            && self.lower_tracked_string_trim(
+                src_dst,
+                result_vreg,
+                input_reg,
+                trim_char,
+                trim_left,
+                trim_right,
+            )?
+        {
+            return Ok(());
+        }
+
         let input = self.exact_string_input(input_reg, "str trim")?;
         let output = Self::trim_known_string(input, trim_char, trim_left, trim_right);
         self.lower_known_string_result(src_dst, result_vreg, output)
@@ -5373,6 +5386,313 @@ impl<'a> HirToMirLowering<'a> {
         }
         let byte = encoded.as_bytes()[0];
         Ok(byte)
+    }
+
+    fn lower_tracked_string_trim_left_len(
+        &mut self,
+        out_slot: StackSlotId,
+        len_vreg: VReg,
+        content_cap: usize,
+        trim_byte: u8,
+    ) -> Result<(), CompileError> {
+        let probe_count = content_cap;
+        if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim tracked string input has {probe_count} candidate prefix offsets; eBPF lowering supports at most {MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES}"
+            )));
+        }
+
+        let done_block = self.func.alloc_block();
+        let empty_block = self.func.alloc_block();
+        for candidate_start in 0..content_cap {
+            let check_byte_block = self.func.alloc_block();
+            let next_candidate_block = self.func.alloc_block();
+            let store_candidate_block = self.func.alloc_block();
+
+            let len_gt_candidate = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: len_gt_candidate,
+                op: BinOpKind::Gt,
+                lhs: MirValue::VReg(len_vreg),
+                rhs: MirValue::Const(i64::try_from(candidate_start).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim tracked string candidate start is too large for eBPF".into(),
+                    )
+                })?),
+            });
+            self.vreg_type_hints.insert(len_gt_candidate, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: len_gt_candidate,
+                if_true: check_byte_block,
+                if_false: empty_block,
+            });
+
+            self.current_block = check_byte_block;
+            let candidate_byte = self.func.alloc_vreg();
+            self.emit(MirInst::LoadSlot {
+                dst: candidate_byte,
+                slot: out_slot,
+                offset: Self::checked_mir_offset(candidate_start, "string trim prefix byte")?,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(candidate_byte, MirType::U8);
+
+            let is_trim_byte = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_trim_byte,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(candidate_byte),
+                rhs: MirValue::Const(i64::from(trim_byte)),
+            });
+            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: is_trim_byte,
+                if_true: next_candidate_block,
+                if_false: store_candidate_block,
+            });
+
+            self.current_block = store_candidate_block;
+            if candidate_start > 0 {
+                let new_len = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: new_len,
+                    op: BinOpKind::Sub,
+                    lhs: MirValue::VReg(len_vreg),
+                    rhs: MirValue::Const(i64::try_from(candidate_start).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "str trim tracked string candidate start is too large for eBPF".into(),
+                        )
+                    })?),
+                });
+                self.vreg_type_hints.insert(new_len, MirType::I64);
+                self.emit(MirInst::Copy {
+                    dst: len_vreg,
+                    src: MirValue::VReg(new_len),
+                });
+
+                for relative_offset in 0..content_cap.saturating_sub(candidate_start) {
+                    let source_offset =
+                        candidate_start
+                            .checked_add(relative_offset)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(
+                                    "str trim tracked string source byte offset overflowed in eBPF"
+                                        .into(),
+                                )
+                            })?;
+                    let shifted_byte = self.func.alloc_vreg();
+                    self.emit(MirInst::LoadSlot {
+                        dst: shifted_byte,
+                        slot: out_slot,
+                        offset: Self::checked_mir_offset(
+                            source_offset,
+                            "string trim shifted source",
+                        )?,
+                        ty: MirType::U8,
+                    });
+                    self.vreg_type_hints.insert(shifted_byte, MirType::U8);
+                    self.emit(MirInst::StoreSlot {
+                        slot: out_slot,
+                        offset: Self::checked_mir_offset(
+                            relative_offset,
+                            "string trim shifted destination",
+                        )?,
+                        val: MirValue::VReg(shifted_byte),
+                        ty: MirType::U8,
+                    });
+                }
+            }
+            self.terminate(MirInst::Jump { target: done_block });
+
+            self.current_block = next_candidate_block;
+        }
+
+        self.terminate(MirInst::Jump {
+            target: empty_block,
+        });
+        self.current_block = empty_block;
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.terminate(MirInst::Jump { target: done_block });
+        self.current_block = done_block;
+        Ok(())
+    }
+
+    fn lower_tracked_string_trim_right_len(
+        &mut self,
+        out_slot: StackSlotId,
+        len_vreg: VReg,
+        content_cap: usize,
+        trim_byte: u8,
+    ) -> Result<(), CompileError> {
+        let probe_count = content_cap;
+        if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim tracked string input has {probe_count} candidate suffix offsets; eBPF lowering supports at most {MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES}"
+            )));
+        }
+
+        let done_block = self.func.alloc_block();
+        for candidate_len in (1..=content_cap).rev() {
+            let check_byte_block = self.func.alloc_block();
+            let next_candidate_block = self.func.alloc_block();
+            let store_candidate_block = self.func.alloc_block();
+
+            let len_ge_candidate = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: len_ge_candidate,
+                op: BinOpKind::Ge,
+                lhs: MirValue::VReg(len_vreg),
+                rhs: MirValue::Const(i64::try_from(candidate_len).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim tracked string candidate length is too large for eBPF".into(),
+                    )
+                })?),
+            });
+            self.vreg_type_hints.insert(len_ge_candidate, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: len_ge_candidate,
+                if_true: check_byte_block,
+                if_false: next_candidate_block,
+            });
+
+            self.current_block = check_byte_block;
+            let candidate_byte = self.func.alloc_vreg();
+            self.emit(MirInst::LoadSlot {
+                dst: candidate_byte,
+                slot: out_slot,
+                offset: Self::checked_mir_offset(candidate_len - 1, "string trim suffix byte")?,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(candidate_byte, MirType::U8);
+
+            let is_trim_byte = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_trim_byte,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(candidate_byte),
+                rhs: MirValue::Const(i64::from(trim_byte)),
+            });
+            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: is_trim_byte,
+                if_true: next_candidate_block,
+                if_false: store_candidate_block,
+            });
+
+            self.current_block = store_candidate_block;
+            self.emit(MirInst::Copy {
+                dst: len_vreg,
+                src: MirValue::Const(i64::try_from(candidate_len).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim tracked string output length is too large for eBPF".into(),
+                    )
+                })?),
+            });
+            self.terminate(MirInst::Jump { target: done_block });
+
+            self.current_block = next_candidate_block;
+        }
+
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.terminate(MirInst::Jump { target: done_block });
+        self.current_block = done_block;
+        Ok(())
+    }
+
+    fn lower_tracked_string_trim(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        if trim_char.is_none() || Self::exact_string_value(&input_meta).is_some() {
+            return Ok(false);
+        }
+        let Some(input_slot) = input_meta.string_slot else {
+            return Ok(false);
+        };
+        let Some(input_len_vreg) = input_meta.string_len_vreg else {
+            return Ok(false);
+        };
+
+        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char)?;
+        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str trim tracked string slot size is unavailable in eBPF".into(),
+            )
+        })?;
+        let content_cap = self.string_input_max_len(&input_meta, input_slot_size);
+        let string_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: input_slot_size,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(input_slot_size, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(out_slot, string_ty.clone());
+
+        let input_ptr_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: input_ptr_vreg,
+            src: MirValue::StackSlot(input_slot),
+        });
+        self.vreg_type_hints.insert(
+            input_ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(string_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_ptr_vreg, 0, input_slot_size)?;
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::VReg(input_len_vreg),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::I64);
+
+        let trim_start = trim_left || !trim_right;
+        let trim_end = trim_right || !trim_left;
+        if trim_start {
+            self.lower_tracked_string_trim_left_len(out_slot, len_vreg, content_cap, trim_byte)?;
+        }
+        if trim_end {
+            self.lower_tracked_string_trim_right_len(out_slot, len_vreg, content_cap, trim_byte)?;
+        }
+
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(string_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(string_ty);
+        out_meta.string_slot = Some(out_slot);
+        out_meta.string_len_vreg = Some(len_vreg);
+        out_meta.string_len_bound = Some(content_cap);
+        out_meta.annotated_semantics = input_meta.annotated_semantics;
+        Ok(true)
     }
 
     fn lower_typed_fixed_string_array_trim_left_len(
