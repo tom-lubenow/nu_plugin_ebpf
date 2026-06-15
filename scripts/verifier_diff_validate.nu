@@ -1,6 +1,7 @@
 #!/usr/bin/env nu
 
 const REPO_ROOT = (path self | path dirname | path dirname)
+const MAX_VERIFIER_FIXTURE_CHUNK_LINES = 640
 source ($REPO_ROOT | path join scripts verifier_diff metadata core_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff metadata tracepoint_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff metadata context_features.nu)
@@ -40,7 +41,7 @@ def print-validate-help [] {
         "  --fixture-file <path>: Validate only fixtures loaded from one fixture chunk file."
         "  --fixture <string>: Validate one fixture by exact name. May be repeated."
         ""
-        "Full validation also checks global feature-expectation metadata."
+        "Full validation also checks global feature-expectation metadata and fixture chunk sizes."
     ] | str join "\n" | print
 }
 
@@ -115,6 +116,27 @@ def selected-fixtures-for-validation [options] {
     $selected
 }
 
+def validate-fixture-chunk-size [path: path] {
+    let line_count = (open --raw $path | lines | length)
+    if $line_count > $MAX_VERIFIER_FIXTURE_CHUNK_LINES {
+        fail $"verifier fixture chunk ($path) has ($line_count) lines; split it below ($MAX_VERIFIER_FIXTURE_CHUNK_LINES) lines before adding more fixtures"
+    }
+}
+
+def validate-fixture-chunk-sizes [options] {
+    let paths = if $options.fixture_file != null {
+        [$options.fixture_file]
+    } else if $options.fixture == null {
+        glob ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join "fixtures_*.nu") | sort
+    } else {
+        []
+    }
+
+    for path in $paths {
+        validate-fixture-chunk-size $path
+    }
+}
+
 def --wrapped main [...args] {
     let options = (parse-validate-args $args)
     if $options.help {
@@ -122,6 +144,7 @@ def --wrapped main [...args] {
         return
     }
 
+    validate-fixture-chunk-sizes $options
     if $options.fixture_file == null and $options.fixture == null {
         validate-verifier-feature-expectations
     }
