@@ -2737,23 +2737,25 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|values| (reg, values.to_vec()))
         }) {
             let Some(item) = item_constant.clone() else {
-                if values
-                    .iter()
-                    .any(|value| !matches!(value, nu_protocol::Value::Int { .. }))
-                    || !matches!(
-                        self.typed_value_runtime_type(item_reg, item_vreg),
-                        Some(
-                            MirType::I8
-                                | MirType::I16
-                                | MirType::I32
-                                | MirType::I64
-                                | MirType::U8
-                                | MirType::U16
-                                | MirType::U32
-                                | MirType::U64
-                        )
+                if values.iter().any(|value| {
+                    !matches!(
+                        value,
+                        nu_protocol::Value::Bool { .. } | nu_protocol::Value::Int { .. }
                     )
-                {
+                }) || !matches!(
+                    self.typed_value_runtime_type(item_reg, item_vreg),
+                    Some(
+                        MirType::I8
+                            | MirType::I16
+                            | MirType::I32
+                            | MirType::I64
+                            | MirType::U8
+                            | MirType::U16
+                            | MirType::U32
+                            | MirType::U64
+                            | MirType::Bool
+                    )
+                ) {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "{cmd_name} item must be compile-time constant for compile-time known fixed lists in eBPF"
                     )));
@@ -2859,6 +2861,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires a stack-backed list input in eBPF"
             )));
         };
+        let item_vreg = self.stack_numeric_list_item_vreg(cmd_name, item_reg, item_vreg)?;
 
         let out_max_len = max_len.checked_add(1).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
@@ -2999,6 +3002,43 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         Ok(())
+    }
+
+    fn stack_numeric_list_item_vreg(
+        &mut self,
+        cmd_name: &str,
+        item_reg: RegId,
+        item_vreg: VReg,
+    ) -> Result<VReg, CompileError> {
+        let item_ty = self
+            .typed_value_runtime_type(item_reg, item_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} item requires a tracked numeric type in eBPF"
+                ))
+            })?;
+        if matches!(item_ty, MirType::I64) {
+            return Ok(item_vreg);
+        }
+        if matches!(
+            item_ty,
+            MirType::U8 | MirType::U16 | MirType::U32 | MirType::Bool
+        ) {
+            let widened = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(widened, MirType::I64);
+            self.emit(MirInst::Copy {
+                dst: widened,
+                src: MirValue::VReg(item_vreg),
+            });
+            return Ok(widened);
+        }
+        self.coerce_scalar_assignment_value(item_vreg, &item_ty, &MirType::I64)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} item type {:?} cannot be stored in stack-backed numeric lists in eBPF",
+                    item_ty
+                ))
+            })
     }
 
     fn lower_seq_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {

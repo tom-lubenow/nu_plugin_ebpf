@@ -852,6 +852,96 @@ fn make_int_list_builder_runtime_item_append_prepend_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bool_list_builder_runtime_item_append_prepend_length_program(
+    command_decl: DeclId,
+    random_decl: DeclId,
+    length_decl: DeclId,
+    in_place_call: bool,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 3 },
+    }];
+
+    let mut next_reg = 1;
+    for value in [true, false, true] {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Bool(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let runtime_item_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: runtime_item_reg,
+        args: HirCallArgs::default(),
+    });
+    let zero_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: zero_reg,
+        lit: HirLiteral::Int(0),
+    });
+    stmts.push(HirStmt::BinaryOp {
+        lhs_dst: runtime_item_reg,
+        op: Operator::Comparison(Comparison::GreaterThan),
+        rhs: zero_reg,
+    });
+
+    let command_result_reg = if in_place_call {
+        RegId::new(0)
+    } else {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        reg
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: command_decl,
+        src_dst: command_result_reg,
+        args: HirCallArgs {
+            positional: vec![runtime_item_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(command_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: length_result_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_call_then_length_program(
     command_decl: DeclId,
     length_decl: DeclId,
@@ -13979,6 +14069,69 @@ fn test_lower_runtime_append_prepend_on_metadata_only_integer_list_builder_mater
                 .unwrap_or_else(|err| {
                     panic!(
                         "runtime {command_name} on materialized integer list should compile through codegen: {err}"
+                    )
+                });
+        }
+    }
+}
+
+#[test]
+fn test_lower_runtime_append_prepend_on_metadata_only_bool_list_builder_accepts_runtime_bool() {
+    let random_decl = DeclId::new(10015);
+    let length_decl = DeclId::new(10016);
+
+    for (command_decl, command_name) in [
+        (DeclId::new(10017), "append"),
+        (DeclId::new(10018), "prepend"),
+    ] {
+        let decl_names = HashMap::from([
+            (command_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+            (length_decl, "length".to_string()),
+        ]);
+
+        for in_place_call in [false, true] {
+            let hir = make_bool_list_builder_runtime_item_append_prepend_length_program(
+                command_decl,
+                random_decl,
+                length_decl,
+                in_place_call,
+            );
+            let result = lower_hir_to_mir_with_hints(
+                &hir,
+                None,
+                &decl_names,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|err| {
+                panic!("runtime bool {command_name} should materialize bool list builders: {err}")
+            });
+            let instructions = result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .collect::<Vec<_>>();
+
+            assert!(
+                instructions
+                    .iter()
+                    .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
+                "expected runtime bool {command_name} to allocate a four-element result list"
+            );
+            assert!(
+                instructions
+                    .iter()
+                    .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+                "expected runtime bool {command_name} to push into the result list"
+            );
+            compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "runtime bool {command_name} on materialized bool list should compile: {err}"
                     )
                 });
         }
