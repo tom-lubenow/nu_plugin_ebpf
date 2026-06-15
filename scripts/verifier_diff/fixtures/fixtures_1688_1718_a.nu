@@ -169,18 +169,17 @@ const VERIFIER_DIFF_FIXTURES_1688_1718_A = [
         kernel: "accept"
     }
     {
-        name: "core-list-append-capacity-reject"
+        name: "core-list-append-large-seq-get"
         category: "language-core"
-        tags: [aggregate list append reject]
+        tags: [aggregate list seq append get]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  seq 0 59 | append 60 | get 60'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "append would exceed stack-backed numeric list capacity 60"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-is-empty"
