@@ -235,6 +235,23 @@ fn test_lower_rejects_out_of_range_load_subprogram_reference() {
 }
 
 #[test]
+fn test_phys_reg_lookup_reports_missing_precolored_reg() {
+    let mut func = LirFunction::new();
+    let phys = PhysRegs::new(&mut func);
+
+    let err = phys
+        .get(EbpfReg::R6)
+        .expect_err("expected non-ABI physical register lookup to fail");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("missing physical vreg for R6"));
+        }
+        other => panic!("expected unsupported-instruction error, got {other}"),
+    }
+}
+
+#[test]
 fn test_lower_rejects_unknown_kfunc() {
     let mut main = MirFunction::new();
     let entry = main.alloc_block();

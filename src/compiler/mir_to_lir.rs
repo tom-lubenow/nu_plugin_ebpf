@@ -40,11 +40,10 @@ impl PhysRegs {
         Self { map }
     }
 
-    fn get(&self, reg: EbpfReg) -> VReg {
-        *self
-            .map
-            .get(&reg)
-            .unwrap_or_else(|| panic!("Missing physical vreg for {:?}", reg))
+    fn get(&self, reg: EbpfReg) -> Result<VReg, CompileError> {
+        self.map.get(&reg).copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!("missing physical vreg for {:?}", reg))
+        })
     }
 }
 
@@ -233,7 +232,7 @@ fn lower_inst(
                     4 => EbpfReg::R5,
                     _ => unreachable!("helper args already bounded to at most 5"),
                 };
-                let dst_reg = phys.get(reg);
+                let dst_reg = phys.get(reg)?;
                 let src_vreg = match arg {
                     MirValue::VReg(vreg) => *vreg,
                     _ => {
@@ -251,7 +250,7 @@ fn lower_inst(
             if !moves.is_empty() {
                 out.push(LirInst::ParallelMove { moves });
             }
-            let ret_reg = phys.get(EbpfReg::R0);
+            let ret_reg = phys.get(EbpfReg::R0)?;
             out.push(LirInst::CallHelper {
                 helper: *helper,
                 args: arg_regs,
@@ -305,14 +304,14 @@ fn lower_inst(
                     4 => EbpfReg::R5,
                     _ => unreachable!("kfunc args already bounded to at most 5"),
                 };
-                let dst_reg = phys.get(reg);
+                let dst_reg = phys.get(reg)?;
                 moves.push((dst_reg, *arg));
                 arg_regs.push(dst_reg);
             }
             if !moves.is_empty() {
                 out.push(LirInst::ParallelMove { moves });
             }
-            let ret_reg = phys.get(EbpfReg::R0);
+            let ret_reg = phys.get(EbpfReg::R0)?;
             out.push(LirInst::CallKfunc {
                 kfunc: kfunc.clone(),
                 btf_id: *btf_id,
@@ -342,14 +341,14 @@ fn lower_inst(
                     4 => EbpfReg::R5,
                     _ => unreachable!("subfunction args already bounded to at most 5"),
                 };
-                let dst_reg = phys.get(reg);
+                let dst_reg = phys.get(reg)?;
                 moves.push((dst_reg, *arg));
                 arg_regs.push(dst_reg);
             }
             if !moves.is_empty() {
                 out.push(LirInst::ParallelMove { moves });
             }
-            let ret_reg = phys.get(EbpfReg::R0);
+            let ret_reg = phys.get(EbpfReg::R0)?;
             out.push(LirInst::CallSubfn {
                 subfn: *subfn,
                 args: arg_regs,
