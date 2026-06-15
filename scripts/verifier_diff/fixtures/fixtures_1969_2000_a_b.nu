@@ -1,51 +1,51 @@
-const VERIFIER_DIFF_FIXTURES_1969_2000_A = [
+const VERIFIER_DIFF_FIXTURES_1969_2000_A_B = [
     {
-        name: "core-int-fill-right"
+        name: "core-char-named-prompt"
         category: "language-core"
-        tags: [int fill right]
+        tags: [string char named]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  42 | fill --alignment right --character "0" --width 5 | str starts-with "00042"'
+            '  char prompt | str starts-with "▶"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-runtime-unsigned-int-fill"
+        name: "core-char-named-extra-string-args"
         category: "language-core"
-        tags: [int runtime fill context]
+        tags: [string char named rest]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.pid | fill | str starts-with "0"'
+            '  char prompt ignored 1f354 | str starts-with "▶"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-float-fill-right"
+        name: "core-char-unicode-codepoints"
         category: "language-core"
-        tags: [float fill right]
+        tags: [string char unicode]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  1.25 | fill --alignment right --character "0" --width 6 | str starts-with "001.25"'
+            '  char --unicode 1F468 200D 1F466 | str starts-with "👨‍👦"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-filesize-fill-right"
+        name: "core-char-integer-codepoints"
         category: "language-core"
-        tags: [filesize fill right]
+        tags: [string char integer]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  1kb | fill --alignment right --character "_" --width 8 | str starts-with "____1000"'
+            '  char --integer 65 66 | str starts-with "AB"'
             '}'
         ]
         local: "accept"
