@@ -5852,7 +5852,16 @@ impl<'a> HirToMirLowering<'a> {
                     )
                 })?;
                 let value_reg = self.pipeline_input_reg;
-                let stored_value_vreg = if let Some(value_reg) = value_reg {
+                let mut schema_materialized_value = false;
+                let stored_value_vreg = if let Some(value_reg) = value_reg
+                    && let Some(schema_value_vreg) = self.materialize_declared_constant_map_value(
+                        &map_ref,
+                        value_reg,
+                        "map-push value",
+                    )? {
+                    schema_materialized_value = true;
+                    schema_value_vreg
+                } else if let Some(value_reg) = value_reg {
                     self.reject_context_pointer_payload(Some(value_reg), "map-push value")?;
                     self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                 } else {
@@ -5863,7 +5872,9 @@ impl<'a> HirToMirLowering<'a> {
                     stored_value_vreg,
                     "map-push value",
                 )?;
-                self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-push")?;
+                if !schema_materialized_value {
+                    self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-push")?;
+                }
 
                 self.emit(MirInst::MapPush {
                     map: map_ref,
