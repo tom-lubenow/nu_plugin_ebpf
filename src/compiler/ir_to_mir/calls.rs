@@ -5776,7 +5776,17 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                         let value_reg = self.pipeline_input_reg;
-                        let stored_value_vreg = if let Some(value_reg) = value_reg {
+                        let mut schema_materialized_value = false;
+                        let stored_value_vreg = if let Some(value_reg) = value_reg
+                            && let Some(schema_value_vreg) = self
+                                .materialize_declared_constant_map_value(
+                                    &map_ref,
+                                    value_reg,
+                                    "map-put value",
+                                )? {
+                            schema_materialized_value = true;
+                            schema_value_vreg
+                        } else if let Some(value_reg) = value_reg {
                             self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                             self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                         } else {
@@ -5795,9 +5805,11 @@ impl<'a> HirToMirLowering<'a> {
                             val: stored_value_vreg,
                             flags,
                         });
-                        self.record_named_map_value_schema_from_reg(
-                            &map_ref, value_reg, "map-put",
-                        )?;
+                        if !schema_materialized_value {
+                            self.record_named_map_value_schema_from_reg(
+                                &map_ref, value_reg, "map-put",
+                            )?;
+                        }
 
                         self.emit(MirInst::Copy {
                             dst: dst_vreg,
@@ -8882,6 +8894,173 @@ impl<'a> HirToMirLowering<'a> {
                     Ok(key_vreg)
                 }
             },
+        }
+    }
+
+    fn materialize_declared_constant_map_value(
+        &mut self,
+        map_ref: &MapRef,
+        value_reg: RegId,
+        context: &str,
+    ) -> Result<Option<VReg>, CompileError> {
+        let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
+            self.named_map_value_type(map_ref).cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(value) = self
+            .get_metadata(value_reg)
+            .and_then(|meta| meta.constant_value.as_ref())
+        else {
+            return Ok(None);
+        };
+        let Some(data) = Self::constant_value_data_for_mir_type(&value_ty, value, context)? else {
+            return Ok(None);
+        };
+        if data.len() != value_ty.size() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} for '{}' encoded to {} bytes, expected {} bytes for declared value type {:?}",
+                map_ref.name,
+                data.len(),
+                value_ty.size(),
+                value_ty
+            )));
+        }
+
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
+
+        let value_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: value_vreg,
+            symbol,
+            ty: value_ty.clone(),
+        });
+        self.vreg_type_hints.insert(
+            value_vreg,
+            MirType::Ptr {
+                pointee: Box::new(value_ty),
+                address_space: AddressSpace::Map,
+            },
+        );
+        Ok(Some(value_vreg))
+    }
+
+    fn constant_value_data_for_mir_type(
+        ty: &MirType,
+        value: &nu_protocol::Value,
+        context: &str,
+    ) -> Result<Option<Vec<u8>>, CompileError> {
+        match ty {
+            MirType::Bool => match value {
+                nu_protocol::Value::Bool { val, .. } => Ok(Some(vec![u8::from(*val)])),
+                _ => Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} constant value of type {} does not match declared bool schema",
+                    value.get_type()
+                ))),
+            },
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64 => {
+                Self::constant_integer_data_for_mir_type(ty, value, context).map(Some)
+            }
+            MirType::Array { elem, len } => {
+                let nu_protocol::Value::List { vals, .. } = value else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} constant value of type {} does not match declared fixed-array schema",
+                        value.get_type()
+                    )));
+                };
+                if vals.len() != *len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} fixed-array initializer has length {}, expected {}",
+                        vals.len(),
+                        len
+                    )));
+                }
+
+                let mut data = Vec::with_capacity(ty.size());
+                for (idx, value) in vals.iter().enumerate() {
+                    let Some(item_data) =
+                        Self::constant_value_data_for_mir_type(elem, value, context)?
+                    else {
+                        return Ok(None);
+                    };
+                    if item_data.len() != elem.size() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{context} fixed-array element {idx} encoded to {} bytes, expected {} bytes for {:?}",
+                            item_data.len(),
+                            elem.size(),
+                            elem
+                        )));
+                    }
+                    data.extend_from_slice(&item_data);
+                }
+                Ok(Some(data))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn constant_integer_data_for_mir_type(
+        ty: &MirType,
+        value: &nu_protocol::Value,
+        context: &str,
+    ) -> Result<Vec<u8>, CompileError> {
+        let raw = Self::constant_i128_for_mir_type(value, context, ty)?;
+        macro_rules! convert {
+            ($target:ty) => {
+                <$target>::try_from(raw)
+                    .map(|value| value.to_le_bytes().to_vec())
+                    .map_err(|err| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{context} constant value of type {} is out of range for declared schema {:?}: {err}",
+                            value.get_type(),
+                            ty
+                        ))
+                    })
+            };
+        }
+
+        match ty {
+            MirType::I8 => convert!(i8),
+            MirType::I16 => convert!(i16),
+            MirType::I32 => convert!(i32),
+            MirType::I64 => convert!(i64),
+            MirType::U8 => convert!(u8),
+            MirType::U16 => convert!(u16),
+            MirType::U32 => convert!(u32),
+            MirType::U64 => convert!(u64),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} declared schema {:?} is not an integer type",
+                ty
+            ))),
+        }
+    }
+
+    fn constant_i128_for_mir_type(
+        value: &nu_protocol::Value,
+        context: &str,
+        ty: &MirType,
+    ) -> Result<i128, CompileError> {
+        match value {
+            nu_protocol::Value::Int { val, .. } => Ok(i128::from(*val)),
+            nu_protocol::Value::Filesize { val, .. } => Ok(i128::from(val.get())),
+            nu_protocol::Value::Duration { val, .. } => Ok(i128::from(*val)),
+            nu_protocol::Value::Nothing { .. } => Ok(0),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} constant value of type {} does not match declared integer schema {:?}",
+                value.get_type(),
+                ty
+            ))),
         }
     }
 
