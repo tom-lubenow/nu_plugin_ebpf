@@ -98,18 +98,18 @@ const VERIFIER_DIFF_FIXTURES_2693_2704 = [
         error_contains: "seq date requires explicit --end-date, --days, or --periods in eBPF"
     }
     {
-        name: "core-seq-date-rejects-nonpositive-increment"
+        name: "core-seq-date-rejects-zero-increment"
         category: "language-core"
         tags: [aggregate list seq date diagnostics reject increment]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  seq date --begin-date "2020-01-01" --end-date "2020-01-02" --increment -1'
+            '  seq date --begin-date "2020-01-01" --end-date "2020-01-02" --increment 0'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "seq date --increment requires a positive duration in eBPF"
+        error_contains: "seq date --increment requires a non-zero duration in eBPF"
     }
     {
         name: "core-seq-date-rejects-nonpositive-days"
