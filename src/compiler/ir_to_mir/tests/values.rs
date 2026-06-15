@@ -5615,6 +5615,103 @@ fn make_string_list_builder_runtime_get_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_binary_list_builder_runtime_get_then_length_program(
+    get_decl: DeclId,
+    random_decl: DeclId,
+    length_decl: DeclId,
+    values: &[&[u8]],
+    range_start: i64,
+    range_end: i64,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(value.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let start_reg = RegId::new(value_count_u32 + 2);
+    let step_reg = RegId::new(value_count_u32 + 3);
+    let end_reg = RegId::new(value_count_u32 + 4);
+    let range_reg = RegId::new(value_count_u32 + 5);
+    let index_reg = RegId::new(value_count_u32 + 6);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: start_reg,
+        lit: HirLiteral::Int(range_start),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: end_reg,
+        lit: HirLiteral::Int(range_end),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: start_reg,
+            step: step_reg,
+            end: end_reg,
+            inclusion: RangeInclusion::Inclusive,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: index_reg,
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![index_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: index_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_list_builder_transform_join_then_starts_with_program(
     transform_decl: DeclId,
     join_decl: DeclId,
@@ -14393,6 +14490,111 @@ fn test_lower_get_on_string_list_builder_rejects_out_of_bounds_runtime_index_ran
         err.to_string().contains(
             "get runtime index range 0..=2 is out of bounds for compile-time known fixed list with length 2"
         ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_get_on_binary_list_builder_accepts_range_proven_runtime_index() {
+    let get_decl = DeclId::new(115006);
+    let random_decl = DeclId::new(115007);
+    let length_decl = DeclId::new(115008);
+    let hir = make_binary_list_builder_runtime_get_then_length_program(
+        get_decl,
+        random_decl,
+        length_decl,
+        &[&[1, 2], &[3, 4]],
+        0,
+        1,
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (random_decl, "random int".to_string()),
+        (length_decl, "bytes length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("range-proven runtime get should consume compile-time binary-list builders");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert_program_returns_constant(&result.program, 2, "runtime-index binary-list get length");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected range-proven binary-list get to branch-select the item"
+    );
+    for expected in [1, 3] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    offset: 0,
+                    val: MirValue::Const(value),
+                    ..
+                } if *value == expected
+            )),
+            "expected range-proven binary-list get to store first byte {expected}"
+        );
+    }
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. } | MirInst::ListLen { .. })),
+        "expected range-proven binary-list get not to materialize a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("range-proven binary-list get result should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_on_binary_list_builder_rejects_unequal_runtime_index_lengths() {
+    let get_decl = DeclId::new(115009);
+    let random_decl = DeclId::new(115010);
+    let length_decl = DeclId::new(115011);
+    let hir = make_binary_list_builder_runtime_get_then_length_program(
+        get_decl,
+        random_decl,
+        length_decl,
+        &[&[1], &[2, 3]],
+        0,
+        1,
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (random_decl, "random int".to_string()),
+        (length_decl, "bytes length".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime get should reject unequal binary-list item lengths");
+
+    assert!(
+        err.to_string()
+            .contains("get runtime binary-list item lengths must be equal"),
         "unexpected error: {err}"
     );
 }

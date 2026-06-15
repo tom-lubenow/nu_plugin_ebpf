@@ -3644,6 +3644,16 @@ impl<'a> HirToMirLowering<'a> {
             .collect()
     }
 
+    fn compile_time_binary_list_bytes(values: &[nu_protocol::Value]) -> Option<Vec<Vec<u8>>> {
+        values
+            .iter()
+            .map(|value| match value {
+                nu_protocol::Value::Binary { val, .. } => Some(val.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn string_literal_append_type(bytes: &[u8], aligned_len: usize) -> StringAppendType {
         let mut literal_bytes = vec![0u8; aligned_len];
         literal_bytes[..bytes.len()].copy_from_slice(bytes);
@@ -3766,6 +3776,107 @@ impl<'a> HirToMirLowering<'a> {
             .map(|value| value.chars().count())
             .min();
         meta.field_type = Some(array_ty);
+        Ok(())
+    }
+
+    fn emit_runtime_indexed_compile_time_binary_list_get(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        idx: MirValue,
+        min_idx: usize,
+        max_idx: usize,
+        values: &[Vec<u8>],
+    ) -> Result<(), CompileError> {
+        let output_len = values[min_idx].len();
+        if values[min_idx..=max_idx]
+            .iter()
+            .any(|bytes| bytes.len() != output_len)
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "get runtime binary-list item lengths must be equal for range-proven fixed-list lowering in eBPF"
+                    .into(),
+            ));
+        }
+        if output_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(());
+        }
+
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: output_len,
+        };
+        let slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(output_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let continuation_block = self.func.alloc_block();
+        for raw_idx in min_idx..=max_idx {
+            let next_block = if raw_idx == max_idx {
+                None
+            } else {
+                Some(self.func.alloc_block())
+            };
+            if let Some(next_block) = next_block {
+                let matches_index = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: matches_index,
+                    op: BinOpKind::Eq,
+                    lhs: idx.clone(),
+                    rhs: MirValue::Const(raw_idx as i64),
+                });
+                self.vreg_type_hints.insert(matches_index, MirType::Bool);
+
+                let item_block = self.func.alloc_block();
+                self.terminate(MirInst::Branch {
+                    cond: matches_index,
+                    if_true: item_block,
+                    if_false: next_block,
+                });
+                self.current_block = item_block;
+            }
+
+            for (offset, byte) in values[raw_idx].iter().copied().enumerate() {
+                self.emit(MirInst::StoreSlot {
+                    slot,
+                    offset: Self::checked_mir_offset(
+                        offset,
+                        "runtime indexed binary-list get output",
+                    )?,
+                    val: MirValue::Const(i64::from(byte)),
+                    ty: MirType::U8,
+                });
+            }
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            if let Some(next_block) = next_block {
+                self.current_block = next_block;
+            }
+        }
+
+        self.current_block = continuation_block;
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.field_type = Some(array_ty);
+        meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: output_len });
         Ok(())
     }
 
@@ -8352,6 +8463,28 @@ impl<'a> HirToMirLowering<'a> {
                                     min_idx,
                                     max_idx,
                                     &string_values,
+                                )?;
+                                handled_list_get = true;
+                            } else if let Some(binary_values) =
+                                Self::compile_time_binary_list_bytes(&values)
+                            {
+                                let Some((min_idx, max_idx)) = Self::bounded_runtime_index_range(
+                                    self.get_metadata(idx_reg),
+                                    values.len(),
+                                )?
+                                else {
+                                    return Err(CompileError::UnsupportedInstruction(
+                                        "get index must be compile-time constant or range-proven in bounds for compile-time known binary lists in eBPF"
+                                            .into(),
+                                    ));
+                                };
+                                self.emit_runtime_indexed_compile_time_binary_list_get(
+                                    src_dst,
+                                    result_vreg,
+                                    idx.clone(),
+                                    min_idx,
+                                    max_idx,
+                                    &binary_values,
                                 )?;
                                 handled_list_get = true;
                             } else {
