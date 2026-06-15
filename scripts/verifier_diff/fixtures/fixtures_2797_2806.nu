@@ -18,9 +18,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
         default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-starts-with-rejects-runtime-prefix"
+        name: "core-operator-starts-with-accepts-runtime-prefix"
         category: "language-core"
-        tags: [operators starts-with diagnostics reject runtime]
+        tags: [operators starts-with accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -31,9 +31,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
             '  $l starts-with $r'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "starts-with operator requires a compile-time known string prefix in eBPF"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-operator-ends-with-rejects-runtime-suffix"
