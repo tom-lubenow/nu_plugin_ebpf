@@ -42,18 +42,17 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         error_contains: "find search argument must be compile-time constant for compile-time known fixed lists in eBPF"
     }
     {
-        name: "core-list-find-rejects-float-stack-search"
+        name: "core-list-find-float-seq-length"
         category: "language-core"
-        tags: [list find diagnostics reject]
+        tags: [list seq find float length accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (seq 1 3) | find 2.5'
+            '  (seq 1 3) | find 2.5 | length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "find search argument must be an integer scalar for stack-backed numeric lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-find-rejects-dynamic-string-stack-search"
