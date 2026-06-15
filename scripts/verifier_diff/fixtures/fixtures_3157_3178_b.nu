@@ -1,164 +1,164 @@
-const VERIFIER_DIFF_FIXTURES_3157_3178 = [
+const VERIFIER_DIFF_FIXTURES_3157_3178_B = [
     {
-        name: "core-string-starts-with-accepts-runtime-input-empty-prefix"
+        name: "core-operator-in-accepts-overlong-needle-runtime-right"
         category: "language-core"
-        tags: [string str starts-with accept runtime literal empty]
+        tags: [operators in accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str starts-with ""'
+            '  "abcdefghijklmnop" in $left'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-string-starts-with-accepts-runtime-input-overlong-prefix"
+        name: "core-operator-has-accepts-runtime-left-empty-needle"
         category: "language-core"
-        tags: [string str starts-with accept runtime literal capacity]
+        tags: [operators has accept runtime literal empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str starts-with "abcdefghijklmnop"'
+            '  $left has ""'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-string-ends-with-accepts-runtime-input-empty-suffix"
+        name: "core-operator-has-accepts-runtime-left-overlong-needle"
         category: "language-core"
-        tags: [string str ends-with accept runtime literal empty]
+        tags: [operators has accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str ends-with ""'
+            '  $left has "abcdefghijklmnop"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-string-ends-with-accepts-runtime-input-overlong-suffix"
+        name: "core-operator-not-starts-with-accepts-runtime-left-empty-prefix"
         category: "language-core"
-        tags: [string str ends-with accept runtime literal capacity]
+        tags: [operators not-starts-with accept runtime literal empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str ends-with "abcdefghijklmnop"'
+            '  $left not-starts-with ""'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-string-contains-accepts-runtime-input-empty-substring"
+        name: "core-operator-not-starts-with-accepts-runtime-left-overlong-prefix"
         category: "language-core"
-        tags: [string str contains accept runtime literal empty]
+        tags: [operators not-starts-with accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str contains ""'
+            '  $left not-starts-with "abcdefghijklmnop"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-string-contains-accepts-runtime-input-overlong-substring"
+        name: "core-operator-not-ends-with-accepts-runtime-left-empty-suffix"
         category: "language-core"
-        tags: [string str contains accept runtime literal capacity]
+        tags: [operators not-ends-with accept runtime literal empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left | str contains "abcdefghijklmnop"'
+            '  $left not-ends-with ""'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-operator-starts-with-accepts-runtime-left-empty-prefix"
+        name: "core-operator-not-ends-with-accepts-runtime-left-overlong-suffix"
         category: "language-core"
-        tags: [operators starts-with accept runtime literal empty]
+        tags: [operators not-ends-with accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left starts-with ""'
+            '  $left not-ends-with "abcdefghijklmnop"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-operator-starts-with-accepts-runtime-left-overlong-prefix"
+        name: "core-operator-not-in-accepts-empty-needle-runtime-right"
         category: "language-core"
-        tags: [operators starts-with accept runtime literal capacity]
+        tags: [operators not-in accept runtime literal empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left starts-with "abcdefghijklmnop"'
+            '  "" not-in $left'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-operator-ends-with-accepts-runtime-left-empty-suffix"
+        name: "core-operator-not-in-accepts-overlong-needle-runtime-right"
         category: "language-core"
-        tags: [operators ends-with accept runtime literal empty]
+        tags: [operators not-in accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left ends-with ""'
+            '  "abcdefghijklmnop" not-in $left'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-operator-ends-with-accepts-runtime-left-overlong-suffix"
+        name: "core-operator-not-has-accepts-runtime-left-empty-needle"
         category: "language-core"
-        tags: [operators ends-with accept runtime literal capacity]
+        tags: [operators not-has accept runtime literal empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  $left ends-with "abcdefghijklmnop"'
+            '  $left not-has ""'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-operator-in-accepts-empty-needle-runtime-right"
+        name: "core-operator-not-has-accepts-runtime-left-overlong-needle"
         category: "language-core"
-        tags: [operators in accept runtime literal empty]
+        tags: [operators not-has accept runtime literal capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  global-define --type string:8 left'
             '  let left = (global-get left)'
-            '  "" in $left'
+            '  $left not-has "abcdefghijklmnop"'
             '}'
         ]
         local: "accept"
