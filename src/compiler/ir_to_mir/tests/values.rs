@@ -12455,6 +12455,89 @@ fn test_lower_prepend_on_numeric_list_rebuilds_with_extra_capacity() {
 }
 
 #[test]
+fn test_lower_append_on_empty_list_record_builder_promotes_to_fixed_array() {
+    let append_decl = DeclId::new(10080);
+    let record_value = |id, name| {
+        Value::record(
+            test_record(vec![
+                ("id", Value::int(id, Span::test_data())),
+                ("name", Value::string(name, Span::test_data())),
+            ]),
+            Span::test_data(),
+        )
+    };
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(Vec::new(), Span::test_data())),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(1),
+                        val: Box::new(record_value(1, "aa")),
+                    },
+                    HirStmt::Call {
+                        decl_id: append_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            positional: vec![RegId::new(1)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(3),
+                        val: Box::new(record_value(2, "bbb")),
+                    },
+                    HirStmt::Call {
+                        decl_id: append_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(2)),
+                            positional: vec![RegId::new(3)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::from([(append_decl, "append".to_string())]),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("empty-list record append builder should lower as a typed fixed array");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "expected record append builder to avoid stack-backed numeric ListPush"
+    );
+}
+
+#[test]
 fn test_lower_each_on_numeric_list_guards_runtime_length() {
     let each_decl = DeclId::new(90);
     let get_decl = DeclId::new(91);

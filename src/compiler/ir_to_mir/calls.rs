@@ -2809,6 +2809,18 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
 
+        if matches!(input_meta.list_buffer, Some((_slot, 0)))
+            && matches!(
+                input_meta.constant_value.as_ref(),
+                Some(nu_protocol::Value::List { vals, .. }) if vals.is_empty()
+            )
+            && let Some(item) = item_constant
+        {
+            let list = nu_protocol::Value::list(vec![item], Span::unknown());
+            self.lower_compile_time_list_transform_result(src_dst, &list)?;
+            return Ok(());
+        }
+
         self.lower_stack_list_append_or_prepend_materialized(StackListAppendOrPrependMaterialized {
             cmd_name,
             src_dst,
