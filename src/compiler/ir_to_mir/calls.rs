@@ -8836,6 +8836,14 @@ impl<'a> HirToMirLowering<'a> {
         };
         self.validate_declared_map_key_type(map_ref, &key_ty, context)?;
 
+        if matches!(key_ty, MirType::Array { .. } | MirType::Struct { .. })
+            && let Some(key_reg) = key_reg
+            && let Some(materialized_key) =
+                self.materialize_declared_constant_map_key(map_ref, &key_ty, key_reg, context)?
+        {
+            return Ok(materialized_key);
+        }
+
         match key_ty {
             MirType::Array { .. } | MirType::Struct { .. } => match observed_ty.as_ref() {
                 Some(MirType::Ptr {
@@ -8897,6 +8905,76 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn materialize_declared_constant_map_key(
+        &mut self,
+        map_ref: &MapRef,
+        key_ty: &MirType,
+        key_reg: RegId,
+        context: &str,
+    ) -> Result<Option<VReg>, CompileError> {
+        let Some(value) = self
+            .get_metadata(key_reg)
+            .and_then(|meta| meta.constant_value.as_ref())
+        else {
+            return Ok(None);
+        };
+        if !Self::can_encode_constant_value_for_mir_type(key_ty, value) {
+            return Ok(None);
+        }
+        let key_context = format!("{context} key for '{}'", map_ref.name);
+        let Some(data) = Self::constant_value_data_for_mir_type(key_ty, value, &key_context)?
+        else {
+            return Ok(None);
+        };
+        if data.len() != key_ty.size() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{key_context} encoded to {} bytes, expected {} bytes for declared key type {:?}",
+                data.len(),
+                key_ty.size(),
+                key_ty
+            )));
+        }
+
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
+
+        let key_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: key_vreg,
+            symbol,
+            ty: key_ty.clone(),
+        });
+        self.vreg_type_hints.insert(
+            key_vreg,
+            MirType::Ptr {
+                pointee: Box::new(key_ty.clone()),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(key_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, key_ty.clone());
+        let stack_key_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: stack_key_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            stack_key_vreg,
+            MirType::Ptr {
+                pointee: Box::new(key_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy(stack_key_vreg, key_vreg, key_ty.size())?;
+        Ok(Some(stack_key_vreg))
+    }
+
     fn materialize_declared_constant_map_value(
         &mut self,
         map_ref: &MapRef,
@@ -8914,6 +8992,9 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(None);
         };
+        if !Self::can_encode_constant_value_for_mir_type(&value_ty, value) {
+            return Ok(None);
+        }
         let Some(data) = Self::constant_value_data_for_mir_type(&value_ty, value, context)? else {
             return Ok(None);
         };
@@ -8947,6 +9028,53 @@ impl<'a> HirToMirLowering<'a> {
             },
         );
         Ok(Some(value_vreg))
+    }
+
+    fn can_encode_constant_value_for_mir_type(ty: &MirType, value: &nu_protocol::Value) -> bool {
+        match ty {
+            MirType::Bool => matches!(value, nu_protocol::Value::Bool { .. }),
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64 => matches!(
+                value,
+                nu_protocol::Value::Int { .. }
+                    | nu_protocol::Value::Filesize { .. }
+                    | nu_protocol::Value::Duration { .. }
+                    | nu_protocol::Value::Nothing { .. }
+            ),
+            MirType::Array { elem, .. } => {
+                let nu_protocol::Value::List { vals, .. } = value else {
+                    return false;
+                };
+                vals.iter()
+                    .all(|value| Self::can_encode_constant_value_for_mir_type(elem, value))
+            }
+            MirType::Struct { fields, .. } => {
+                let nu_protocol::Value::Record { val: record, .. } = value else {
+                    return false;
+                };
+                let visible_fields = fields
+                    .iter()
+                    .filter(|field| !field.synthetic)
+                    .collect::<Vec<_>>();
+                record.iter().all(|(field_name, _)| {
+                    visible_fields
+                        .iter()
+                        .any(|field| field.name.as_str() == field_name.as_str())
+                }) && visible_fields.iter().all(|field| {
+                    field.bitfield.is_none()
+                        && record.get(&field.name).is_some_and(|value| {
+                            Self::can_encode_constant_value_for_mir_type(&field.ty, value)
+                        })
+                })
+            }
+            _ => false,
+        }
     }
 
     fn constant_value_data_for_mir_type(
