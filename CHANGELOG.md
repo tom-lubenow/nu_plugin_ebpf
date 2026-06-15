@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Improved annotated mutable fixed-array global diagnostics so unsupported first
+  elements name the element path, for example `element 0`, instead of falling
+  back to a top-level annotated-global rejection.
 - Added a non-root `MANUAL_INTEGRATION_DRY_RUN_ONLY=1` mode for the manual
   integration harness so compile-only attach-family smoke checks can run
   without live kernel loads.
