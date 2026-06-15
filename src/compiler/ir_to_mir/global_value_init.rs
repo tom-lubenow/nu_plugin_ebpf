@@ -210,8 +210,19 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
+        fn empty_initializer_subject(parent_path: Option<&str>) -> String {
+            match parent_path {
+                Some(parent) => format!("field '{parent}' initializer"),
+                None => "initializer".to_string(),
+            }
+        }
+
         let Some((first, rest)) = values.split_first() else {
-            return Ok(None);
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "annotated mutable fixed-array global {} is empty and cannot infer element layout for declared element type {}; use a non-empty initializer or `global-define --type 'array{{...:N}}'` for an explicit fixed-array global",
+                empty_initializer_subject(parent_path),
+                declared_elem_type
+            )));
         };
 
         let first_path = element_path(parent_path, 0);
