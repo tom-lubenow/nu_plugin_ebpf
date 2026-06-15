@@ -596,6 +596,11 @@ fn test_lower_mutated_captured_heterogeneous_list_variable_is_rejected() {
 
     assert!(
         err.to_string()
+            .contains("item 1 of type string has fixed layout"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
             .contains(
                 "mutable captured globals currently only support bool and numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records"
             )

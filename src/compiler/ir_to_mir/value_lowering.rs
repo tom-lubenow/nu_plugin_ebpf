@@ -517,7 +517,7 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn constant_fixed_array_element_rodata_repr(
+    pub(super) fn constant_fixed_array_element_rodata_repr(
         value: &Value,
     ) -> Result<(MirType, Vec<u8>), CompileError> {
         if let Some(repr) = Self::scalar_constant_rodata_repr(value) {

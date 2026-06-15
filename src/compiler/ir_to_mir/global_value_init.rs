@@ -114,6 +114,61 @@ impl<'a> HirToMirLowering<'a> {
         Ok(repr)
     }
 
+    fn mutable_capture_list_unsupported_detail(value: &Value) -> Option<String> {
+        let Value::List { vals, .. } = value else {
+            return None;
+        };
+        let (first, rest) = vals.split_first()?;
+        let (first_ty, _first_data) = match Self::constant_fixed_array_element_rodata_repr(first) {
+            Ok(repr) => repr,
+            Err(err) => {
+                return Some(format!(
+                    "item 0 of type {} cannot be represented as fixed-layout eBPF data: {}",
+                    first.get_type(),
+                    err
+                ));
+            }
+        };
+
+        for (idx, item) in rest.iter().enumerate() {
+            let actual_idx = idx + 1;
+            let (item_ty, _item_data) = match Self::constant_fixed_array_element_rodata_repr(item) {
+                Ok(repr) => repr,
+                Err(err) => {
+                    return Some(format!(
+                        "item {} of type {} cannot be represented as fixed-layout eBPF data: {}",
+                        actual_idx,
+                        item.get_type(),
+                        err
+                    ));
+                }
+            };
+            if item_ty != first_ty {
+                return Some(format!(
+                    "item {} of type {} has fixed layout {:?}, but item 0 has fixed layout {:?}",
+                    actual_idx,
+                    item.get_type(),
+                    item_ty,
+                    first_ty
+                ));
+            }
+        }
+
+        None
+    }
+
+    fn mutable_capture_global_unsupported_message(var_id: VarId, value: &Value) -> String {
+        let detail = Self::mutable_capture_list_unsupported_detail(value)
+            .map(|detail| format!(": {detail}"))
+            .unwrap_or_default();
+        format!(
+            "mutating captured variable {} of type {} is not yet supported{}; mutable captured globals currently only support bool and numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records",
+            var_id.get(),
+            value.get_type(),
+            detail
+        )
+    }
+
     pub(super) fn init_mutable_capture_globals(
         &mut self,
         mutable_capture_vars: &HashSet<VarId>,
@@ -126,11 +181,9 @@ impl<'a> HirToMirLowering<'a> {
             let Some((ty, data, list_max_len, string_slot_len)) =
                 Self::mutable_capture_global_repr(value)?
             else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support bool and numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records",
-                    var_id.get(),
-                    value.get_type()
-                )));
+                return Err(CompileError::UnsupportedInstruction(
+                    Self::mutable_capture_global_unsupported_message(*var_id, value),
+                ));
             };
 
             let symbol = format!("__nu_capture_global_{}", var_id.get());
