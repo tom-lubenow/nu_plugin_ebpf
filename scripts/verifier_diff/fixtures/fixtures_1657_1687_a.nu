@@ -188,17 +188,16 @@ const VERIFIER_DIFF_FIXTURES_1657_1687_A = [
         kernel: "accept"
     }
     {
-        name: "core-list-sort-capacity-reject"
+        name: "core-list-sort-large-seq-length"
         category: "language-core"
-        tags: [aggregate list sort reject]
+        tags: [aggregate list seq sort length]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  seq 0 16 | sort | length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "sort supports stack-backed numeric lists with capacity <= 16"
+        local: "accept"
+        kernel: "accept"
     }
 ]

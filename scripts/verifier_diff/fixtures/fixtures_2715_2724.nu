@@ -112,18 +112,19 @@ const VERIFIER_DIFF_FIXTURES_2715_2724 = [
         error_contains: "sort requires a stack-backed list input in eBPF"
     }
     {
-        name: "core-list-sort-rejects-stack-capacity"
+        name: "global-define-type-array-u32-sort-rejects-capacity"
         category: "language-core"
-        tags: [list sort diagnostics reject capacity]
+        tags: [globals arrays list sort diagnostics reject capacity]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  seq 1 20 | sort'
+            '  [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16] | global-define --type "array{u32:17}" ports'
+            '  ((global-get ports) | sort | first)'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "sort supports stack-backed numeric lists with capacity <= 16 in eBPF"
+        error_contains: "sort supports typed fixed arrays with length <= 16 in eBPF"
     }
     {
         name: "core-list-split-list-rejects-heterogeneous-groups"
