@@ -30,9 +30,9 @@ const VERIFIER_DIFF_FIXTURES_3179_3182 = [
         kernel: "accept"
     }
     {
-        name: "core-string-length-rejects-runtime-input-chars"
+        name: "core-string-length-accepts-runtime-input-chars"
         category: "language-core"
-        tags: [string str length diagnostics reject runtime chars]
+        tags: [string str length accept runtime chars]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -41,9 +41,8 @@ const VERIFIER_DIFF_FIXTURES_3179_3182 = [
             '  $left | str length --chars'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str length requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-length-rejects-runtime-input-grapheme-clusters"
