@@ -47,6 +47,17 @@ struct FixedBinaryAdd<'a> {
     from_end: bool,
 }
 
+struct RuntimeIndexedCompileTimeBinaryAdd<'a> {
+    src_dst: RegId,
+    result_vreg: VReg,
+    idx: MirValue,
+    min_idx: usize,
+    max_idx: usize,
+    input: &'a [u8],
+    data: &'a [u8],
+    from_end: bool,
+}
+
 enum BytesAddIndex {
     Static(usize),
     Runtime {
@@ -2483,15 +2494,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_runtime_indexed_compile_time_binary_add(
         &mut self,
-        src_dst: RegId,
-        result_vreg: VReg,
-        idx: MirValue,
-        min_idx: usize,
-        max_idx: usize,
-        input: &[u8],
-        data: &[u8],
-        from_end: bool,
+        args: RuntimeIndexedCompileTimeBinaryAdd<'_>,
     ) -> Result<(), CompileError> {
+        let RuntimeIndexedCompileTimeBinaryAdd {
+            src_dst,
+            result_vreg,
+            idx,
+            min_idx,
+            max_idx,
+            input,
+            data,
+            from_end,
+        } = args;
         let out_len = input.len().checked_add(data.len()).ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "bytes add fixed-size binary output length overflowed in eBPF".into(),
@@ -3879,7 +3893,7 @@ impl<'a> HirToMirLowering<'a> {
         );
 
         let continuation_block = self.func.alloc_block();
-        for raw_idx in min_idx..=max_idx {
+        for (raw_idx, value) in values.iter().enumerate().take(max_idx + 1).skip(min_idx) {
             let next_block = if raw_idx == max_idx {
                 None
             } else {
@@ -3904,7 +3918,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.current_block = item_block;
             }
 
-            for (offset, byte) in values[raw_idx].iter().copied().enumerate() {
+            for (offset, byte) in value.iter().copied().enumerate() {
                 self.emit(MirInst::StoreSlot {
                     slot,
                     offset: Self::checked_mir_offset(
@@ -7666,14 +7680,16 @@ impl<'a> HirToMirLowering<'a> {
                                 dst_vreg
                             };
                             self.emit_runtime_indexed_compile_time_binary_add(
-                                src_dst,
-                                result_vreg,
-                                value,
-                                min,
-                                max,
-                                &val,
-                                &data,
-                                from_end,
+                                RuntimeIndexedCompileTimeBinaryAdd {
+                                    src_dst,
+                                    result_vreg,
+                                    idx: value,
+                                    min_idx: min,
+                                    max_idx: max,
+                                    input: &val,
+                                    data: &data,
+                                    from_end,
+                                },
                             )?;
                         }
                     },

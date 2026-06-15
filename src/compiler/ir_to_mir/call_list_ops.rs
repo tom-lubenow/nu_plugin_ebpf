@@ -26,6 +26,17 @@ struct TypedFixedArrayCountSlice<'a> {
     count: usize,
 }
 
+struct StackListRuntimeCountSlice<'a> {
+    cmd_name: &'a str,
+    src_dst: RegId,
+    dst_vreg: VReg,
+    src_dst_had_value: bool,
+    input_vreg: VReg,
+    input_meta: RegMetadata,
+    count_vreg: VReg,
+    count_max: usize,
+}
+
 #[derive(Clone, Copy)]
 enum StackListRawCount {
     DefaultOne,
@@ -1201,15 +1212,18 @@ impl<'a> HirToMirLowering<'a> {
 
     fn lower_stack_list_runtime_count_slice(
         &mut self,
-        cmd_name: &str,
-        src_dst: RegId,
-        dst_vreg: VReg,
-        src_dst_had_value: bool,
-        input_vreg: VReg,
-        input_meta: RegMetadata,
-        count_vreg: VReg,
-        count_max: usize,
+        args: StackListRuntimeCountSlice<'_>,
     ) -> Result<(), CompileError> {
+        let StackListRuntimeCountSlice {
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_vreg,
+            input_meta,
+            count_vreg,
+            count_max,
+        } = args;
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed list input in eBPF"
@@ -1416,16 +1430,16 @@ impl<'a> HirToMirLowering<'a> {
                             "{cmd_name} could not materialize compile-time known numeric list in eBPF"
                         ))
                     })?;
-                    return self.lower_stack_list_runtime_count_slice(
+                    return self.lower_stack_list_runtime_count_slice(StackListRuntimeCountSlice {
                         cmd_name,
                         src_dst,
                         dst_vreg,
                         src_dst_had_value,
                         input_vreg,
                         input_meta,
-                        vreg,
-                        max,
-                    );
+                        count_vreg: vreg,
+                        count_max: max,
+                    });
                 }
             }
         }
@@ -1461,16 +1475,16 @@ impl<'a> HirToMirLowering<'a> {
         let count = match count_arg {
             StackListCount::Static(count) => count,
             StackListCount::Runtime { vreg, max } => {
-                return self.lower_stack_list_runtime_count_slice(
+                return self.lower_stack_list_runtime_count_slice(StackListRuntimeCountSlice {
                     cmd_name,
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
                     input_vreg,
                     input_meta,
-                    vreg,
-                    max,
-                );
+                    count_vreg: vreg,
+                    count_max: max,
+                });
             }
         };
 
@@ -1778,16 +1792,16 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
-                    return self.lower_stack_list_runtime_count_slice(
-                        "last",
+                    return self.lower_stack_list_runtime_count_slice(StackListRuntimeCountSlice {
+                        cmd_name: "last",
                         src_dst,
                         dst_vreg,
                         src_dst_had_value,
                         input_vreg,
                         input_meta,
-                        vreg,
-                        max,
-                    );
+                        count_vreg: vreg,
+                        count_max: max,
+                    });
                 }
             }
         }
@@ -1823,16 +1837,16 @@ impl<'a> HirToMirLowering<'a> {
         let count = match count_arg {
             StackListCount::Static(count) => count,
             StackListCount::Runtime { vreg, max } => {
-                return self.lower_stack_list_runtime_count_slice(
-                    "last",
+                return self.lower_stack_list_runtime_count_slice(StackListRuntimeCountSlice {
+                    cmd_name: "last",
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
                     input_vreg,
                     input_meta,
-                    vreg,
-                    max,
-                );
+                    count_vreg: vreg,
+                    count_max: max,
+                });
             }
         };
 

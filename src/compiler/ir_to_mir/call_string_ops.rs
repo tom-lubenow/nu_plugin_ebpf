@@ -27,6 +27,13 @@ struct RuntimeStringIndexSearchBounds {
 }
 
 #[derive(Clone, Copy)]
+struct RuntimeStringBuffer {
+    slot: StackSlotId,
+    len_vreg: VReg,
+    max_len: usize,
+}
+
+#[derive(Clone, Copy)]
 enum RuntimeStringEmptyIndex {
     Bound(RuntimeStringEmptyBound),
     Max(RuntimeStringEmptyBound, RuntimeStringEmptyBound),
@@ -932,7 +939,7 @@ impl<'a> HirToMirLowering<'a> {
                 result_vreg,
                 input_reg,
                 input_vreg,
-                &prefix,
+                prefix,
                 ignore_case,
             )?
         {
@@ -1029,12 +1036,16 @@ impl<'a> HirToMirLowering<'a> {
             let prefix_max_len = self.string_input_max_len(&prefix_meta, prefix_slot_size);
             self.lower_string_dynamic_prefix_match(
                 result_vreg,
-                input_slot,
-                input_len_vreg,
-                input_max_len,
-                prefix_slot,
-                prefix_len_vreg,
-                prefix_max_len,
+                RuntimeStringBuffer {
+                    slot: input_slot,
+                    len_vreg: input_len_vreg,
+                    max_len: input_max_len,
+                },
+                RuntimeStringBuffer {
+                    slot: prefix_slot,
+                    len_vreg: prefix_len_vreg,
+                    max_len: prefix_max_len,
+                },
             );
         }
 
@@ -1301,19 +1312,15 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_string_dynamic_prefix_match(
         &mut self,
         result_vreg: VReg,
-        input_slot: StackSlotId,
-        input_len_vreg: VReg,
-        input_max_len: usize,
-        prefix_slot: StackSlotId,
-        prefix_len_vreg: VReg,
-        prefix_max_len: usize,
+        input: RuntimeStringBuffer,
+        prefix: RuntimeStringBuffer,
     ) {
         let len_matches = self.func.alloc_vreg();
         self.emit(MirInst::BinOp {
             dst: len_matches,
             op: BinOpKind::Ge,
-            lhs: MirValue::VReg(input_len_vreg),
-            rhs: MirValue::VReg(prefix_len_vreg),
+            lhs: MirValue::VReg(input.len_vreg),
+            rhs: MirValue::VReg(prefix.len_vreg),
         });
         self.vreg_type_hints.insert(len_matches, MirType::Bool);
 
@@ -1324,12 +1331,12 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(all_match, MirType::Bool);
 
-        for offset in 0..input_max_len.min(prefix_max_len) {
+        for offset in 0..input.max_len.min(prefix.max_len) {
             let input_in_range = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
                 dst: input_in_range,
                 op: BinOpKind::Gt,
-                lhs: MirValue::VReg(input_len_vreg),
+                lhs: MirValue::VReg(input.len_vreg),
                 rhs: MirValue::Const(offset as i64),
             });
             self.vreg_type_hints.insert(input_in_range, MirType::Bool);
@@ -1338,7 +1345,7 @@ impl<'a> HirToMirLowering<'a> {
             self.emit(MirInst::BinOp {
                 dst: prefix_in_range,
                 op: BinOpKind::Gt,
-                lhs: MirValue::VReg(prefix_len_vreg),
+                lhs: MirValue::VReg(prefix.len_vreg),
                 rhs: MirValue::Const(offset as i64),
             });
             self.vreg_type_hints.insert(prefix_in_range, MirType::Bool);
@@ -1364,9 +1371,9 @@ impl<'a> HirToMirLowering<'a> {
             let byte_matches = self.func.alloc_vreg();
             self.emit(MirInst::StrCmp {
                 dst: byte_matches,
-                lhs: input_slot,
+                lhs: input.slot,
                 lhs_offset: offset,
-                rhs: prefix_slot,
+                rhs: prefix.slot,
                 rhs_offset: offset,
                 len: 1,
             });
@@ -1471,16 +1478,12 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_string_dynamic_suffix_match(
         &mut self,
         result_vreg: VReg,
-        input_slot: StackSlotId,
-        input_len_vreg: VReg,
-        input_max_len: usize,
-        suffix_slot: StackSlotId,
-        suffix_len_vreg: VReg,
-        suffix_max_len: usize,
+        input: RuntimeStringBuffer,
+        suffix: RuntimeStringBuffer,
     ) -> Result<(), CompileError> {
-        let max_suffix_len = input_max_len.min(suffix_max_len);
+        let max_suffix_len = input.max_len.min(suffix.max_len);
         let candidate_count = (1..=max_suffix_len)
-            .map(|suffix_len| input_max_len.saturating_sub(suffix_len).saturating_add(1))
+            .map(|suffix_len| input.max_len.saturating_sub(suffix_len).saturating_add(1))
             .sum::<usize>();
         if candidate_count > MAX_DYNAMIC_STRING_SUFFIX_CANDIDATES {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -1492,7 +1495,7 @@ impl<'a> HirToMirLowering<'a> {
         self.emit(MirInst::BinOp {
             dst: suffix_empty,
             op: BinOpKind::Eq,
-            lhs: MirValue::VReg(suffix_len_vreg),
+            lhs: MirValue::VReg(suffix.len_vreg),
             rhs: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(suffix_empty, MirType::Bool);
@@ -1503,12 +1506,12 @@ impl<'a> HirToMirLowering<'a> {
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
 
         for suffix_len in 1..=max_suffix_len {
-            for input_len in suffix_len..=input_max_len {
+            for input_len in suffix_len..=input.max_len {
                 let input_len_matches = self.func.alloc_vreg();
                 self.emit(MirInst::BinOp {
                     dst: input_len_matches,
                     op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(input_len_vreg),
+                    lhs: MirValue::VReg(input.len_vreg),
                     rhs: MirValue::Const(input_len as i64),
                 });
                 self.vreg_type_hints
@@ -1518,7 +1521,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit(MirInst::BinOp {
                     dst: suffix_len_matches,
                     op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(suffix_len_vreg),
+                    lhs: MirValue::VReg(suffix.len_vreg),
                     rhs: MirValue::Const(suffix_len as i64),
                 });
                 self.vreg_type_hints
@@ -1546,9 +1549,9 @@ impl<'a> HirToMirLowering<'a> {
                 let bytes_match = self.func.alloc_vreg();
                 self.emit(MirInst::StrCmp {
                     dst: bytes_match,
-                    lhs: input_slot,
+                    lhs: input.slot,
                     lhs_offset: input_len - suffix_len,
-                    rhs: suffix_slot,
+                    rhs: suffix.slot,
                     rhs_offset: 0,
                     len: suffix_len,
                 });
@@ -1571,17 +1574,13 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_string_dynamic_contains_match(
         &mut self,
         result_vreg: VReg,
-        input_slot: StackSlotId,
-        input_len_vreg: VReg,
-        input_max_len: usize,
-        needle_slot: StackSlotId,
-        needle_len_vreg: VReg,
-        needle_max_len: usize,
+        input: RuntimeStringBuffer,
+        needle: RuntimeStringBuffer,
     ) -> Result<(), CompileError> {
-        let max_needle_len = input_max_len.min(needle_max_len);
+        let max_needle_len = input.max_len.min(needle.max_len);
         let candidate_count = (1..=max_needle_len)
             .map(|needle_len| {
-                (needle_len..=input_max_len)
+                (needle_len..=input.max_len)
                     .map(|input_len| input_len - needle_len + 1)
                     .sum::<usize>()
             })
@@ -1596,7 +1595,7 @@ impl<'a> HirToMirLowering<'a> {
         self.emit(MirInst::BinOp {
             dst: needle_empty,
             op: BinOpKind::Eq,
-            lhs: MirValue::VReg(needle_len_vreg),
+            lhs: MirValue::VReg(needle.len_vreg),
             rhs: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(needle_empty, MirType::Bool);
@@ -1607,13 +1606,13 @@ impl<'a> HirToMirLowering<'a> {
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
 
         for needle_len in 1..=max_needle_len {
-            for input_len in needle_len..=input_max_len {
+            for input_len in needle_len..=input.max_len {
                 for offset in 0..=(input_len - needle_len) {
                     let input_len_matches = self.func.alloc_vreg();
                     self.emit(MirInst::BinOp {
                         dst: input_len_matches,
                         op: BinOpKind::Eq,
-                        lhs: MirValue::VReg(input_len_vreg),
+                        lhs: MirValue::VReg(input.len_vreg),
                         rhs: MirValue::Const(input_len as i64),
                     });
                     self.vreg_type_hints
@@ -1623,7 +1622,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.emit(MirInst::BinOp {
                         dst: needle_len_matches,
                         op: BinOpKind::Eq,
-                        lhs: MirValue::VReg(needle_len_vreg),
+                        lhs: MirValue::VReg(needle.len_vreg),
                         rhs: MirValue::Const(needle_len as i64),
                     });
                     self.vreg_type_hints
@@ -1651,9 +1650,9 @@ impl<'a> HirToMirLowering<'a> {
                     let bytes_match = self.func.alloc_vreg();
                     self.emit(MirInst::StrCmp {
                         dst: bytes_match,
-                        lhs: input_slot,
+                        lhs: input.slot,
                         lhs_offset: offset,
-                        rhs: needle_slot,
+                        rhs: needle.slot,
                         rhs_offset: 0,
                         len: needle_len,
                     });
@@ -2063,12 +2062,16 @@ impl<'a> HirToMirLowering<'a> {
             let suffix_max_len = self.string_input_max_len(&suffix_meta, suffix_slot_size);
             self.lower_string_dynamic_suffix_match(
                 result_vreg,
-                input_slot,
-                input_len_vreg,
-                input_max_len,
-                suffix_slot,
-                suffix_len_vreg,
-                suffix_max_len,
+                RuntimeStringBuffer {
+                    slot: input_slot,
+                    len_vreg: input_len_vreg,
+                    max_len: input_max_len,
+                },
+                RuntimeStringBuffer {
+                    slot: suffix_slot,
+                    len_vreg: suffix_len_vreg,
+                    max_len: suffix_max_len,
+                },
             )?;
         }
 
@@ -2237,12 +2240,16 @@ impl<'a> HirToMirLowering<'a> {
                 .unwrap_or_else(|| self.string_input_max_len(&needle_meta, needle_slot_size));
             self.lower_string_dynamic_contains_match(
                 result_vreg,
-                input_slot,
-                input_len_vreg,
-                input_max_len,
-                needle_slot,
-                needle_len_vreg,
-                needle_max_len,
+                RuntimeStringBuffer {
+                    slot: input_slot,
+                    len_vreg: input_len_vreg,
+                    max_len: input_max_len,
+                },
+                RuntimeStringBuffer {
+                    slot: needle_slot,
+                    len_vreg: needle_len_vreg,
+                    max_len: needle_max_len,
+                },
             )?;
         }
 
@@ -3453,7 +3460,7 @@ impl<'a> HirToMirLowering<'a> {
                 let index = if use_grapheme_clusters {
                     Self::grapheme_index_of_in_byte_range(
                         &item,
-                        &needle,
+                        needle,
                         search_from_end,
                         search_start,
                         search_end,
@@ -3461,7 +3468,7 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     Self::byte_index_of_in_range(
                         &item,
-                        &needle,
+                        needle,
                         search_from_end,
                         search_start,
                         search_end,
@@ -3598,11 +3605,16 @@ impl<'a> HirToMirLowering<'a> {
                 self.string_index_of_runtime_search_bounds(input_max_len, search_from_end)?;
             self.lower_string_dynamic_index_of_match(
                 result_vreg,
-                input_slot,
-                input_len_vreg,
-                needle_slot,
-                needle_len_vreg,
-                needle_max_len,
+                RuntimeStringBuffer {
+                    slot: input_slot,
+                    len_vreg: input_len_vreg,
+                    max_len: input_max_len,
+                },
+                RuntimeStringBuffer {
+                    slot: needle_slot,
+                    len_vreg: needle_len_vreg,
+                    max_len: needle_max_len,
+                },
                 &bounds,
                 search_from_end,
             )?;
@@ -4270,18 +4282,15 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_string_dynamic_index_of_match(
         &mut self,
         result_vreg: VReg,
-        input_slot: StackSlotId,
-        input_len_vreg: VReg,
-        needle_slot: StackSlotId,
-        needle_len_vreg: VReg,
-        needle_max_len: usize,
+        input: RuntimeStringBuffer,
+        needle: RuntimeStringBuffer,
         bounds: &RuntimeStringIndexSearchBounds,
         search_from_end: bool,
     ) -> Result<(), CompileError> {
         let max_needle_len = bounds
             .search_end
             .saturating_sub(bounds.search_start)
-            .min(needle_max_len);
+            .min(needle.max_len);
         let candidate_count = if bounds.search_start >= bounds.search_end {
             0
         } else {
@@ -4299,7 +4308,7 @@ impl<'a> HirToMirLowering<'a> {
         self.emit(MirInst::BinOp {
             dst: needle_empty,
             op: BinOpKind::Eq,
-            lhs: MirValue::VReg(needle_len_vreg),
+            lhs: MirValue::VReg(needle.len_vreg),
             rhs: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(needle_empty, MirType::Bool);
@@ -4316,7 +4325,7 @@ impl<'a> HirToMirLowering<'a> {
         self.current_block = empty_block;
         self.lower_runtime_string_index_empty_match(
             result_vreg,
-            input_len_vreg,
+            input.len_vreg,
             bounds.empty_index,
         );
         self.terminate(MirInst::Jump {
@@ -4337,7 +4346,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit(MirInst::BinOp {
                     dst: needle_len_matches,
                     op: BinOpKind::Eq,
-                    lhs: MirValue::VReg(needle_len_vreg),
+                    lhs: MirValue::VReg(needle.len_vreg),
                     rhs: MirValue::Const(needle_len as i64),
                 });
                 self.vreg_type_hints
@@ -4347,7 +4356,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit(MirInst::BinOp {
                     dst: len_matches,
                     op: BinOpKind::Ge,
-                    lhs: MirValue::VReg(input_len_vreg),
+                    lhs: MirValue::VReg(input.len_vreg),
                     rhs: MirValue::Const((offset + needle_len) as i64),
                 });
                 self.vreg_type_hints.insert(len_matches, MirType::Bool);
@@ -4355,9 +4364,9 @@ impl<'a> HirToMirLowering<'a> {
                 let bytes_match = self.func.alloc_vreg();
                 self.emit(MirInst::StrCmp {
                     dst: bytes_match,
-                    lhs: input_slot,
+                    lhs: input.slot,
                     lhs_offset: offset,
-                    rhs: needle_slot,
+                    rhs: needle.slot,
                     rhs_offset: 0,
                     len: needle_len,
                 });
@@ -4388,7 +4397,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.emit(MirInst::BinOp {
                         dst: start_matches,
                         op: BinOpKind::Le,
-                        lhs: MirValue::VReg(input_len_vreg),
+                        lhs: MirValue::VReg(input.len_vreg),
                         rhs: MirValue::Const((offset + dynamic_start.distance_from_end) as i64),
                     });
                     self.vreg_type_hints.insert(start_matches, MirType::Bool);
@@ -4409,7 +4418,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.emit(MirInst::BinOp {
                         dst: end_matches,
                         op: BinOpKind::Ge,
-                        lhs: MirValue::VReg(input_len_vreg),
+                        lhs: MirValue::VReg(input.len_vreg),
                         rhs: MirValue::Const(
                             (offset + needle_len + dynamic_end.distance_from_end) as i64,
                         ),
