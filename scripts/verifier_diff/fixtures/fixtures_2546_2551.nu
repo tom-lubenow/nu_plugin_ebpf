@@ -42,18 +42,17 @@ const VERIFIER_DIFF_FIXTURES_2546_2551 = [
         error_contains: "str substring accepts either --utf-8-bytes or --grapheme-clusters, not both, in eBPF"
     }
     {
-        name: "core-string-str-substring-rejects-dynamic-input"
+        name: "core-string-str-substring-accepts-context-comm-input"
         category: "language-core"
-        tags: [string str substring diagnostics reject]
+        tags: [string str substring accept runtime context]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | str substring 0..1'
+            '  (($ctx.comm | str substring 0..1 | str length) >= 0)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str substring requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-str-substring-rejects-list-item-type"

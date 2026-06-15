@@ -81,6 +81,92 @@ struct ExistingFixedRecordArrayPathCreation<'a> {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn context_string_layout(field: &CtxField) -> Option<(usize, usize)> {
+        match field {
+            // TASK_COMM_LEN includes the trailing NUL; the string content is at most 15 bytes.
+            CtxField::Comm => Some((16, 15)),
+            _ => None,
+        }
+    }
+
+    fn lower_nul_terminated_stack_string_len(
+        &mut self,
+        ptr_vreg: VReg,
+        content_cap: usize,
+        context: &str,
+    ) -> Result<VReg, CompileError> {
+        let mut len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::I64);
+
+        let mut keep_going_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: keep_going_vreg,
+            src: MirValue::Const(1),
+        });
+        self.vreg_type_hints.insert(keep_going_vreg, MirType::Bool);
+
+        for byte_index in 0..content_cap {
+            let offset = i32::try_from(byte_index).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} byte offset is too large for eBPF"
+                ))
+            })?;
+            let byte_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: byte_vreg,
+                ptr: ptr_vreg,
+                offset,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(byte_vreg, MirType::U8);
+
+            let is_nonzero_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_nonzero_vreg,
+                op: BinOpKind::Ne,
+                lhs: MirValue::VReg(byte_vreg),
+                rhs: MirValue::Const(0),
+            });
+            self.vreg_type_hints.insert(is_nonzero_vreg, MirType::Bool);
+
+            let count_this_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: count_this_vreg,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(keep_going_vreg),
+                rhs: MirValue::VReg(is_nonzero_vreg),
+            });
+            self.vreg_type_hints.insert(count_this_vreg, MirType::I64);
+
+            let next_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: next_len_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(len_vreg),
+                rhs: MirValue::VReg(count_this_vreg),
+            });
+            self.vreg_type_hints.insert(next_len_vreg, MirType::I64);
+            len_vreg = next_len_vreg;
+
+            let next_keep_going_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: next_keep_going_vreg,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(keep_going_vreg),
+                rhs: MirValue::VReg(is_nonzero_vreg),
+            });
+            self.vreg_type_hints
+                .insert(next_keep_going_vreg, MirType::Bool);
+            keep_going_vreg = next_keep_going_vreg;
+        }
+
+        Ok(len_vreg)
+    }
+
     fn ctx_field_kernel_btf_root_runtime_type(
         &self,
         field: &CtxField,
@@ -1605,6 +1691,15 @@ impl<'a> HirToMirLowering<'a> {
                 )),
                 _ => None,
             })
+            .or_else(|| {
+                Self::context_string_layout(&ctx_field).map(|(slot_len, _)| {
+                    self.func.alloc_stack_slot(
+                        align_to_eight(slot_len),
+                        8,
+                        StackSlotKind::StringBuffer,
+                    )
+                })
+            })
             .or_else(|| self.get_metadata(src_dst).and_then(|m| m.string_slot))
             .or_else(|| {
                 ctx_projection_spec
@@ -1655,6 +1750,26 @@ impl<'a> HirToMirLowering<'a> {
         ) = (slot, tracepoint_root_types.as_ref())
         {
             self.record_stack_slot_type(slot, semantic_ty.clone());
+        }
+        if let (Some(slot), Some((slot_len, _))) = (slot, Self::context_string_layout(&ctx_field)) {
+            let string_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: slot_len,
+            };
+            self.record_stack_slot_type(slot, string_ty.clone());
+            let string_ptr_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: string_ptr_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                string_ptr_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(string_ty),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_zero(string_ptr_vreg, 0, slot_len)?;
         }
         self.emit(MirInst::LoadCtxField {
             dst: dst_vreg,
@@ -1730,6 +1845,16 @@ impl<'a> HirToMirLowering<'a> {
         {
             self.normalize_host_order_u32_array_slot(dst_vreg)?;
         }
+        let context_string_len_vreg =
+            if let Some((_, content_cap)) = Self::context_string_layout(&ctx_field) {
+                Some(self.lower_nul_terminated_stack_string_len(
+                    dst_vreg,
+                    content_cap,
+                    "context string",
+                )?)
+            } else {
+                None
+            };
 
         let trusted_btf = slot.is_none()
             && ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
@@ -1740,10 +1865,23 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(field_type);
         meta.root_ctx_field = Some(ctx_field.clone());
-        meta.direct_ctx_field = Some(ctx_field);
+        meta.direct_ctx_field = Some(ctx_field.clone());
         meta.trusted_btf = trusted_btf;
         meta.kernel_btf_field_addr = None;
         meta.source_var = None;
+        if let (Some(slot), Some((slot_len, content_cap)), Some(len_vreg)) = (
+            slot,
+            Self::context_string_layout(&ctx_field),
+            context_string_len_vreg,
+        ) {
+            meta.string_slot = Some(slot);
+            meta.string_len_vreg = Some(len_vreg);
+            meta.string_len_bound = Some(content_cap);
+            meta.annotated_semantics = Some(AnnotatedValueSemantics::String {
+                slot_len,
+                content_cap,
+            });
+        }
 
         Ok(())
     }

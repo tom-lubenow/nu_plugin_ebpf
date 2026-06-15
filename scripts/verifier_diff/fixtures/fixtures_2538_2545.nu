@@ -83,18 +83,17 @@ const VERIFIER_DIFF_FIXTURES_2538_2545 = [
         error_contains: "str index-of --grapheme-clusters --range bounds must align to UTF-8 character boundaries in eBPF"
     }
     {
-        name: "core-string-str-index-of-rejects-untracked-input"
+        name: "core-string-str-index-of-accepts-context-comm-input"
         category: "language-core"
-        tags: [string str index-of diagnostics reject]
+        tags: [string str index-of accept runtime context]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  $ctx.comm | str index-of "a"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str index-of requires tracked string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-str-index-of-rejects-list-item-type"

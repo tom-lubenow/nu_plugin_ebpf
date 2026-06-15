@@ -3359,6 +3359,107 @@ fn test_lower_kprobe_comm_index_field() {
 }
 
 #[test]
+fn test_lower_kprobe_comm_substring_tracks_string_length() {
+    let substring_decl = DeclId::new(25_100);
+    let length_decl = DeclId::new(25_101);
+    let ctx_var = VarId::new(0);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("comm")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(2),
+                            step: RegId::new(3),
+                            end: RegId::new(3),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: substring_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: length_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(5)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 8],
+            ast: vec![None; 8],
+            comments: vec![],
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_open");
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ctx.comm str substring should lower as a tracked runtime string");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Comm,
+            slot: Some(_),
+            ..
+        }
+    )));
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("ctx.comm str substring result consumed by str length should compile");
+}
+
+#[test]
 fn test_lower_xdp_data_byte_projection_adds_guarded_packet_load() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("data"), int_member(0)],
