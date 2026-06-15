@@ -28,18 +28,18 @@ const VERIFIER_DIFF_FIXTURES_2497_2502 = [
         error_contains: "str ends-with requires tracked string input in eBPF"
     }
     {
-        name: "core-string-ends-with-rejects-dynamic-suffix"
+        name: "core-string-ends-with-accepts-dynamic-suffix"
         category: "language-core"
-        tags: [string str ends-with diagnostics reject]
+        tags: [string str ends-with accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str ends-with $ctx.comm'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "str ends-with requires a compile-time string literal"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-string-ends-with-rejects-list-item-type"
