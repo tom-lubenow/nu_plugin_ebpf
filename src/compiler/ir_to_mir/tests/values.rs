@@ -44755,6 +44755,93 @@ fn make_bytes_add_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_add_runtime_index_then_length_program(
+    add_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    input: Vec<u8>,
+    data: Vec<u8>,
+    range_start: i64,
+    range_end: i64,
+    from_end: bool,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(data),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(range_start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(range_end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(2),
+                        step: RegId::new(3),
+                        end: RegId::new(4),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: add_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"index".to_vec(), RegId::new(6))],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: if from_end {
+                            vec![b"end".to_vec()]
+                        } else {
+                            Vec::new()
+                        },
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(8) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_add_list_collect_then_length_program(
     add_decl: DeclId,
     collect_decl: DeclId,
@@ -45401,6 +45488,85 @@ fn test_lower_bytes_add_accepts_empty_result() {
     assert_program_returns_constant(&result.program, 0, "empty bytes add length");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("empty bytes add output consumed by bytes length should compile");
+}
+
+#[test]
+fn test_lower_bytes_add_accepts_bounded_runtime_index_for_constant_binary() {
+    let bytes_add_decl = DeclId::new(80910);
+    let bytes_length_decl = DeclId::new(80911);
+    let random_decl = DeclId::new(80912);
+    let hir = make_bytes_add_runtime_index_then_length_program(
+        bytes_add_decl,
+        bytes_length_decl,
+        random_decl,
+        vec![1, 3],
+        vec![2],
+        0,
+        1,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes add should lower bounded runtime index for compile-time binary input");
+
+    assert_program_returns_constant(&result.program, 3, "runtime-index bytes add length");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected bounded runtime bytes add index to emit a branch"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    offset: 0,
+                    val: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected runtime index 0 variant to store inserted byte at offset 0"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    offset: 1,
+                    val: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected runtime index 1 variant to store inserted byte at offset 1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime-index bytes add output consumed by bytes length should compile");
 }
 
 #[test]

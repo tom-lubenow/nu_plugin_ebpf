@@ -19,6 +19,7 @@ const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
 const MAX_FIXED_BINARY_INDEX_OF_PROBES: usize = MAX_STRING_SIZE - 1;
 const MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS: usize = 60;
+const MAX_BYTES_ADD_RUNTIME_INDEX_VARIANTS: usize = 16;
 
 enum SeqNumericArg {
     Int(i64),
@@ -44,6 +45,15 @@ struct FixedBinaryAdd<'a> {
     data: &'a [u8],
     index: usize,
     from_end: bool,
+}
+
+enum BytesAddIndex {
+    Static(usize),
+    Runtime {
+        value: MirValue,
+        min: usize,
+        max: usize,
+    },
 }
 
 struct FixedBinaryReplace<'a> {
@@ -2415,6 +2425,157 @@ impl<'a> HirToMirLowering<'a> {
         output.extend_from_slice(data);
         output.extend_from_slice(&input[insert_at..]);
         output
+    }
+
+    fn bytes_add_runtime_index_range(
+        idx_meta: Option<&RegMetadata>,
+    ) -> Result<Option<(usize, usize)>, CompileError> {
+        let Some(range) = idx_meta.and_then(|meta| meta.bounded_range) else {
+            return Ok(None);
+        };
+        if range.step == 0 {
+            return Ok(None);
+        }
+        let last = if range.inclusive {
+            range.end
+        } else {
+            range.end.checked_sub(range.step.signum()).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes add --index runtime range end overflowed in eBPF".into(),
+                )
+            })?
+        };
+        let min = range.start.min(last);
+        let max = range.start.max(last);
+        if min < 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes add --index runtime range must be non-negative in eBPF; got {min}..={max}"
+            )));
+        }
+
+        let min_idx = usize::try_from(min).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "bytes add --index runtime range start exceeds the supported eBPF index range"
+                    .into(),
+            )
+        })?;
+        let max_idx = usize::try_from(max).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "bytes add --index runtime range end exceeds the supported eBPF index range".into(),
+            )
+        })?;
+        let variant_count = max_idx
+            .checked_sub(min_idx)
+            .and_then(|span| span.checked_add(1))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes add --index runtime range size overflowed in eBPF".into(),
+                )
+            })?;
+        if variant_count > MAX_BYTES_ADD_RUNTIME_INDEX_VARIANTS {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes add --index runtime range has {variant_count} variants; eBPF lowering supports at most {MAX_BYTES_ADD_RUNTIME_INDEX_VARIANTS}"
+            )));
+        }
+
+        Ok(Some((min_idx, max_idx)))
+    }
+
+    fn emit_runtime_indexed_compile_time_binary_add(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        idx: MirValue,
+        min_idx: usize,
+        max_idx: usize,
+        input: &[u8],
+        data: &[u8],
+        from_end: bool,
+    ) -> Result<(), CompileError> {
+        let out_len = input.len().checked_add(data.len()).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes add fixed-size binary output length overflowed in eBPF".into(),
+            )
+        })?;
+        if out_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(());
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: out_len,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(out_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let continuation_block = self.func.alloc_block();
+        for raw_idx in min_idx..=max_idx {
+            let is_last = raw_idx == max_idx;
+            let next_block = if is_last {
+                None
+            } else {
+                Some(self.func.alloc_block())
+            };
+            if let Some(next_block) = next_block {
+                let matches_index = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: matches_index,
+                    op: BinOpKind::Eq,
+                    lhs: idx.clone(),
+                    rhs: MirValue::Const(raw_idx as i64),
+                });
+                self.vreg_type_hints.insert(matches_index, MirType::Bool);
+
+                let item_block = self.func.alloc_block();
+                self.terminate(MirInst::Branch {
+                    cond: matches_index,
+                    if_true: item_block,
+                    if_false: next_block,
+                });
+                self.current_block = item_block;
+            }
+
+            let output = Self::bytes_add_output(input, data, raw_idx as i64, from_end);
+            for (offset, byte) in output.iter().copied().enumerate() {
+                self.emit(MirInst::StoreSlot {
+                    slot: out_slot,
+                    offset: Self::checked_mir_offset(offset, "bytes add runtime indexed output")?,
+                    val: MirValue::Const(i64::from(byte)),
+                    ty: MirType::U8,
+                });
+            }
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            if let Some(next_block) = next_block {
+                self.current_block = next_block;
+            }
+        }
+
+        self.current_block = continuation_block;
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: out_len });
+        Ok(())
     }
 
     fn bytes_pattern_transform_output(
@@ -7248,47 +7409,83 @@ impl<'a> HirToMirLowering<'a> {
                         )
                     })?;
 
-                let index = if let Some((_, index_reg)) = self.named_args.get("index").copied() {
-                    self.get_metadata(index_reg)
-                        .and_then(|meta| {
-                            meta.literal_int.or(match meta.constant_value.as_ref() {
-                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                                _ => None,
-                            })
+                let index = if let Some((index_vreg, index_reg)) =
+                    self.named_args.get("index").copied()
+                {
+                    let index_meta = self.get_metadata(index_reg);
+                    if let Some(raw_index) = index_meta.and_then(|meta| {
+                        meta.literal_int.or(match meta.constant_value.as_ref() {
+                            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                            _ => None,
                         })
-                        .ok_or_else(|| {
+                    }) {
+                        if raw_index < 0 {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add --index requires a non-negative integer in eBPF".into(),
+                            ));
+                        }
+                        BytesAddIndex::Static(usize::try_from(raw_index).map_err(|_| {
                             CompileError::UnsupportedInstruction(
-                                "bytes add --index requires a compile-time known integer in eBPF"
-                                    .into(),
+                                "bytes add --index exceeds the supported eBPF index range".into(),
                             )
-                        })?
+                        })?)
+                    } else if let Some((min, max)) =
+                        Self::bytes_add_runtime_index_range(index_meta)?
+                    {
+                        BytesAddIndex::Runtime {
+                            value: MirValue::VReg(index_vreg),
+                            min,
+                            max,
+                        }
+                    } else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes add --index requires a compile-time known integer in eBPF"
+                                .into(),
+                        ));
+                    }
                 } else {
-                    0
+                    BytesAddIndex::Static(0)
                 };
-                if index < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes add --index requires a non-negative integer in eBPF".into(),
-                    ));
-                }
-                let index = usize::try_from(index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "bytes add --index exceeds the supported eBPF index range".into(),
-                    )
-                })?;
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
                     .and_then(|meta| meta.constant_value.as_ref().cloned());
                 match input {
-                    Some(nu_protocol::Value::Binary { val, .. }) => {
-                        let output = Self::bytes_add_output(&val, &data, index as i64, from_end);
-                        self.reset_call_result_metadata(src_dst);
-                        self.lower_constant_value(
-                            src_dst,
-                            &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                        )?;
-                    }
+                    Some(nu_protocol::Value::Binary { val, .. }) => match index {
+                        BytesAddIndex::Static(index) => {
+                            let output =
+                                Self::bytes_add_output(&val, &data, index as i64, from_end);
+                            self.reset_call_result_metadata(src_dst);
+                            self.lower_constant_value(
+                                src_dst,
+                                &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                            )?;
+                        }
+                        BytesAddIndex::Runtime { value, min, max } => {
+                            let result_vreg = if src_dst_had_value {
+                                self.assign_fresh_vreg(src_dst)
+                            } else {
+                                dst_vreg
+                            };
+                            self.emit_runtime_indexed_compile_time_binary_add(
+                                src_dst,
+                                result_vreg,
+                                value,
+                                min,
+                                max,
+                                &val,
+                                &data,
+                                from_end,
+                            )?;
+                        }
+                    },
                     Some(nu_protocol::Value::List { vals, .. }) => {
+                        let BytesAddIndex::Static(index) = index else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add --index requires a compile-time known integer for list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        };
                         if vals.is_empty() && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes add requires a non-empty list<binary> result in eBPF".into(),
@@ -7348,6 +7545,12 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     None => {
+                        let BytesAddIndex::Static(index) = index else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add --index requires a compile-time known integer for fixed-size binary input in eBPF"
+                                    .into(),
+                            ));
+                        };
                         let input_reg = input_reg.ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
                                 "bytes add requires binary input in eBPF".into(),
