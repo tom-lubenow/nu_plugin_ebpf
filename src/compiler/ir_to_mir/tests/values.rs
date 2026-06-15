@@ -228,6 +228,86 @@ fn make_runtime_numeric_list_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_runtime_count_call_then_length_program(
+    list_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    count_end: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(10, Span::test_data()),
+                            Value::int(20, Span::test_data()),
+                            Value::int(30, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(count_end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(1),
+                        step: RegId::new(2),
+                        end: RegId::new(3),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: list_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(5)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(6)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_runtime_numeric_list_find_float_program(
     find_decl: DeclId,
     append_decl: DeclId,
@@ -11629,6 +11709,82 @@ fn test_lower_skip_negative_count_is_rejected() {
         err.to_string().contains("skip count must be non-negative"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_numeric_list_slices_accept_bounded_runtime_count() {
+    for (offset, command_name, expected_max_len) in [
+        (0, "take", 3),
+        (1, "first", 3),
+        (2, "skip", 3),
+        (3, "drop", 3),
+        (4, "last", 3),
+    ] {
+        let list_decl = DeclId::new(910 + offset);
+        let length_decl = DeclId::new(920 + offset);
+        let random_decl = DeclId::new(930 + offset);
+        let hir = make_numeric_list_runtime_count_call_then_length_program(
+            list_decl,
+            length_decl,
+            random_decl,
+            3,
+        );
+        let decl_names = HashMap::from([
+            (list_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should accept a bounded runtime count: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::ListNew {
+                    max_len,
+                    ..
+                } if *max_len == expected_max_len
+            )),
+            "expected {command_name} runtime count to allocate a bounded result list"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    rhs: MirValue::VReg(_),
+                    ..
+                }
+            )),
+            "expected {command_name} runtime count to compare against the count register"
+        );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected {command_name} runtime count to push guarded list items"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} bounded runtime count should compile through codegen: {err}")
+            });
+    }
 }
 
 #[test]

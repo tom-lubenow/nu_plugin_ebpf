@@ -26,6 +26,17 @@ struct TypedFixedArrayCountSlice<'a> {
     count: usize,
 }
 
+#[derive(Clone, Copy)]
+enum StackListRawCount {
+    DefaultOne,
+    Arg { vreg: VReg, reg: RegId },
+}
+
+enum StackListCount {
+    Static(usize),
+    Runtime { vreg: VReg, max: usize },
+}
+
 pub(in crate::compiler::ir_to_mir) struct TypedFixedArrayAppendOrPrepend<'a> {
     pub(in crate::compiler::ir_to_mir) cmd_name: &'a str,
     pub(in crate::compiler::ir_to_mir) src_dst: RegId,
@@ -1051,6 +1062,298 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn stack_list_raw_count_arg(&self, cmd_name: &str) -> Result<StackListRawCount, CompileError> {
+        match cmd_name {
+            "skip" | "drop" => {
+                if self.positional_args.len() > 1 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} accepts at most one positional count argument in eBPF"
+                    )));
+                }
+                Ok(self
+                    .positional_args
+                    .first()
+                    .map(|(vreg, reg)| StackListRawCount::Arg {
+                        vreg: *vreg,
+                        reg: *reg,
+                    })
+                    .unwrap_or(StackListRawCount::DefaultOne))
+            }
+            "take" | "first" => {
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires exactly one positional count argument in eBPF"
+                    )));
+                }
+                let (vreg, reg) = self.positional_args[0];
+                Ok(StackListRawCount::Arg { vreg, reg })
+            }
+            "last" => {
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "last requires exactly one positional count argument in eBPF".into(),
+                    ));
+                }
+                let (vreg, reg) = self.positional_args[0];
+                Ok(StackListRawCount::Arg { vreg, reg })
+            }
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported stack list slice command '{cmd_name}'"
+            ))),
+        }
+    }
+
+    fn stack_list_static_count_arg(
+        &self,
+        cmd_name: &str,
+        raw_count: StackListRawCount,
+    ) -> Result<Option<usize>, CompileError> {
+        match raw_count {
+            StackListRawCount::DefaultOne => Ok(Some(1)),
+            StackListRawCount::Arg { reg, .. } => {
+                let Some(raw_count) = self.get_metadata(reg).and_then(|m| m.literal_int) else {
+                    return Ok(None);
+                };
+                if raw_count < 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} count must be non-negative in eBPF"
+                    )));
+                }
+                usize::try_from(raw_count).map(Some).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} count is too large for eBPF list lowering"
+                    ))
+                })
+            }
+        }
+    }
+
+    fn bounded_count_min_max(range: BoundedRange) -> Result<(i64, i64), CompileError> {
+        if range.step == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "range step cannot be zero".into(),
+            ));
+        }
+        let last = if range.inclusive {
+            range.end
+        } else {
+            range.end.checked_sub(range.step.signum()).ok_or_else(|| {
+                CompileError::UnsupportedInstruction("range bound overflow".into())
+            })?
+        };
+        Ok((range.start.min(last), range.start.max(last)))
+    }
+
+    fn stack_list_count_arg(
+        &self,
+        cmd_name: &str,
+        raw_count: StackListRawCount,
+        max_len: usize,
+    ) -> Result<StackListCount, CompileError> {
+        if let Some(count) = self.stack_list_static_count_arg(cmd_name, raw_count)? {
+            return Ok(StackListCount::Static(count));
+        }
+
+        let StackListRawCount::Arg { vreg, reg } = raw_count else {
+            return Ok(StackListCount::Static(1));
+        };
+        let Some(meta) = self.get_metadata(reg) else {
+            let message = if cmd_name == "last" {
+                "last count must be a compile-time integer literal in eBPF".to_string()
+            } else {
+                format!("{cmd_name} count must be a compile-time integer literal in eBPF")
+            };
+            return Err(CompileError::UnsupportedInstruction(message));
+        };
+        let Some(range) = meta.bounded_range else {
+            let message = if cmd_name == "last" {
+                "last count must be a compile-time integer literal in eBPF".to_string()
+            } else {
+                format!("{cmd_name} count must be a compile-time integer literal in eBPF")
+            };
+            return Err(CompileError::UnsupportedInstruction(message));
+        };
+        let (min, max) = Self::bounded_count_min_max(range)?;
+        if min < 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} runtime count must have a proven non-negative range in eBPF; got {min}..={max}"
+            )));
+        }
+        let max = usize::try_from(max).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} runtime count range is too large for eBPF list lowering"
+            ))
+        })?;
+        if max > max_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} runtime count range exceeds stack-backed list capacity {max_len} in eBPF; got 0..={max}"
+            )));
+        }
+        Ok(StackListCount::Runtime { vreg, max })
+    }
+
+    fn stack_list_runtime_slice_value_is_numeric(value: &nu_protocol::Value) -> bool {
+        matches!(
+            value,
+            nu_protocol::Value::Bool { .. } | nu_protocol::Value::Int { .. }
+        )
+    }
+
+    fn lower_stack_list_runtime_count_slice(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_vreg: VReg,
+        input_meta: RegMetadata,
+        count_vreg: VReg,
+        count_max: usize,
+    ) -> Result<(), CompileError> {
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed list input in eBPF"
+            )));
+        };
+
+        let out_max_len = match cmd_name {
+            "take" | "first" | "last" => count_max.min(max_len),
+            "skip" | "drop" => max_len,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported stack list runtime slice command '{cmd_name}'"
+                )));
+            }
+        };
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, out_max_len);
+
+        if max_len > 0 && (out_max_len > 0 || matches!(cmd_name, "skip" | "drop")) {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for source_index in 0..max_len {
+                let copy_block = self.func.alloc_block();
+                let next_block = if source_index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+
+                let count_guard_vreg = self.func.alloc_vreg();
+                match cmd_name {
+                    "take" | "first" => {
+                        self.emit(MirInst::BinOp {
+                            dst: count_guard_vreg,
+                            op: BinOpKind::Lt,
+                            lhs: MirValue::Const(source_index as i64),
+                            rhs: MirValue::VReg(count_vreg),
+                        });
+                    }
+                    "skip" => {
+                        self.emit(MirInst::BinOp {
+                            dst: count_guard_vreg,
+                            op: BinOpKind::Ge,
+                            lhs: MirValue::Const(source_index as i64),
+                            rhs: MirValue::VReg(count_vreg),
+                        });
+                    }
+                    "drop" => {
+                        let index_plus_count = self.func.alloc_vreg();
+                        self.emit(MirInst::BinOp {
+                            dst: index_plus_count,
+                            op: BinOpKind::Add,
+                            lhs: MirValue::Const(source_index as i64),
+                            rhs: MirValue::VReg(count_vreg),
+                        });
+                        self.vreg_type_hints.insert(index_plus_count, MirType::I64);
+                        self.emit(MirInst::BinOp {
+                            dst: count_guard_vreg,
+                            op: BinOpKind::Lt,
+                            lhs: MirValue::VReg(index_plus_count),
+                            rhs: MirValue::VReg(len_vreg),
+                        });
+                    }
+                    "last" => {
+                        let index_plus_count = self.func.alloc_vreg();
+                        self.emit(MirInst::BinOp {
+                            dst: index_plus_count,
+                            op: BinOpKind::Add,
+                            lhs: MirValue::Const(source_index as i64),
+                            rhs: MirValue::VReg(count_vreg),
+                        });
+                        self.vreg_type_hints.insert(index_plus_count, MirType::I64);
+                        self.emit(MirInst::BinOp {
+                            dst: count_guard_vreg,
+                            op: BinOpKind::Ge,
+                            lhs: MirValue::VReg(index_plus_count),
+                            rhs: MirValue::VReg(len_vreg),
+                        });
+                    }
+                    _ => unreachable!("validated stack list runtime slice command"),
+                }
+                self.vreg_type_hints.insert(count_guard_vreg, MirType::Bool);
+
+                let should_copy_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: should_copy_vreg,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(in_bounds_vreg),
+                    rhs: MirValue::VReg(count_guard_vreg),
+                });
+                self.vreg_type_hints.insert(should_copy_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: should_copy_vreg,
+                    if_true: copy_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = copy_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            out_max_len,
+            None,
+        );
+        Ok(())
+    }
+
     pub(super) fn lower_stack_list_take_skip_or_drop(
         &mut self,
         cmd_name: &str,
@@ -1058,7 +1361,7 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
@@ -1071,76 +1374,60 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let raw_count = match cmd_name {
-            "skip" | "drop" => {
-                if self.positional_args.len() > 1 {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} accepts at most one positional count argument in eBPF"
-                    )));
-                }
-                if let Some((_, count_reg)) = self.positional_args.first() {
-                    self.get_metadata(*count_reg)
-                        .and_then(|m| m.literal_int)
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(format!(
-                                "{cmd_name} count must be a compile-time integer literal in eBPF"
-                            ))
-                        })?
-                } else {
-                    1
-                }
-            }
-            "take" | "first" => {
-                if self.positional_args.len() != 1 {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires exactly one positional count argument in eBPF"
-                    )));
-                }
-                let (_, count_reg) = self.positional_args[0];
-                self.get_metadata(count_reg)
-                    .and_then(|m| m.literal_int)
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} count must be a compile-time integer literal in eBPF"
-                        ))
-                    })?
-            }
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "unsupported stack list slice command '{cmd_name}'"
-                )));
-            }
-        };
+        let raw_count = self.stack_list_raw_count_arg(cmd_name)?;
 
-        if raw_count < 0 {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} count must be non-negative in eBPF"
-            )));
-        }
-        let count = usize::try_from(raw_count).map_err(|_| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} count is too large for eBPF list lowering"
-            ))
-        })?;
-
-        if let Some(values) = input_reg.and_then(|reg| {
+        if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
-                .map(|values| values.to_vec())
+                .map(|values| (reg, values.to_vec()))
         }) {
-            let vals = match cmd_name {
-                "take" | "first" => values.into_iter().take(count).collect::<Vec<_>>(),
-                "skip" => values.into_iter().skip(count).collect::<Vec<_>>(),
-                "drop" => {
-                    let keep_len = values.len().saturating_sub(count);
-                    values.into_iter().take(keep_len).collect::<Vec<_>>()
+            match self.stack_list_count_arg(cmd_name, raw_count, values.len())? {
+                StackListCount::Static(count) => {
+                    let vals = match cmd_name {
+                        "take" | "first" => values.into_iter().take(count).collect::<Vec<_>>(),
+                        "skip" => values.into_iter().skip(count).collect::<Vec<_>>(),
+                        "drop" => {
+                            let keep_len = values.len().saturating_sub(count);
+                            values.into_iter().take(keep_len).collect::<Vec<_>>()
+                        }
+                        _ => unreachable!("validated stack list slice command"),
+                    };
+                    self.lower_compile_time_list_transform_result(
+                        src_dst,
+                        &nu_protocol::Value::list(vals, Span::unknown()),
+                    )?;
+                    return Ok(());
                 }
-                _ => unreachable!("validated stack list slice command"),
-            };
-            self.lower_compile_time_list_transform_result(
-                src_dst,
-                &nu_protocol::Value::list(vals, Span::unknown()),
-            )?;
-            return Ok(());
+                StackListCount::Runtime { vreg, max } => {
+                    if values
+                        .iter()
+                        .any(|value| !Self::stack_list_runtime_slice_value_is_numeric(value))
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} runtime count requires integer or bool fixed-list input in eBPF"
+                        )));
+                    }
+
+                    let materialized = nu_protocol::Value::list(values, Span::unknown());
+                    self.assign_fresh_vreg(builder_reg);
+                    self.lower_constant_value(builder_reg, &materialized)?;
+                    input_vreg = self.get_vreg(builder_reg);
+                    let input_meta = self.get_metadata(builder_reg).cloned().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} could not materialize compile-time known numeric list in eBPF"
+                        ))
+                    })?;
+                    return self.lower_stack_list_runtime_count_slice(
+                        cmd_name,
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        input_vreg,
+                        input_meta,
+                        vreg,
+                        max,
+                    );
+                }
+            }
         }
 
         let input_meta = input_reg
@@ -1150,7 +1437,8 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a pipeline input with tracked metadata in eBPF"
                 ))
             })?;
-        if let Some(input_reg) = input_reg
+        let static_count = self.stack_list_static_count_arg(cmd_name, raw_count)?;
+        if let (Some(input_reg), Some(count)) = (input_reg, static_count)
             && self.lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
                 cmd_name,
                 src_dst,
@@ -1168,6 +1456,22 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed list input in eBPF"
             )));
+        };
+        let count_arg = self.stack_list_count_arg(cmd_name, raw_count, max_len)?;
+        let count = match count_arg {
+            StackListCount::Static(count) => count,
+            StackListCount::Runtime { vreg, max } => {
+                return self.lower_stack_list_runtime_count_slice(
+                    cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_vreg,
+                    input_meta,
+                    vreg,
+                    max,
+                );
+            }
         };
 
         let (source_start, source_end, out_max_len, guard_tail_drop) = match cmd_name {
@@ -1429,51 +1733,63 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
         self.validate_optional_strict_list_flag("last")?;
-        if self.positional_args.len() != 1 {
-            return Err(CompileError::UnsupportedInstruction(
-                "last requires exactly one positional count argument in eBPF".into(),
-            ));
-        }
+        let raw_count = self.stack_list_raw_count_arg("last")?;
 
-        let (_, count_reg) = self.positional_args[0];
-        let raw_count = self
-            .get_metadata(count_reg)
-            .and_then(|m| m.literal_int)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "last count must be a compile-time integer literal in eBPF".into(),
-                )
-            })?;
-        if raw_count < 0 {
-            return Err(CompileError::UnsupportedInstruction(
-                "last count must be non-negative in eBPF".into(),
-            ));
-        }
-        let count = usize::try_from(raw_count).map_err(|_| {
-            CompileError::UnsupportedInstruction(
-                "last count is too large for eBPF list lowering".into(),
-            )
-        })?;
-
-        if let Some(values) = input_reg.and_then(|reg| {
+        if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
-                .map(|values| values.to_vec())
+                .map(|values| (reg, values.to_vec()))
         }) {
-            let start = values.len().saturating_sub(count);
-            self.lower_compile_time_list_transform_result(
-                src_dst,
-                &nu_protocol::Value::list(
-                    values.into_iter().skip(start).collect::<Vec<_>>(),
-                    Span::unknown(),
-                ),
-            )?;
-            return Ok(());
+            match self.stack_list_count_arg("last", raw_count, values.len())? {
+                StackListCount::Static(count) => {
+                    let start = values.len().saturating_sub(count);
+                    self.lower_compile_time_list_transform_result(
+                        src_dst,
+                        &nu_protocol::Value::list(
+                            values.into_iter().skip(start).collect::<Vec<_>>(),
+                            Span::unknown(),
+                        ),
+                    )?;
+                    return Ok(());
+                }
+                StackListCount::Runtime { vreg, max } => {
+                    if values
+                        .iter()
+                        .any(|value| !Self::stack_list_runtime_slice_value_is_numeric(value))
+                    {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "last runtime count requires integer or bool fixed-list input in eBPF"
+                                .into(),
+                        ));
+                    }
+
+                    let materialized = nu_protocol::Value::list(values, Span::unknown());
+                    self.assign_fresh_vreg(builder_reg);
+                    self.lower_constant_value(builder_reg, &materialized)?;
+                    input_vreg = self.get_vreg(builder_reg);
+                    let input_meta = self.get_metadata(builder_reg).cloned().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "last could not materialize compile-time known numeric list in eBPF"
+                                .into(),
+                        )
+                    })?;
+                    return self.lower_stack_list_runtime_count_slice(
+                        "last",
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        input_vreg,
+                        input_meta,
+                        vreg,
+                        max,
+                    );
+                }
+            }
         }
 
         let input_meta = input_reg
@@ -1483,7 +1799,8 @@ impl<'a> HirToMirLowering<'a> {
                     "last requires a stack-backed list input in eBPF".into(),
                 )
             })?;
-        if let Some(input_reg) = input_reg
+        let static_count = self.stack_list_static_count_arg("last", raw_count)?;
+        if let (Some(input_reg), Some(count)) = (input_reg, static_count)
             && self.lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
                 cmd_name: "last",
                 src_dst,
@@ -1501,6 +1818,22 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "last requires a stack-backed list input in eBPF".into(),
             ));
+        };
+        let count_arg = self.stack_list_count_arg("last", raw_count, max_len)?;
+        let count = match count_arg {
+            StackListCount::Static(count) => count,
+            StackListCount::Runtime { vreg, max } => {
+                return self.lower_stack_list_runtime_count_slice(
+                    "last",
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_vreg,
+                    input_meta,
+                    vreg,
+                    max,
+                );
+            }
         };
 
         let out_max_len = count.min(max_len);
