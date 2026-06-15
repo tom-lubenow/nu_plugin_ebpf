@@ -504,6 +504,35 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+        if matches!(length_mode, StringLengthMode::Chars)
+            && let Some(input_meta) = input_meta.as_ref()
+            && !matches!(
+                input_meta.constant_value,
+                Some(nu_protocol::Value::String { .. })
+            )
+            && let (Some(string_slot), Some(len_vreg)) =
+                (input_meta.string_slot, input_meta.string_len_vreg)
+        {
+            let slot_len = self.stack_slot_size(string_slot).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str length --chars requires a tracked string slot with known size in eBPF"
+                        .into(),
+                )
+            })?;
+            let count_vreg =
+                self.lower_typed_string_slot_char_count(input_vreg, len_vreg, slot_len, 0)?;
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(count_vreg),
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            return Ok(());
+        }
+
         match length_mode {
             StringLengthMode::Chars
             | StringLengthMode::GraphemeClusters
@@ -518,7 +547,6 @@ impl<'a> HirToMirLowering<'a> {
             StringLengthMode::Utf8Bytes => {}
         }
 
-        let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
         if let Some(len_vreg) = input_meta.as_ref().and_then(|meta| {
             meta.string_len_vreg.or_else(|| match &meta.constant_value {
                 Some(nu_protocol::Value::String { val, .. }) => {
@@ -709,6 +737,16 @@ impl<'a> HirToMirLowering<'a> {
         len_vreg: VReg,
         slot_len: usize,
     ) -> Result<VReg, CompileError> {
+        self.lower_typed_string_slot_char_count(element_ptr, len_vreg, slot_len, 8)
+    }
+
+    fn lower_typed_string_slot_char_count(
+        &mut self,
+        element_ptr: VReg,
+        len_vreg: VReg,
+        slot_len: usize,
+        payload_offset: usize,
+    ) -> Result<VReg, CompileError> {
         let mut count_vreg = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
             dst: count_vreg,
@@ -717,7 +755,7 @@ impl<'a> HirToMirLowering<'a> {
         self.vreg_type_hints.insert(count_vreg, MirType::I64);
 
         for byte_index in 0..slot_len {
-            let load_offset = 8usize.checked_add(byte_index).ok_or_else(|| {
+            let load_offset = payload_offset.checked_add(byte_index).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "str length --chars typed fixed string-array byte offset overflowed in eBPF"
                         .into(),
