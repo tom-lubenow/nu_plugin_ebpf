@@ -5718,7 +5718,17 @@ impl<'a> HirToMirLowering<'a> {
                         )
                     })?;
                     let value_reg = self.pipeline_input_reg;
-                    let stored_value_vreg = if let Some(value_reg) = value_reg {
+                    let mut schema_materialized_value = false;
+                    let stored_value_vreg = if let Some(value_reg) = value_reg
+                        && let Some(schema_value_vreg) = self
+                            .materialize_declared_constant_map_value(
+                                &inner_map,
+                                value_reg,
+                                "map-put dynamic map value",
+                            )? {
+                        schema_materialized_value = true;
+                        schema_value_vreg
+                    } else if let Some(value_reg) = value_reg {
                         self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                         self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                     } else {
@@ -5737,11 +5747,13 @@ impl<'a> HirToMirLowering<'a> {
                         val: stored_value_vreg,
                         flags,
                     });
-                    self.record_named_map_value_schema_from_reg(
-                        &inner_map,
-                        value_reg,
-                        "map-put dynamic map",
-                    )?;
+                    if !schema_materialized_value {
+                        self.record_named_map_value_schema_from_reg(
+                            &inner_map,
+                            value_reg,
+                            "map-put dynamic map",
+                        )?;
+                    }
 
                     self.emit(MirInst::Copy {
                         dst: dst_vreg,
