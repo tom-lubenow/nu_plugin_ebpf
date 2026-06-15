@@ -28,18 +28,18 @@ const VERIFIER_DIFF_FIXTURES_2503_2508 = [
         error_contains: "str contains requires tracked string input in eBPF"
     }
     {
-        name: "core-string-contains-rejects-dynamic-substring"
+        name: "core-string-contains-accepts-dynamic-substring"
         category: "language-core"
-        tags: [string str contains diagnostics reject]
+        tags: [string str contains accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str contains $ctx.comm'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "str contains requires a compile-time string literal"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-string-contains-rejects-list-item-type"
