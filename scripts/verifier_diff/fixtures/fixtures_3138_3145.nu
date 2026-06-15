@@ -92,9 +92,9 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
         error_contains: "ends-with operator requires a compile-time known string suffix in eBPF"
     }
     {
-        name: "core-operator-in-rejects-runtime-left-literal-right"
+        name: "core-operator-in-accepts-runtime-left-literal-right"
         category: "language-core"
-        tags: [operators in diagnostics reject runtime literal]
+        tags: [operators in accept runtime literal]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -103,14 +103,14 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
             '  $l in "abc"'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "in operator requires a compile-time known string needle in eBPF"
+        default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-has-rejects-literal-left-runtime-right"
+        name: "core-operator-has-accepts-literal-left-runtime-right"
         category: "language-core"
-        tags: [operators has diagnostics reject runtime literal]
+        tags: [operators has accept runtime literal]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -119,8 +119,8 @@ const VERIFIER_DIFF_FIXTURES_3138_3145 = [
             '  "abc" has $l'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "has operator requires a compile-time known string needle in eBPF"
+        default_test_lane: "dry-run"
     }
 ]

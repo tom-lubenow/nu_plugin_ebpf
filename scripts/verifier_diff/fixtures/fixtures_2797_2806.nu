@@ -54,9 +54,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
         default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-in-rejects-runtime-string-needle"
+        name: "core-operator-in-accepts-runtime-string-needle"
         category: "language-core"
-        tags: [operators in diagnostics reject runtime]
+        tags: [operators in accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -67,14 +67,14 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
             '  $l in $r'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "in operator requires a compile-time known string needle in eBPF"
+        default_test_lane: "dry-run"
     }
     {
-        name: "core-operator-has-rejects-runtime-string-needle"
+        name: "core-operator-has-accepts-runtime-string-needle"
         category: "language-core"
-        tags: [operators has diagnostics reject runtime]
+        tags: [operators has accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -85,9 +85,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
             '  $l has $r'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "has operator requires a compile-time known string needle in eBPF"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-operator-pow-rejects-runtime-exponent"
