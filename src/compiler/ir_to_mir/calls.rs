@@ -9915,12 +9915,23 @@ impl<'a> HirToMirLowering<'a> {
             .map(|(_, reg)| *reg)
             .or(self.pipeline_input_reg)
             .or_else(|| src_dst_had_value.then_some(src_dst));
-        let stored_value_vreg = if let Some(value_reg) = value_reg {
+        let mut schema_materialized_value = false;
+        let stored_value_vreg = if let Some(value_reg) = value_reg
+            && let Some(schema_value_vreg) = self.materialize_declared_constant_map_value(
+                &map_ref,
+                value_reg,
+                "map-contains value",
+            )? {
+            schema_materialized_value = true;
+            schema_value_vreg
+        } else if let Some(value_reg) = value_reg {
             self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
         } else {
             value_vreg
         };
-        self.record_named_map_value_schema_from_reg(&map_ref, value_reg, CONTEXT)?;
+        if !schema_materialized_value {
+            self.record_named_map_value_schema_from_reg(&map_ref, value_reg, CONTEXT)?;
+        }
 
         let (value_ptr_vreg, value_ty) =
             self.materialize_map_value_probe_pointer(value_reg, stored_value_vreg, CONTEXT)?;
