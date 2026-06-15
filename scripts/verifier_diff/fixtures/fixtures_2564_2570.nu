@@ -83,17 +83,16 @@ const VERIFIER_DIFF_FIXTURES_2564_2570 = [
         error_contains: "fill requires compile-time known string, int, float, or filesize input in eBPF"
     }
     {
-        name: "core-string-fill-rejects-list-item-type"
+        name: "core-string-fill-mixed-list-join"
         category: "language-core"
-        tags: [string fill diagnostics reject]
+        tags: [string fill list join mixed accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ["abc" true] | fill --width 4'
+            '  ["abc" true] | fill --width 4 | str join "," | str length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "fill supports only string, int, float, and filesize compile-time list items in eBPF; item 1 has type bool"
+        local: "accept"
+        kernel: "accept"
     }
 ]
