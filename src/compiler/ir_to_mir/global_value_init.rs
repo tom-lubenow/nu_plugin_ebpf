@@ -222,7 +222,10 @@ impl<'a> HirToMirLowering<'a> {
                 Some(&first_path),
             )?
         else {
-            return Ok(None);
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "annotated mutable fixed-array global {} of declared type {} is not yet supported",
+                first_path, declared_elem_type
+            )));
         };
         let _ = (elem_list_max_len, elem_string_slot_len);
 

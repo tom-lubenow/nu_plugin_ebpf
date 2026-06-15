@@ -8207,6 +8207,53 @@ fn test_lower_leading_annotated_mut_float_initializer_is_rejected() {
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_fixed_array_first_element_reject_names_path() {
+    let global_var = VarId::new(361);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Float)),
+        initial_value: Value::list(
+            vec![Value::float(3.0, Span::test_data())],
+            Span::test_data(),
+        ),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("unsupported first fixed-array element should name its element path");
+
+    assert!(
+        err.to_string().contains(
+            "annotated mutable fixed-array global element 0 of declared type float is not yet supported"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_scalar_null_uses_bss_global() {
     let global_var = VarId::new(349);
     let func = HirFunction {
