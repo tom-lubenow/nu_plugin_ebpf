@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
+  messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an
   internal unwrap.
 - Hardened checked MIR-to-LIR lowering so missing physical-register mappings

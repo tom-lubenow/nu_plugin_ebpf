@@ -150,12 +150,14 @@ fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
         [only] => format!("sched_ext_ops.{only}"),
         [left, right] => format!("sched_ext_ops.{left} or sched_ext_ops.{right}"),
         _ => {
-            let mut names = callbacks
+            let names = callbacks
                 .iter()
                 .map(|callback| format!("sched_ext_ops.{callback}"))
                 .collect::<Vec<_>>();
-            let last = names.pop().unwrap();
-            format!("{}, or {}", names.join(", "), last)
+            match names.split_last() {
+                Some((last, leading)) => format!("{}, or {}", leading.join(", "), last),
+                None => String::new(),
+            }
         }
     }
 }
@@ -637,6 +639,14 @@ mod tests {
                 "kfunc 'scx_bpf_dispatch_nr_slots' is only valid in sched_ext_ops.dispatch, not sched_ext_ops.select_cpu"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn test_sched_ext_callback_list_formats_three_callbacks() {
+        assert_eq!(
+            format_sched_ext_callback_list(&["select_cpu", "enqueue", "dispatch"]),
+            "sched_ext_ops.select_cpu, sched_ext_ops.enqueue, or sched_ext_ops.dispatch"
         );
     }
 
