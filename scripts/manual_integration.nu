@@ -5,6 +5,7 @@ const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
 const REPO_ROOT = (path self | path dirname | path dirname)
+const DRY_RUN_ONLY_STEPS = [56 57 59 60 61 68 69 70 75 76 77 78 79 80 81]
 
 def fail [msg: string] {
     error make { msg: $msg }
@@ -120,7 +121,16 @@ def expect-dry-run-binary [plugin_bin: string, code: string, label: string] {
     $result
 }
 
+def dry-run-only-mode [] {
+    (($env | get -o MANUAL_INTEGRATION_DRY_RUN_ONLY) == "1")
+}
+
 def step [index: int, label: string, body: closure] {
+    if (dry-run-only-mode) and ($index not-in $DRY_RUN_ONLY_STEPS) {
+        print $"[($index)/($TOTAL_STEPS)] skipping live step in dry-run-only mode: ($label)"
+        return null
+    }
+
     announce $index $label
     do $body
 }
@@ -306,6 +316,10 @@ print $"Using plugin binary: ($plugin_bin)"
 
 plugin add $plugin_bin
 plugin use ebpf
+
+if (dry-run-only-mode) {
+    print "Running manual integration dry-run-only mode; live attach steps will be skipped."
+}
 
 step 1 "stream attach (kprobe:ksys_read)" {
     collect-first-stream $plugin_bin "kprobe:ksys_read" {|ctx|
