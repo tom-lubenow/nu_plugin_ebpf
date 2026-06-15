@@ -30345,6 +30345,61 @@ fn make_bits_binary_list_sum_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_binary_list_runtime_target_length_program(
+    bits_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    values: &[i64],
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .iter()
+                            .map(|value| Value::int(*value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -38003,6 +38058,70 @@ fn test_lower_bits_binary_commands_on_runtime_stack_numeric_lists() {
                 panic!(
                     "{command_name} runtime list output consumed by length should compile: {err}"
                 )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_or_xor_materialize_constant_list_for_runtime_target() {
+    for (offset, command_name, expected_op) in [
+        (0, "bits or", BinOpKind::Or),
+        (1, "bits xor", BinOpKind::Xor),
+    ] {
+        let bits_decl = DeclId::new(38100 + offset);
+        let length_decl = DeclId::new(38110 + offset);
+        let random_decl = DeclId::new(38120 + offset);
+        let hir = make_bits_binary_list_runtime_target_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            &[1, 2],
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should materialize constant integer lists for runtime targets: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+            "expected {command_name} to materialize the two-item input list"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    rhs: MirValue::VReg(_),
+                    ..
+                } if *op == expected_op
+            )),
+            "expected {command_name} to apply a runtime target register"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} constant-list runtime target should compile: {err}")
             });
     }
 }

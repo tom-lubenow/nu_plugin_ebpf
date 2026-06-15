@@ -112,31 +112,31 @@ const VERIFIER_DIFF_FIXTURES_2907_2916 = [
         error_contains: "bits xor requires binary pipeline input when the target argument is binary in eBPF"
     }
     {
-        name: "core-bits-or-rejects-dynamic-list-target"
+        name: "core-bits-or-accepts-dynamic-list-target"
         category: "language-core"
-        tags: [bits or diagnostics reject target dynamic list]
+        tags: [bits or accept target dynamic list runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2] | bits or $ctx.pid'
+            '  [1 2] | bits or $ctx.pid | length'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "bits or requires a compile-time integer target argument for compile-time known list input in eBPF"
+        default_test_lane: "dry-run"
     }
     {
-        name: "core-bits-xor-rejects-dynamic-list-target"
+        name: "core-bits-xor-accepts-dynamic-list-target"
         category: "language-core"
-        tags: [bits xor diagnostics reject target dynamic list]
+        tags: [bits xor accept target dynamic list runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2] | bits xor $ctx.pid'
+            '  [1 2] | bits xor $ctx.pid | length'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "bits xor requires a compile-time integer target argument for compile-time known list input in eBPF"
+        default_test_lane: "dry-run"
     }
 ]

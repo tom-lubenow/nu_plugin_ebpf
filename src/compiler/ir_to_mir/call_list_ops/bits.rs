@@ -1518,6 +1518,14 @@ impl<'a> HirToMirLowering<'a> {
                 rhs_vreg,
             )?;
             let Some(rhs) = rhs_const else {
+                for (index, value) in vals.iter().enumerate() {
+                    if !matches!(value, nu_protocol::Value::Int { .. }) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    }
+                }
                 if let Some(input_meta) = input_meta.as_ref()
                     && input_meta.list_buffer.is_some()
                 {
@@ -1533,9 +1541,30 @@ impl<'a> HirToMirLowering<'a> {
                         rhs_value: MirValue::VReg(rhs_vreg),
                     });
                 }
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a compile-time integer target argument for compile-time known list input in eBPF"
-                )));
+                let materialized = nu_protocol::Value::list(vals, nu_protocol::Span::unknown());
+                self.assign_fresh_vreg(input_reg);
+                self.lower_constant_value(input_reg, &materialized)?;
+                let input_vreg = self.get_vreg(input_reg);
+                let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    ))
+                })?;
+                if input_meta.list_buffer.is_none() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    )));
+                }
+
+                return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta: &input_meta,
+                    op,
+                    rhs_value: MirValue::VReg(rhs_vreg),
+                });
             };
             let output = vals
                 .into_iter()
