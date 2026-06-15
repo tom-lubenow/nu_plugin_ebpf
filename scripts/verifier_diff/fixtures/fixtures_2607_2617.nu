@@ -25,7 +25,7 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math round --precision compile-time result has type float; eBPF supports only results folded by fill or str join"
+        error_contains: "math round --precision compile-time result has type float; eBPF supports only results folded by metadata-only consumers"
     }
     {
         name: "core-math-abs-rejects-unfolded-float-result"
@@ -39,7 +39,7 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math abs compile-time result has type float; eBPF supports only float results folded by fill or str join"
+        error_contains: "math abs compile-time result has type float; eBPF supports only float results folded by metadata-only consumers"
     }
     {
         name: "core-math-abs-rejects-unfolded-float-list-result"
@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math abs compile-time list result includes floats; eBPF supports only float results folded by fill or str join"
+        error_contains: "math abs compile-time list result includes floats; eBPF supports only float results folded by metadata-only consumers"
     }
     {
         name: "core-math-median-rejects-empty-list"
@@ -151,6 +151,6 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math exp compile-time result has type float; eBPF supports only results folded by fill or str join"
+        error_contains: "math exp compile-time result has type float; eBPF supports only results folded by metadata-only consumers"
     }
 ]

@@ -151,6 +151,6 @@ const VERIFIER_DIFF_FIXTURES_2596_2606 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math sqrt compile-time result has type float; eBPF supports only results folded by fill or str join"
+        error_contains: "math sqrt compile-time result has type float; eBPF supports only results folded by metadata-only consumers"
     }
 ]

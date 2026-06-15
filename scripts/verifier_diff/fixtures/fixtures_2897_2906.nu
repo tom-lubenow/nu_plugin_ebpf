@@ -95,7 +95,7 @@ const VERIFIER_DIFF_FIXTURES_2897_2906 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math round --precision compile-time result has type list<float>; eBPF supports only results folded by fill or str join"
+        error_contains: "math round --precision compile-time result has type list<float>; eBPF supports only results folded by metadata-only consumers"
     }
     {
         name: "core-math-arccos-rejects-dynamic-input"
