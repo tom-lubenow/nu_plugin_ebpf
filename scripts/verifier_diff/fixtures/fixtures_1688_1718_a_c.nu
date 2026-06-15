@@ -1,77 +1,77 @@
-const VERIFIER_DIFF_FIXTURES_1688_1718_A = [
+const VERIFIER_DIFF_FIXTURES_1688_1718_A_C = [
     {
-        name: "core-list-append"
+        name: "core-list-append-large-seq-get"
         category: "language-core"
-        tags: [aggregate list append]
+        tags: [aggregate list seq append get]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | append 40 | get 3'
+            '  seq 0 59 | append 60 | get 60'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-list-prepend"
+        name: "core-list-is-empty"
         category: "language-core"
-        tags: [aggregate list prepend]
+        tags: [aggregate list is-empty]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | prepend 5 | get 0'
+            '  [] | is-empty'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-list-each"
+        name: "core-list-length"
         category: "language-core"
-        tags: [aggregate list each closure]
+        tags: [aggregate list length]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | each {|x| $x + 1 } | get 1'
+            '  [10 20 30] | length'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-list-each-string-length"
+        name: "core-string-list-length"
         category: "language-core"
-        tags: [aggregate list string each closure]
+        tags: [string list length]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ((["aa" "bbb"] | each {|x| $x | str length } | get 1) == 3)'
+            '  ["ab" "cd" "ef"] | length'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-list-each-binary-length"
+        name: "core-string-list-get"
         category: "language-core"
-        tags: [aggregate list binary bytes each closure]
+        tags: [string list get]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (([0x[01 02] 0x[03 04]] | each {|x| $x | bytes length } | get 1) == 2)'
+            '  ["ab" "cd"] | get 1 | str starts-with "cd"'
             '}'
         ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "core-list-each-nested-list-get"
+        name: "core-string-list-first"
         category: "language-core"
-        tags: [aggregate list nested each closure]
+        tags: [string list first]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (([[1 2] [3 4]] | each {|x| $x.1 } | get 1) == 4)'
+            '  ["ab" "cd"] | first | str starts-with "ab"'
             '}'
         ]
         local: "accept"
