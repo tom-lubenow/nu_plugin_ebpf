@@ -370,6 +370,76 @@ fn make_runtime_numeric_list_find_float_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bool_list_builder_runtime_find_length_program(
+    find_decl: DeclId,
+    random_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 3 },
+    }];
+
+    for (offset, value) in [true, false, true].into_iter().enumerate() {
+        let item_reg = RegId::new((offset + 1) as u32);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Bool(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs::default(),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(5),
+        lit: HirLiteral::Int(0),
+    });
+    stmts.push(HirStmt::BinaryOp {
+        lhs_dst: RegId::new(4),
+        op: Operator::Comparison(Comparison::GreaterThan),
+        rhs: RegId::new(5),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: find_decl,
+        src_dst: RegId::new(6),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(4)],
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(7),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(6)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_runtime_numeric_list_two_call_program(
     first_decl: DeclId,
     second_decl: DeclId,
@@ -13777,13 +13847,64 @@ fn test_lower_runtime_find_on_metadata_only_integer_list_builder_materializes_li
 }
 
 #[test]
+fn test_lower_runtime_find_on_metadata_only_bool_list_builder_accepts_runtime_bool() {
+    let find_decl = DeclId::new(10008);
+    let random_decl = DeclId::new(10009);
+    let length_decl = DeclId::new(10010);
+    let hir =
+        make_bool_list_builder_runtime_find_length_program(find_decl, random_decl, length_decl);
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (random_decl, "random int".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime bool find should materialize metadata-only bool list builders");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                rhs: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected runtime bool find to compare list items against the bool needle"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime bool find to push matching items"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime bool find on materialized bool list should compile through codegen");
+}
+
+#[test]
 fn test_lower_runtime_append_prepend_on_metadata_only_integer_list_builder_materializes_list() {
-    let random_decl = DeclId::new(10008);
-    let length_decl = DeclId::new(10009);
+    let random_decl = DeclId::new(10011);
+    let length_decl = DeclId::new(10012);
 
     for (command_decl, command_name) in [
-        (DeclId::new(10010), "append"),
-        (DeclId::new(10011), "prepend"),
+        (DeclId::new(10013), "append"),
+        (DeclId::new(10014), "prepend"),
     ] {
         let decl_names = HashMap::from([
             (command_decl, command_name.to_string()),
