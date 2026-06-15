@@ -8935,6 +8935,9 @@ impl<'a> HirToMirLowering<'a> {
         key_reg: RegId,
         context: &str,
     ) -> Result<Option<VReg>, CompileError> {
+        if self.named_map_key_semantics(map_ref).is_some() {
+            return Ok(None);
+        }
         let Some(value) = self
             .get_metadata(key_reg)
             .and_then(|meta| meta.constant_value.as_ref())
@@ -9004,6 +9007,9 @@ impl<'a> HirToMirLowering<'a> {
         value_reg: RegId,
         context: &str,
     ) -> Result<Option<VReg>, CompileError> {
+        if self.named_map_value_semantics(map_ref).is_some() {
+            return Ok(None);
+        }
         let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
             self.named_map_value_type(map_ref).cloned()
         else {
