@@ -8883,6 +8883,69 @@ fn test_lower_leading_annotated_mut_record_partial_initializer_reports_nested_mi
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_reports_nested_omitted_field_path() {
+    let global_var = VarId::new(363);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push("stats", Value::record(Record::new(), Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([(
+            "stats".to_string(),
+            Type::Record(Box::new([(
+                "samples".to_string(),
+                Type::List(Box::new(Type::Int)),
+            )])),
+        )])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("nested omitted list field without explicit capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("omitted record field 'stats.samples'"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains("field 'stats.samples' needs explicit numeric-list capacity"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains("provide a concrete value for 'stats.samples'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_null_string_without_exemplar_is_rejected() {
     let global_var = VarId::new(353);
     let func = HirFunction {

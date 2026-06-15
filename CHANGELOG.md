@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Improved annotated mutable record diagnostics so omitted nested fields report
+  the full missing field path when the parent record initializer is present.
 - Improved mutable captured list diagnostics so heterogeneous constant lists name
   the mismatching item and fixed-layout mismatch before the current support
   policy.

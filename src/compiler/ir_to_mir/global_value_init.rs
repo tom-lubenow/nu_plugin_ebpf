@@ -522,7 +522,8 @@ impl<'a> HirToMirLowering<'a> {
 
                         return Err(CompileError::UnsupportedInstruction(
                             Self::annotated_mut_global_omitted_field_message(
-                                field_name, field_type,
+                                &child_path,
+                                field_type,
                             ),
                         ));
                     };
