@@ -1,5 +1,19 @@
 export const VERIFIER_DIFF_FIXTURES_3354_3355 = [
     {
+        name: "global-define-type-string-str-substring-length"
+        category: "globals"
+        tags: [globals string str substring range length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "string:8" name'
+            '  (((global-get name) | str substring 1..3 | str length) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-string-str-substring-range-join-length"
         category: "globals"
         tags: [globals arrays string str substring range join length global-define accept]

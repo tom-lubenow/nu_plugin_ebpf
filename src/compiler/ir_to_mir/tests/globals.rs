@@ -11453,6 +11453,112 @@ fn test_lower_global_define_type_string_str_trim_char_feeds_length() {
 }
 
 #[test]
+fn test_lower_global_define_type_string_str_substring_feeds_length() {
+    let define_decl = DeclId::new(10_644);
+    let global_get_decl = DeclId::new(10_645);
+    let substring_decl = DeclId::new(10_646);
+    let length_decl = DeclId::new(10_647);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (substring_decl, "str substring".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("name".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(4),
+                        step: RegId::new(5),
+                        end: RegId::new(6),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: substring_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(7)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(8)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(9) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 10,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed string global str substring should lower as a tracked string");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("tracked string str substring result consumed by str length should compile");
+}
+
+#[test]
 fn test_lower_global_define_type_string_array_get_preserves_string_semantics() {
     let define_decl = DeclId::new(10_510);
     let global_get_decl = DeclId::new(10_511);

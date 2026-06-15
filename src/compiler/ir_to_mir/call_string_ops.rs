@@ -3944,6 +3944,157 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn tracked_string_substring_bounds(
+        range: MaybeOpenRange,
+        content_cap: usize,
+    ) -> Result<(usize, Option<usize>, usize), CompileError> {
+        let start = range.start.unwrap_or(0);
+        if start < 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring on tracked strings supports only non-negative byte range starts in eBPF"
+                    .into(),
+            ));
+        }
+        let start = usize::try_from(start).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "str substring tracked string range start is too large for eBPF".into(),
+            )
+        })?;
+        let start = start.min(content_cap);
+
+        let end_exclusive = match range.end {
+            Some(end) => {
+                if end < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str substring on tracked strings supports only non-negative byte range ends in eBPF"
+                            .into(),
+                    ));
+                }
+                let end = if range.inclusive {
+                    end.checked_add(1).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "str substring tracked string inclusive range end overflowed in eBPF"
+                                .into(),
+                        )
+                    })?
+                } else {
+                    end
+                };
+                Some(usize::try_from(end).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str substring tracked string range end is too large for eBPF".into(),
+                    )
+                })?)
+            }
+            None => None,
+        };
+        let static_end = end_exclusive
+            .map(|end| end.min(content_cap))
+            .unwrap_or(content_cap)
+            .max(start);
+        Ok((start, end_exclusive, static_end.saturating_sub(start)))
+    }
+
+    fn lower_tracked_string_substring(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        range: MaybeOpenRange,
+        use_grapheme_clusters: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        if Self::exact_string_value(&input_meta).is_some() {
+            return Ok(false);
+        }
+        let Some(input_slot) = input_meta.string_slot else {
+            return Ok(false);
+        };
+        let Some(input_len_vreg) = input_meta.string_len_vreg else {
+            return Ok(false);
+        };
+        if use_grapheme_clusters {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring --grapheme-clusters requires compile-time known string input in eBPF"
+                    .into(),
+            ));
+        }
+
+        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str substring tracked string slot size is unavailable in eBPF".into(),
+            )
+        })?;
+        let input_content_cap = self.string_input_max_len(&input_meta, input_slot_size);
+        let (start, end_exclusive, output_content_cap) =
+            Self::tracked_string_substring_bounds(range, input_content_cap)?;
+        let output_slot_len = align_to_eight(output_content_cap.saturating_add(1)).max(16);
+        let output_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: output_slot_len,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(output_slot_len, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(out_slot, output_ty.clone());
+
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(output_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_zero(result_vreg, 0, output_slot_len)?;
+
+        if output_content_cap > 0 {
+            let input_ptr_vreg = self.func.alloc_vreg();
+            let input_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: input_slot_size,
+            };
+            self.emit(MirInst::Copy {
+                dst: input_ptr_vreg,
+                src: MirValue::StackSlot(input_slot),
+            });
+            self.vreg_type_hints.insert(
+                input_ptr_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(input_ty),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            self.emit_ptr_to_slot_copy(out_slot, 0, input_ptr_vreg, start, output_content_cap)?;
+        }
+
+        let output_len_vreg = self.func.alloc_vreg();
+        self.emit_nonnegative_substring_len(
+            output_len_vreg,
+            input_len_vreg,
+            start,
+            end_exclusive,
+            output_content_cap,
+        )?;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(output_ty);
+        out_meta.string_slot = Some(out_slot);
+        out_meta.string_len_vreg = Some(output_len_vreg);
+        out_meta.string_len_bound = Some(output_content_cap);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::String {
+            slot_len: output_slot_len,
+            content_cap: output_content_cap,
+        });
+        Ok(true)
+    }
+
     fn lower_typed_fixed_string_array_substring(
         &mut self,
         src_dst: RegId,
@@ -4244,6 +4395,18 @@ impl<'a> HirToMirLowering<'a> {
                 result_vreg,
                 input_reg,
                 input_vreg,
+                range,
+                use_grapheme_clusters,
+            )?
+        {
+            return Ok(());
+        }
+
+        if let Some(input_reg) = input_reg
+            && self.lower_tracked_string_substring(
+                src_dst,
+                result_vreg,
+                input_reg,
                 range,
                 use_grapheme_clusters,
             )?
