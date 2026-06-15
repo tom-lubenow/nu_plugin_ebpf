@@ -81,7 +81,7 @@ const VERIFIER_DIFF_FIXTURES_2607_2617 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math median compile-time list median has type float; eBPF supports only integer median results unless folded by fill"
+        error_contains: "math median compile-time list median has type float; eBPF supports only integer median results unless folded by metadata-only consumers"
     }
     {
         name: "core-math-mode-rejects-dynamic-input"

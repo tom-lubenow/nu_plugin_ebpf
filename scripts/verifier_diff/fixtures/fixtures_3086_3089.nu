@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_3086_3089 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math variance compile-time list result has type float; eBPF supports only results folded by fill"
+        error_contains: "math variance compile-time list result has type float; eBPF supports only results folded by metadata-only consumers"
     }
     {
         name: "core-math-stddev-rejects-unfolded-float-result"
@@ -25,7 +25,7 @@ const VERIFIER_DIFF_FIXTURES_3086_3089 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math stddev compile-time list result has type float; eBPF supports only results folded by fill"
+        error_contains: "math stddev compile-time list result has type float; eBPF supports only results folded by metadata-only consumers"
     }
     {
         name: "core-math-variance-rejects-non-finite-result"
