@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Hardened HIR lowering so unterminated IR blocks return a compiler error
+  without relying on an internal unwrap.
 - Improved annotated mutable fixed-array layout mismatch diagnostics so nested
   arrays report field element paths such as `entries[1]`.
 - Improved annotated mutable record diagnostics so omitted nested fields report

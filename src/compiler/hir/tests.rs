@@ -115,6 +115,31 @@ fn test_hir_call_leaves_unset_src_dst_without_pipeline_input() {
 }
 
 #[test]
+fn test_hir_rejects_block_without_terminator() {
+    let ir = IrBlock {
+        instructions: vec![],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec![],
+        register_count: 0,
+        file_count: 0,
+    };
+
+    let err = match HirFunction::from_ir_block(ir) {
+        Ok(_) => panic!("Expected unterminated IR block to be rejected"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert_eq!(msg, "HIR block missing terminator");
+        }
+        other => panic!("Expected unsupported instruction error, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_supports_constant_value_for_record_with_nested_numeric_list() {
     let mut record = Record::new();
     record.push(

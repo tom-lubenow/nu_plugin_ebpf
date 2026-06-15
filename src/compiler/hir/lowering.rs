@@ -456,16 +456,19 @@ impl HirFunction {
             ));
         }
 
-        if terminator.is_none() {
-            return Err(CompileError::UnsupportedInstruction(
-                "HIR block missing terminator".into(),
-            ));
-        }
+        let terminator = match terminator {
+            Some(terminator) => terminator,
+            None => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "HIR block missing terminator".into(),
+                ));
+            }
+        };
 
         blocks.push(HirBlock {
             id: current_block_id,
             stmts,
-            terminator: terminator.unwrap(),
+            terminator,
         });
 
         Ok(HirFunction {
