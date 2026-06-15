@@ -307,8 +307,8 @@ impl<'a> HirToMirLowering<'a> {
             let _ = (item_list_max_len, item_string_slot_len);
             if item_ty != elem_ty {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "annotated mutable fixed-array globals require homogeneous element layouts; element 0 has {:?}, element {} has {:?}",
-                    elem_ty, actual_idx, item_ty
+                    "annotated mutable fixed-array globals require homogeneous element layouts; {} has {:?}, {} has {:?}",
+                    first_path, elem_ty, path, item_ty
                 )));
             }
             data.extend_from_slice(&item_data);

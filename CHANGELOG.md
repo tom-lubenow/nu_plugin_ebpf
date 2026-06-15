@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Improved annotated mutable fixed-array layout mismatch diagnostics so nested
+  arrays report field element paths such as `entries[1]`.
 - Improved annotated mutable record diagnostics so omitted nested fields report
   the full missing field path when the parent record initializer is present.
 - Improved mutable captured list diagnostics so heterogeneous constant lists name

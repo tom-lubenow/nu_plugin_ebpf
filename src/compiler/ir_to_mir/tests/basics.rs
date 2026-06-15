@@ -8360,6 +8360,73 @@ fn test_lower_leading_annotated_mut_nested_empty_fixed_array_rejects_with_field_
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_nested_fixed_array_layout_mismatch_names_field_path() {
+    let global_var = VarId::new(364);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut initial = Record::new();
+    initial.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::string("a", Span::test_data()),
+                Value::string("abcdefghijklmnop", Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([(
+            "entries".to_string(),
+            Type::List(Box::new(Type::String)),
+        )])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("nested fixed-array layout mismatches should name field element paths");
+
+    assert!(
+        err.to_string()
+            .contains("annotated mutable fixed-array globals require homogeneous element layouts"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("entries[0]"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("entries[1]"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_scalar_null_uses_bss_global() {
     let global_var = VarId::new(349);
     let func = HirFunction {
