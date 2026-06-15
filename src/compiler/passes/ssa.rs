@@ -269,11 +269,9 @@ impl<'a> SsaBuilder<'a> {
         let mut pushed_counts: HashMap<VReg, usize> = HashMap::new();
 
         // Get the block (we need to work with indices due to borrow checker)
-        let block_idx = self.func.blocks.iter().position(|b| b.id == block_id);
-        if block_idx.is_none() {
+        let Some(block_idx) = self.func.blocks.iter().position(|b| b.id == block_id) else {
             return;
-        }
-        let block_idx = block_idx.unwrap();
+        };
 
         // Process instructions in the block
         let num_instructions = self.func.blocks[block_idx].instructions.len();

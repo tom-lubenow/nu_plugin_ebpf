@@ -93,9 +93,9 @@ impl<'a> HirToMirLowering<'a> {
                 let (ty, data) = Self::constant_record_rodata_repr(val.as_ref())?;
                 Some((ty, data, None, None))
             }
-            value if Self::mutable_string_global_repr(value).is_some() => {
-                let (ty, data, slot_len) = Self::mutable_string_global_repr(value).unwrap();
-                Some((ty, data, None, Some(slot_len)))
+            value @ (Value::String { .. } | Value::Glob { .. }) => {
+                Self::mutable_string_global_repr(value)
+                    .map(|(ty, data, slot_len)| (ty, data, None, Some(slot_len)))
             }
             Value::List { vals, .. }
                 if crate::compiler::hir::supports_numeric_constant_list(value) =>

@@ -4022,11 +4022,14 @@ impl<'a> HirToMirLowering<'a> {
                                 .and_then(|m| m.field_type.clone())
                         });
                     let size = match field_type.as_ref() {
-                        Some(ty) if Self::aggregate_call_value_byte_array_len(ty).is_some() => {
-                            Self::aggregate_call_value_byte_array_len(ty).unwrap()
-                        }
-                        Some(ty) if Self::aggregate_call_value_type(ty).is_some() => {
-                            Self::aggregate_call_value_type(ty).unwrap().size()
+                        Some(ty) => {
+                            if let Some(len) = Self::aggregate_call_value_byte_array_len(ty) {
+                                len
+                            } else if let Some(value_ty) = Self::aggregate_call_value_type(ty) {
+                                value_ty.size()
+                            } else {
+                                8
+                            }
                         }
                         _ => 8,
                     };

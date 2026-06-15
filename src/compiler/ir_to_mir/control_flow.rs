@@ -2182,12 +2182,9 @@ impl<'a> HirToMirLowering<'a> {
                     }
 
                     // Determine what type of value we're appending and its max length.
-                    let (val_type, append_max) = if val_meta
-                        .as_ref()
-                        .map(|m| m.string_slot.is_some())
-                        .unwrap_or(false)
+                    let (val_type, append_max) = if let Some(val_slot) =
+                        val_meta.as_ref().and_then(|m| m.string_slot)
                     {
-                        let val_slot = val_meta.as_ref().unwrap().string_slot.unwrap();
                         let max_len = val_meta
                             .as_ref()
                             .and_then(|m| m.string_len_bound)
@@ -2201,19 +2198,10 @@ impl<'a> HirToMirLowering<'a> {
                             },
                             append_max,
                         )
-                    } else if val_meta
-                        .as_ref()
-                        .map(|m| m.literal_string.is_some())
-                        .unwrap_or(false)
+                    } else if let Some(literal_string) =
+                        val_meta.as_ref().and_then(|m| m.literal_string.as_ref())
                     {
-                        let bytes = val_meta
-                            .as_ref()
-                            .unwrap()
-                            .literal_string
-                            .as_ref()
-                            .unwrap()
-                            .as_bytes()
-                            .to_vec();
+                        let bytes = literal_string.as_bytes().to_vec();
                         let append_max = if bytes.contains(&0) {
                             bytes.len()
                         } else {
