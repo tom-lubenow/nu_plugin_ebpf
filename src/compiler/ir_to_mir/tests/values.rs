@@ -18198,6 +18198,98 @@ fn test_lower_str_index_of_on_known_string_returns_first_offset() {
 }
 
 #[test]
+fn test_lower_str_index_of_runtime_substring_uses_guarded_candidates() {
+    let index_of_decl = DeclId::new(10_659);
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("abc".into()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("comm")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of should lower runtime tracked substrings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime-substring str index-of to branch on candidate lengths and offsets"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected runtime-substring str index-of to compare one-byte candidates"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
+        "expected runtime-substring str index-of to compare multi-byte candidates"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime-substring str index-of should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_index_of_missing_substring_returns_minus_one() {
     let index_of_decl = DeclId::new(125);
     let hir = make_string_arg_pipeline_call_program(index_of_decl, "a", "abcdef");

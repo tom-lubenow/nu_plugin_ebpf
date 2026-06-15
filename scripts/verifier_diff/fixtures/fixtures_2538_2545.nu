@@ -14,18 +14,18 @@ const VERIFIER_DIFF_FIXTURES_2538_2545 = [
         error_contains: "str index-of accepts exactly one substring argument in eBPF"
     }
     {
-        name: "core-string-str-index-of-rejects-dynamic-substring"
+        name: "core-string-str-index-of-accepts-dynamic-substring"
         category: "language-core"
-        tags: [string str index-of diagnostics reject]
+        tags: [string str index-of accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str index-of $ctx.comm'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "str index-of requires a compile-time string literal"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-string-str-index-of-nul-substring"
