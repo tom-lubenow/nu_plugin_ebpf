@@ -1302,14 +1302,37 @@ fn test_lower_global_get_string_compares_two_runtime_strings() {
                     op: nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal),
                     rhs: RegId::new(6),
                 },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(7),
+                    op: nu_protocol::ast::Operator::Comparison(
+                        nu_protocol::ast::Comparison::NotEqual,
+                    ),
+                    rhs: RegId::new(8),
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(5) },
+            terminator: HirTerminator::Return { src: RegId::new(7) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 7,
+        register_count: 9,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
