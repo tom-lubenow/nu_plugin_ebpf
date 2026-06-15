@@ -28,18 +28,18 @@ const VERIFIER_DIFF_FIXTURES_2491_2496 = [
         error_contains: "str starts-with requires tracked string input in eBPF"
     }
     {
-        name: "core-string-starts-with-rejects-dynamic-prefix"
+        name: "core-string-starts-with-accepts-dynamic-prefix"
         category: "language-core"
-        tags: [string str starts-with diagnostics reject]
+        tags: [string str starts-with accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  "abc" | str starts-with $ctx.comm'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "str starts-with requires a compile-time string literal"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-string-starts-with-rejects-list-item-type"
