@@ -8987,14 +8987,18 @@ fn test_map_contains_bloom_filter_reuses_declared_map_kind_and_compiles() {
 
     let entry = result.program.main.entry;
     let block = result.program.main.block(entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::StoreSlot {
-            val: MirValue::VReg(_),
-            ty: MirType::I64,
-            ..
-        }
-    )));
+    let readonly_value_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadGlobal {
+                dst,
+                ty: MirType::I64,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("declared scalar bloom-filter value should load from readonly global data");
     assert!(block.instructions.iter().any(|inst| matches!(
         inst,
         MirInst::LoadMapFd {
@@ -9008,7 +9012,9 @@ fn test_map_contains_bloom_filter_reuses_declared_map_kind_and_compiles() {
             helper,
             args,
             ..
-        } if *helper == BpfHelper::MapPeekElem as u32 && args.len() == 2
+        } if *helper == BpfHelper::MapPeekElem as u32
+            && args.len() == 2
+            && matches!(args[1], MirValue::VReg(vreg) if vreg == readonly_value_vreg)
     )));
     let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Eq, 0);
     assert_eq!(
