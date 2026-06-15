@@ -1849,6 +1849,40 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             }
 
+            if let Some(shift_count_vreg) = self.bits_shift_runtime_signed_i64_count(cmd_name)? {
+                for (index, value) in vals.iter().enumerate() {
+                    if !matches!(value, nu_protocol::Value::Int { .. }) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    }
+                }
+                let materialized = nu_protocol::Value::list(vals, nu_protocol::Span::unknown());
+                self.assign_fresh_vreg(input_reg);
+                self.lower_constant_value(input_reg, &materialized)?;
+                let input_vreg = self.get_vreg(input_reg);
+                let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    ))
+                })?;
+                if input_meta.list_buffer.is_none() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    )));
+                }
+                return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta: &input_meta,
+                    op: Self::bits_shift_op(cmd_name, BitsShiftMode::SignedI64),
+                    rhs_value: MirValue::VReg(shift_count_vreg),
+                });
+            }
+
             let output = vals
                 .into_iter()
                 .enumerate()
@@ -2726,6 +2760,39 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             }
 
+            if let Some(rotate_count_vreg) = self.bits_rotate_runtime_signed_i64_count(cmd_name)? {
+                for (index, value) in vals.iter().enumerate() {
+                    if !matches!(value, nu_protocol::Value::Int { .. }) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    }
+                }
+                let materialized = nu_protocol::Value::list(vals, nu_protocol::Span::unknown());
+                self.assign_fresh_vreg(input_reg);
+                self.lower_constant_value(input_reg, &materialized)?;
+                let input_vreg = self.get_vreg(input_reg);
+                let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    ))
+                })?;
+                if input_meta.list_buffer.is_none() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    )));
+                }
+                return self.lower_bits_rotate_runtime_count_list(
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    &input_meta,
+                    rotate_count_vreg,
+                );
+            }
+
             let output = vals
                 .into_iter()
                 .enumerate()
@@ -2951,6 +3018,16 @@ impl<'a> HirToMirLowering<'a> {
             )?;
             return Ok(());
         }
+        if let Some(rotate_count_vreg) = self.bits_rotate_runtime_signed_i64_count(cmd_name)? {
+            return self.lower_bits_rotate_runtime_count_list(
+                cmd_name,
+                src_dst,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                rotate_count_vreg,
+            );
+        }
         let spec = self.bits_rotate_spec(cmd_name, None)?;
         if spec.mode == BitsShiftMode::UnsignedI64 {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -2965,6 +3042,86 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             spec,
         )
+    }
+
+    fn lower_bits_rotate_runtime_count_list(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        rotate_count_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed integer list in eBPF"
+            )));
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        if max_len > 0 {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for index in 0..max_len {
+                let transform_block = self.func.alloc_block();
+                let next_block = if index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: in_bounds_vreg,
+                    if_true: transform_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = transform_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+
+                let output_vreg = self.func.alloc_vreg();
+                self.emit_bits_rotate_signed_i64_runtime_count_value(
+                    cmd_name,
+                    output_vreg,
+                    MirValue::VReg(item_vreg),
+                    rotate_count_vreg,
+                );
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: output_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        Ok(())
     }
 
     fn lower_bits_rotate_runtime_list(
@@ -3999,6 +4156,17 @@ impl<'a> HirToMirLowering<'a> {
                 input_meta,
                 BitsShiftRuntimeTransform::AutoRight { count },
             );
+        }
+        if let Some(shift_count_vreg) = self.bits_shift_runtime_signed_i64_count(cmd_name)? {
+            return self.lower_bits_binary_runtime_list(BitsBinaryRuntimeList {
+                cmd_name,
+                src_dst,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                op: Self::bits_shift_op(cmd_name, BitsShiftMode::SignedI64),
+                rhs_value: MirValue::VReg(shift_count_vreg),
+            });
         }
         let spec = self.bits_shift_spec(cmd_name, None)?;
         if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {

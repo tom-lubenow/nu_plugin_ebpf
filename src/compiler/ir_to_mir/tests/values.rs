@@ -37916,6 +37916,133 @@ fn make_runtime_bits_shift_list_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_signed_i64_list_runtime_count_length_program(
+    bits_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    count_end: i64,
+    runtime_input: bool,
+) -> HirProgram {
+    let mut stmts = if runtime_input {
+        vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::List { capacity: 1 },
+            },
+            HirStmt::Call {
+                decl_id: random_decl,
+                src_dst: RegId::new(1),
+                args: HirCallArgs::default(),
+            },
+            HirStmt::ListPush {
+                src_dst: RegId::new(0),
+                item: RegId::new(1),
+            },
+        ]
+    } else {
+        vec![HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::int(2, Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        }]
+    };
+    let mut next_reg = if runtime_input { 2 } else { 1 };
+
+    let range_start_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let range_step_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let range_end_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let range_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let count_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let number_bytes_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let bits_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let length_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+
+    stmts.extend([
+        HirStmt::LoadLiteral {
+            dst: range_start_reg,
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::LoadLiteral {
+            dst: range_step_reg,
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: range_end_reg,
+            lit: HirLiteral::Int(count_end),
+        },
+        HirStmt::LoadLiteral {
+            dst: range_reg,
+            lit: HirLiteral::Range {
+                start: range_start_reg,
+                step: range_step_reg,
+                end: range_end_reg,
+                inclusion: RangeInclusion::Inclusive,
+            },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: count_reg,
+            args: HirCallArgs {
+                positional: vec![range_reg],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: number_bytes_reg,
+            lit: HirLiteral::Int(8),
+        },
+        HirStmt::Call {
+            decl_id: bits_decl,
+            src_dst: bits_result_reg,
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                positional: vec![count_reg],
+                named: vec![(b"number-bytes".to_vec(), number_bytes_reg)],
+                flags: vec![b"signed".to_vec()],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: length_result_reg,
+            args: HirCallArgs {
+                pipeline_input: Some(bits_result_reg),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: length_result_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_math_abs_on_runtime_stack_numeric_list() {
     let abs_decl = DeclId::new(268);
@@ -38391,6 +38518,77 @@ fn test_lower_bits_shift_signed_i64_on_runtime_stack_numeric_lists() {
                     "{command_name} runtime list output consumed by length should compile: {err}"
                 )
             });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_rotate_signed_i64_lists_accept_bounded_runtime_count() {
+    for (offset, command_name, count_end) in [
+        (0, "bits shl", 63),
+        (1, "bits shr", 63),
+        (2, "bits rol", 64),
+        (3, "bits ror", 64),
+    ] {
+        for runtime_input in [false, true] {
+            let input_offset = usize::from(runtime_input);
+            let bits_decl = DeclId::new(72000 + offset * 10 + input_offset);
+            let length_decl = DeclId::new(72040 + offset * 10 + input_offset);
+            let random_decl = DeclId::new(72080 + offset * 10 + input_offset);
+            let hir = make_bits_signed_i64_list_runtime_count_length_program(
+                bits_decl,
+                length_decl,
+                random_decl,
+                count_end,
+                runtime_input,
+            );
+            let decl_names = HashMap::from([
+                (bits_decl, command_name.to_string()),
+                (length_decl, "length".to_string()),
+                (random_decl, "random int".to_string()),
+            ]);
+
+            let result = lower_hir_to_mir_with_hints(
+                &hir,
+                None,
+                &decl_names,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} should accept bounded runtime counts on signed i64 lists: {err}"
+                )
+            });
+            let instructions = result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .collect::<Vec<_>>();
+
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        rhs: MirValue::VReg(_),
+                        ..
+                    }
+                )),
+                "expected {command_name} to use a runtime count register"
+            );
+            assert!(
+                instructions
+                    .iter()
+                    .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+                "expected {command_name} to materialize an output list"
+            );
+            compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                .unwrap_or_else(|err| {
+                    panic!("{command_name} bounded runtime list count should compile: {err}")
+                });
+        }
     }
 }
 
