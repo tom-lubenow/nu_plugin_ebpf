@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2797_2806 = [
     {
-        name: "core-operator-string-equality-rejects-two-runtime-strings"
+        name: "core-operator-string-equality-accepts-two-runtime-strings"
         category: "language-core"
-        tags: [operators string-equality diagnostics reject runtime]
+        tags: [operators string-equality accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -13,9 +13,9 @@ const VERIFIER_DIFF_FIXTURES_2797_2806 = [
             '  $l == $r'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "string equality requires at least one compile-time known string operand in eBPF"
+        default_test_lane: "dry-run"
     }
     {
         name: "core-operator-starts-with-rejects-runtime-prefix"

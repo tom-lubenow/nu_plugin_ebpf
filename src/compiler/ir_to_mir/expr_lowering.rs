@@ -318,6 +318,18 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
         };
+        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+
+        if lhs_source.exact_len.is_none() && rhs_source.exact_len.is_none() {
+            self.lower_runtime_string_equality_dynamic(
+                lhs_dst,
+                result_vreg,
+                invert,
+                &lhs_source,
+                &rhs_source,
+            );
+            return Ok(true);
+        }
 
         let (known_source, other_source) = if lhs_source.exact_len.is_some() {
             (&lhs_source, &rhs_source)
@@ -332,7 +344,6 @@ impl<'a> HirToMirLowering<'a> {
         let compare_len = known_source
             .exact_len
             .expect("known source should have exact length");
-        let result_vreg = self.assign_fresh_vreg(lhs_dst);
 
         if compare_len > other_source.max_len {
             self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, false);
@@ -388,6 +399,113 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.finish_runtime_bool_result(lhs_dst, result_vreg);
         Ok(true)
+    }
+
+    fn lower_runtime_string_equality_dynamic(
+        &mut self,
+        dst: RegId,
+        dst_vreg: VReg,
+        invert: bool,
+        lhs_source: &StringEqualitySource,
+        rhs_source: &StringEqualitySource,
+    ) {
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(lhs_source.len_vreg),
+            rhs: MirValue::VReg(rhs_source.len_vreg),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+        let all_match = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: all_match,
+            src: MirValue::Const(1),
+        });
+        self.vreg_type_hints.insert(all_match, MirType::Bool);
+
+        for offset in 0..lhs_source.max_len.min(rhs_source.max_len) {
+            let lhs_in_range = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: lhs_in_range,
+                op: BinOpKind::Gt,
+                lhs: MirValue::VReg(lhs_source.len_vreg),
+                rhs: MirValue::Const(offset as i64),
+            });
+            self.vreg_type_hints.insert(lhs_in_range, MirType::Bool);
+
+            let rhs_in_range = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: rhs_in_range,
+                op: BinOpKind::Gt,
+                lhs: MirValue::VReg(rhs_source.len_vreg),
+                rhs: MirValue::Const(offset as i64),
+            });
+            self.vreg_type_hints.insert(rhs_in_range, MirType::Bool);
+
+            let in_range = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: in_range,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(lhs_in_range),
+                rhs: MirValue::VReg(rhs_in_range),
+            });
+            self.vreg_type_hints.insert(in_range, MirType::Bool);
+
+            let compare_block = self.func.alloc_block();
+            let next_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: in_range,
+                if_true: compare_block,
+                if_false: next_block,
+            });
+
+            self.current_block = compare_block;
+            let bytes_match = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: bytes_match,
+                lhs: lhs_source.slot,
+                lhs_offset: offset,
+                rhs: rhs_source.slot,
+                rhs_offset: offset,
+                len: 1,
+            });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+            self.emit(MirInst::BinOp {
+                dst: all_match,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(all_match),
+                rhs: MirValue::VReg(bytes_match),
+            });
+            self.terminate(MirInst::Jump { target: next_block });
+
+            self.current_block = next_block;
+        }
+
+        let equal_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: equal_vreg,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(len_matches),
+            rhs: MirValue::VReg(all_match),
+        });
+        self.vreg_type_hints.insert(equal_vreg, MirType::Bool);
+
+        if invert {
+            self.emit(MirInst::BinOp {
+                dst: dst_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(equal_vreg),
+                rhs: MirValue::Const(0),
+            });
+        } else {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(equal_vreg),
+            });
+        }
+        self.finish_runtime_bool_result(dst, dst_vreg);
     }
 
     fn lower_runtime_string_equality_const(
