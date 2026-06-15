@@ -9543,11 +9543,21 @@ impl<'a> HirToMirLowering<'a> {
         let object_vreg = self.local_storage_object_vreg(object_vreg, object_reg);
 
         let init_arg = if let Some((init_vreg, init_reg)) = self.named_args.get("init").copied() {
-            self.reject_context_pointer_payload(Some(init_reg), "map-get init value")?;
-            let init_vreg = self.materialized_metadata_aggregate_vreg(init_reg, init_vreg)?;
+            let mut schema_materialized_init = false;
+            let init_vreg = if let Some(schema_init_vreg) = self
+                .materialize_declared_constant_map_value(&map_ref, init_reg, "map-get init value")?
+            {
+                schema_materialized_init = true;
+                schema_init_vreg
+            } else {
+                self.reject_context_pointer_payload(Some(init_reg), "map-get init value")?;
+                self.materialized_metadata_aggregate_vreg(init_reg, init_vreg)?
+            };
             let (init_ptr_vreg, _) =
                 self.materialize_map_value_probe_pointer(Some(init_reg), init_vreg, "map-get")?;
-            self.record_named_map_value_schema_from_reg(&map_ref, Some(init_reg), "map-get")?;
+            if !schema_materialized_init {
+                self.record_named_map_value_schema_from_reg(&map_ref, Some(init_reg), "map-get")?;
+            }
             MirValue::VReg(init_ptr_vreg)
         } else {
             MirValue::Const(0)
