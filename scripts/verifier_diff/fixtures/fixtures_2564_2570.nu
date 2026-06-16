@@ -80,7 +80,7 @@ const VERIFIER_DIFF_FIXTURES_2564_2570 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "fill requires compile-time known string, int, float, or filesize input in eBPF"
+        error_contains: "fill requires compile-time known string, int, float, filesize, or bool input in eBPF"
     }
     {
         name: "core-string-fill-mixed-list-join"
