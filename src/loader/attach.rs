@@ -1091,6 +1091,17 @@ impl EbpfState {
         }
         if matches!(
             program.prog_type.attach_kind(),
+            ProgramAttachKind::Tracepoint
+        ) && object_has_map_in_map_runtime_map(object)
+        {
+            let (category, name) = spec.tracepoint_parts().unwrap_or_else(|| {
+                unreachable!("tracepoint attach kind must use tracepoint program spec")
+            });
+            return self
+                .attach_libbpf_tracepoint_object(object, pin_group, program, category, name);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepoint
         ) && object_has_map_in_map_runtime_map(object)
         {
@@ -2125,6 +2136,27 @@ impl EbpfState {
             elf_bytes,
             &program.name,
             &program.target,
+            program.prog_type.canonical_prefix(),
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
+    }
+
+    fn attach_libbpf_tracepoint_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        category: &str,
+        name: &str,
+    ) -> Result<u32, LoadError> {
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_tracepoint(
+            elf_bytes,
+            &program.name,
+            category,
+            name,
             program.prog_type.canonical_prefix(),
             pin_root_path.as_deref(),
         )?;
