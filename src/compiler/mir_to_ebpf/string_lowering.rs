@@ -279,9 +279,17 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         // Check for zero special case
         // if val == 0, just store '0' and return
+        let cmp_reg = if val_reg == EbpfReg::R0 {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R3, EbpfReg::R0));
+            EbpfReg::R3
+        } else {
+            val_reg
+        };
         let non_zero_skip = 6i16; // Instructions to skip if non-zero
+        self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
         self.instructions
-            .push(EbpfInsn::jne_reg(val_reg, EbpfReg::R0, non_zero_skip)); // R0 should be 0 here
+            .push(EbpfInsn::jne_reg(cmp_reg, EbpfReg::R0, non_zero_skip));
 
         // Store '0' character
         self.instructions
@@ -293,18 +301,20 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.instructions
             .push(EbpfInsn::stxb(EbpfReg::R1, 0, EbpfReg::R0));
         self.instructions.push(EbpfInsn::mov64_imm(len_reg, 1));
+        let zero_done_jmp_idx = self.instructions.len();
+        self.instructions.push(EbpfInsn::jump(0));
 
         // For non-zero: extract digits (simplified - handles up to 10 digits)
         // This is a bounded loop for the verifier
         // R3 = working value, R4 = digit count, R5 = temp buffer offset
         self.instructions
-            .push(EbpfInsn::mov64_reg(EbpfReg::R3, val_reg));
+            .push(EbpfInsn::mov64_reg(EbpfReg::R3, cmp_reg));
         self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R4, 0));
 
         // Extract up to 20 digits (covers full i64 range)
         for _ in 0..20 {
             // Skip if R3 == 0
-            let done_offset = 8i16;
+            let done_offset = 9i16;
             self.instructions
                 .push(EbpfInsn::jeq_imm(EbpfReg::R3, 0, done_offset));
 
@@ -339,6 +349,13 @@ impl<'a> MirToEbpfCompiler<'a> {
         // R4 now has the digit count
         self.instructions
             .push(EbpfInsn::mov64_reg(len_reg, EbpfReg::R4));
+        let zero_done_offset = i16::try_from(self.instructions.len() - zero_done_jmp_idx - 1)
+            .map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "IntToString zero-case jump offset exceeds eBPF range".into(),
+                )
+            })?;
+        self.instructions[zero_done_jmp_idx] = EbpfInsn::jump(zero_done_offset);
 
         Ok(())
     }

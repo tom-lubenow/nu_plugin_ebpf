@@ -150,6 +150,78 @@ fn test_int_to_string() {
 }
 
 #[test]
+fn test_int_to_string_zero_compare_initializes_r0_and_preserves_r0_value() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let slot = StackSlotId(0);
+    let val = VReg(0);
+    let len = VReg(1);
+
+    compiler.slot_offsets.insert(slot, -32);
+    compiler.vreg_to_phys.insert(val, EbpfReg::R0);
+    compiler.vreg_to_phys.insert(len, EbpfReg::R2);
+
+    compiler
+        .compile_int_to_string(slot, len, val)
+        .expect("IntToString should lower with val in R0");
+
+    let jne_reg = opcode::BPF_JMP | opcode::BPF_JNE | opcode::BPF_X;
+    let jne_idx = compiler
+        .instructions
+        .iter()
+        .position(|insn| {
+            insn.opcode == jne_reg
+                && insn.dst_reg == EbpfReg::R3.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+                && insn.offset == 6
+        })
+        .expect("expected zero-special-case compare against initialized R0");
+
+    assert!(
+        compiler.instructions[..jne_idx].iter().any(|insn| {
+            insn.opcode == opcode::MOV64_REG
+                && insn.dst_reg == EbpfReg::R3.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        }),
+        "value in R0 should be copied before R0 is initialized for comparison"
+    );
+
+    let zero_init = compiler.instructions[jne_idx - 1];
+    assert_eq!(zero_init.opcode, opcode::MOV64_IMM);
+    assert_eq!(zero_init.dst_reg, EbpfReg::R0.as_u8());
+    assert_eq!(zero_init.imm, 0);
+
+    let zero_done_jmp_idx =
+        jne_idx + usize::try_from(compiler.instructions[jne_idx].offset).unwrap();
+    let zero_done_jmp = compiler.instructions[zero_done_jmp_idx];
+    assert_eq!(zero_done_jmp.opcode, opcode::BPF_JMP | opcode::BPF_JA);
+
+    let non_zero_idx =
+        jne_idx + 1 + usize::try_from(compiler.instructions[jne_idx].offset).unwrap();
+    let non_zero_setup = compiler.instructions[non_zero_idx];
+    assert_eq!(non_zero_setup.opcode, opcode::MOV64_REG);
+    assert_eq!(non_zero_setup.dst_reg, EbpfReg::R3.as_u8());
+    assert_eq!(non_zero_setup.src_reg, EbpfReg::R3.as_u8());
+
+    let zero_done_idx = zero_done_jmp_idx + 1 + usize::try_from(zero_done_jmp.offset).unwrap();
+    assert_eq!(
+        zero_done_idx,
+        compiler.instructions.len(),
+        "zero path should jump past non-zero digit extraction"
+    );
+
+    assert!(
+        compiler.instructions[non_zero_idx..].iter().any(|insn| {
+            insn.opcode == (opcode::BPF_JMP | opcode::BPF_JEQ | opcode::BPF_K)
+                && insn.dst_reg == EbpfReg::R3.as_u8()
+                && insn.imm == 0
+                && insn.offset == 9
+        }),
+        "digit extraction should skip the full unrolled iteration once R3 reaches zero"
+    );
+}
+
+#[test]
 fn test_string_append_slot() {
     // Test appending from another string slot
     use crate::compiler::mir::*;
