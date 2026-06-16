@@ -1101,7 +1101,7 @@ impl EbpfState {
         }
         if matches!(
             program.prog_type.attach_kind(),
-            ProgramAttachKind::Fentry | ProgramAttachKind::Fexit
+            ProgramAttachKind::Fentry | ProgramAttachKind::Fexit | ProgramAttachKind::TpBtf
         ) && object_has_map_in_map_runtime_map(object)
         {
             return self.attach_libbpf_trace_object(object, pin_group, program);

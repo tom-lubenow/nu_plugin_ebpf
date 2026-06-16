@@ -1771,15 +1771,16 @@ fn test_raw_tracepoint_map_in_map_routes_to_libbpf_loader() {
 
 #[test]
 fn test_btf_trace_map_in_map_routes_to_libbpf_loader() {
-    for (prog_type, label) in [
-        (EbpfProgramType::Fentry, "fentry"),
-        (EbpfProgramType::Fexit, "fexit"),
+    for (prog_type, target, label) in [
+        (EbpfProgramType::Fentry, "tcp_v4_rcv", "fentry"),
+        (EbpfProgramType::Fexit, "tcp_v4_rcv", "fexit"),
+        (EbpfProgramType::TpBtf, "sched_switch", "tp_btf"),
     ] {
         let state = EbpfState::new();
         let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
         let object = live_map_in_map_fixture_for_program(
             prog_type,
-            "tcp_v4_rcv",
+            target,
             HashMap::from([(outer_ref, inner_ref)]),
             vec![],
         );
