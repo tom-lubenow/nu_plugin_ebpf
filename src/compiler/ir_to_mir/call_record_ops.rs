@@ -126,6 +126,9 @@ impl<'a> HirToMirLowering<'a> {
         let statically_non_empty = !input_meta.record_fields.is_empty()
             || Self::typed_mutable_global_record_field_count(input_meta)
                 .is_some_and(|count| count > 0)
+            || input_meta.list_min_len.is_some_and(|len| len > 0)
+            || (!input_meta.mutable_global_runtime
+                && Self::numeric_list_known_len(input_meta).is_some_and(|len| len > 0))
             || input_meta
                 .annotated_semantics
                 .as_ref()

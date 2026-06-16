@@ -1617,6 +1617,86 @@ fn make_seq_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_default_empty_then_length_program(
+    seq_decl: DeclId,
+    default_decl: DeclId,
+    length_decl: DeclId,
+    seq_args: &[HirLiteral],
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let default_value_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: default_value_reg,
+        val: Box::new(Value::list(
+            vec![Value::int(9, Span::test_data())],
+            Span::test_data(),
+        )),
+    });
+
+    let default_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: default_decl,
+        src_dst: default_reg,
+        args: HirCallArgs {
+            positional: vec![default_value_reg],
+            pipeline_input: Some(seq_reg),
+            flags: vec![b"empty".to_vec()],
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(default_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_seq_transform_join_then_starts_with_program(
     seq_decl: DeclId,
     transform_decl: DeclId,
@@ -54099,6 +54179,38 @@ fn test_lower_default_empty_flag_passthrough_runtime_scalar() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime scalar default --empty passthrough should compile through codegen");
+}
+
+#[test]
+fn test_lower_default_empty_flag_passthrough_non_empty_numeric_list() {
+    let seq_decl = DeclId::new(16_914);
+    let default_decl = DeclId::new(16_915);
+    let length_decl = DeclId::new(16_916);
+    let hir = make_seq_default_empty_then_length_program(
+        seq_decl,
+        default_decl,
+        length_decl,
+        &[HirLiteral::Int(1), HirLiteral::Int(5)],
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (default_decl, "default".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty should pass through proven non-empty numeric lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "default --empty numeric-list passthrough consumed by length should compile through codegen",
+    );
 }
 
 #[test]
