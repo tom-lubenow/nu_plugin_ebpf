@@ -63,6 +63,10 @@ def validate-fixture-tags [fixture] {
             fail $"fixture ($fixture.name) declares duplicate tag '($tag)'"
         }
     }
+
+    if ($tags | any {|tag| $tag == "diagnostics" }) and $fixture.local != "reject" {
+        fail $"fixture ($fixture.name) tags diagnostics but local=($fixture.local); diagnostics fixtures must be local rejects"
+    }
 }
 
 def validate-kernel-feature-key-uniqueness [fixture_name: string origin: string features] {

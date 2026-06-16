@@ -52,6 +52,47 @@ fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
 }
 
 #[test]
+fn test_verifier_diff_diagnostics_tag_requires_local_reject() {
+    let script = r#"source scripts/verifier_diff.nu
+let bad = [{
+    name: "bad-diagnostics-tag"
+    tags: [diagnostics accept]
+    local: "accept"
+}]
+try {
+    validate-fixture-tags ($bad | first)
+    { rejected: false message: "" }
+} catch {|err|
+    { rejected: true message: $err.msg }
+} | to json"#;
+
+    let Some(output) = run_nu_script(script, "diagnostics tag metadata validation") else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu diagnostics tag validation check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("diagnostics tag validation check should emit JSON");
+    assert_eq!(
+        actual.get("rejected").and_then(serde_json::Value::as_bool),
+        Some(true),
+        "diagnostics-tagged accept fixture should be rejected"
+    );
+    assert!(
+        actual
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| message.contains("diagnostics fixtures must be local rejects")),
+        "unexpected diagnostics validation error: {actual:?}"
+    );
+}
+
+#[test]
 fn test_verifier_diff_matrix_includes_aggregate_row() {
     let verifier_diff = verifier_diff_source();
     let matrix_rows_body = verifier_diff
