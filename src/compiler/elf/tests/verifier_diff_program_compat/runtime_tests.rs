@@ -103,9 +103,17 @@ fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
         "chunk index output should include source line counts for review-growth checks"
     );
     assert!(
+        verifier_diff.contains("def fixture-chunk-index-summary [rows]"),
+        "chunk index output should keep aggregate summary counts centralized"
+    );
+    assert!(
         verifier_diff.contains(
             "chunk=($row.file) lines=($row.line_count) total=($row.total) selected=($row.selected)"
         ),
         "human chunk index output should expose per-file line and fixture counts"
+    );
+    assert!(
+        verifier_diff.contains("summary chunks=($summary.chunks) lines=($summary.line_count)"),
+        "human chunk index output should include an aggregate summary line"
     );
 }

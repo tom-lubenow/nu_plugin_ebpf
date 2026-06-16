@@ -187,8 +187,41 @@ def fixture-chunk-index-rows [
     $filtered
 }
 
+def chunk-index-field-sum [rows field: string] {
+    $rows
+    | reduce --fold 0 {|row, acc| $acc + ($row | get $field) }
+}
+
+def chunk-index-list-union [rows field: string] {
+    $rows
+    | reduce --fold [] {|row, acc| $acc | append ($row | get $field) }
+    | where {|value| $value != "" }
+    | uniq
+    | sort
+}
+
+def fixture-chunk-index-summary [rows] {
+    {
+        chunks: ($rows | length)
+        line_count: (chunk-index-field-sum $rows line_count)
+        total: (chunk-index-field-sum $rows total)
+        selected: (chunk-index-field-sum $rows selected)
+        categories: (chunk-index-list-union $rows categories)
+        tiers: (chunk-index-list-union $rows tiers)
+        declared_test_lanes: (chunk-index-list-union $rows declared_test_lanes)
+        local_accept: (chunk-index-field-sum $rows local_accept)
+        local_reject: (chunk-index-field-sum $rows local_reject)
+        local_skip: (chunk-index-field-sum $rows local_skip)
+        kernel_accept: (chunk-index-field-sum $rows kernel_accept)
+        kernel_reject: (chunk-index-field-sum $rows kernel_reject)
+        kernel_skip: (chunk-index-field-sum $rows kernel_skip)
+    }
+}
+
 def print-fixture-chunk-index [rows] {
     for row in $rows {
         print $"chunk=($row.file) lines=($row.line_count) total=($row.total) selected=($row.selected) categories=($row.categories | str join ',') tiers=($row.tiers | str join ',') declared_lanes=($row.declared_test_lanes | str join ',') local=($row.local_accept)/($row.local_reject)/($row.local_skip) kernel=($row.kernel_accept)/($row.kernel_reject)/($row.kernel_skip) first=($row.first_fixture) last=($row.last_fixture)"
     }
+    let summary = (fixture-chunk-index-summary $rows)
+    print $"summary chunks=($summary.chunks) lines=($summary.line_count) total=($summary.total) selected=($summary.selected) categories=($summary.categories | str join ',') tiers=($summary.tiers | str join ',') declared_lanes=($summary.declared_test_lanes | str join ',') local=($summary.local_accept)/($summary.local_reject)/($summary.local_skip) kernel=($summary.kernel_accept)/($summary.kernel_reject)/($summary.kernel_skip)"
 }
