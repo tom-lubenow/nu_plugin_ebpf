@@ -2092,6 +2092,22 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| meta.constant_value.as_ref())
                     .is_none()
             {
+                if self
+                    .typed_value_runtime_type(input_reg, input_vreg)
+                    .is_some_and(|ty| ty.is_scalar_like())
+                {
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::VReg(input_vreg),
+                    });
+                    self.propagate_passthrough_reg_metadata(
+                        src_dst,
+                        result_vreg,
+                        input_reg,
+                        input_vreg,
+                    );
+                    return Ok(());
+                }
                 if let Some(input_meta) = input_meta.as_ref()
                     && self.lower_default_tracked_string_empty_result(
                         src_dst,

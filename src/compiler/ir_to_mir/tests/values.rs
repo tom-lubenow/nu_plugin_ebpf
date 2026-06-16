@@ -54028,6 +54028,80 @@ fn test_lower_default_empty_flag_replaces_literal_empty_string() {
 }
 
 #[test]
+fn test_lower_default_empty_flag_passthrough_runtime_scalar() {
+    let random_decl = DeclId::new(16_908);
+    let default_decl = DeclId::new(16_909);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (default_decl, "default".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty should pass through runtime scalar input");
+
+    let returned_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(*vreg),
+            _ => None,
+        })
+        .expect("default --empty scalar passthrough should return a vreg");
+    assert_eq!(
+        result.type_hints.main.get(&returned_vreg),
+        Some(&MirType::U32),
+        "runtime scalar default --empty passthrough should preserve the input type"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime scalar default --empty passthrough should compile through codegen");
+}
+
+#[test]
 fn test_lower_default_empty_flag_branches_on_runtime_tracked_string() {
     let default_decl = DeclId::new(16_900);
     let length_decl = DeclId::new(16_901);
