@@ -90,6 +90,8 @@ type BpfObjectFindProgramByNameFn =
 type BpfMapFdFn = unsafe extern "C" fn(*const bpf_map) -> c_int;
 type BpfMapNameFn = unsafe extern "C" fn(*const bpf_map) -> *const c_char;
 type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_link;
+type BpfProgramAttachKprobeFn =
+    unsafe extern "C" fn(*const bpf_program, bool, *const c_char) -> *mut bpf_link;
 type BpfProgramAttachRawTracepointFn =
     unsafe extern "C" fn(*const bpf_program, *const c_char) -> *mut bpf_link;
 type BpfProgramAttachTracepointFn =
@@ -116,6 +118,7 @@ struct LibbpfApi {
     bpf_map_fd: BpfMapFdFn,
     bpf_map_name: BpfMapNameFn,
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
+    bpf_program_attach_kprobe: BpfProgramAttachKprobeFn,
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
     bpf_program_attach_tracepoint: BpfProgramAttachTracepointFn,
     bpf_program_attach_trace: BpfProgramAttachTraceFn,
@@ -201,6 +204,10 @@ impl LibbpfApi {
                 bpf_map_attach_struct_ops: Self::load_symbol(
                     handle,
                     b"bpf_map__attach_struct_ops\0",
+                )?,
+                bpf_program_attach_kprobe: Self::load_symbol(
+                    handle,
+                    b"bpf_program__attach_kprobe\0",
                 )?,
                 bpf_program_attach_raw_tracepoint: Self::load_symbol(
                     handle,
@@ -565,6 +572,49 @@ impl LibbpfProgramHandle {
         }
 
         Ok(program)
+    }
+
+    pub fn load_and_attach_kprobe(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        target: &str,
+        retprobe: bool,
+        program_label: &str,
+        pin_root_path: Option<&str>,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+        let target = CString::new(target)
+            .map_err(|_| LoadError::Load(format!("invalid kprobe target '{target}'")))?;
+        let open_context = format!("Failed to open {program_label} object with libbpf");
+        let load_context = format!("Failed to load {program_label} object");
+        let attach_context = format!("Failed to attach {program_label} program");
+
+        let object = open_libbpf_object(&elf_bytes, &open_context, pin_root_path)?;
+        load_libbpf_object(object, &load_context)?;
+        let program = Self::loaded_program(object, &program_name, program_label)?;
+
+        // SAFETY: `program` is loaded by libbpf and `target` names the kprobe symbol.
+        let link = unsafe { (api.bpf_program_attach_kprobe)(program, retprobe, target.as_ptr()) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(&attach_context, attach_err));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "libbpf returned a null {program_label} link"
+            )));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
     }
 
     pub fn load_and_attach_raw_tracepoint(

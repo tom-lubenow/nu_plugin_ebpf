@@ -433,8 +433,9 @@ use, so non-hash maps do not need to repeat `--kind` at each use.
 Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner
-template is also emitted as a runtime map. Live `tracepoint`, `raw_tracepoint`,
-`fentry`, `fexit`, `fmod_ret`, `tp_btf`, `lsm`, and cgroup FD attach families
+template is also emitted as a runtime map. Live `kprobe`, `kretprobe`,
+`tracepoint`, `raw_tracepoint`, `fentry`, `fexit`, `fmod_ret`, `tp_btf`, `lsm`,
+and cgroup FD attach families
 (`cgroup_device`, `sock_ops`, `cgroup_skb`, `cgroup_sock`, `cgroup_sysctl`,
 `cgroup_sockopt`, and `cgroup_sock_addr`) route map-in-map objects through
 libbpf so libbpf can materialize `inner_map_fd` from that metadata. Aya-backed

@@ -1744,6 +1744,37 @@ fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
 }
 
 #[test]
+fn test_kprobe_map_in_map_routes_to_libbpf_loader() {
+    for (prog_type, label) in [
+        (EbpfProgramType::Kprobe, "kprobe"),
+        (EbpfProgramType::Kretprobe, "kretprobe"),
+    ] {
+        let state = EbpfState::new();
+        let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+        let object = live_map_in_map_fixture_for_program(
+            prog_type,
+            "do_sys_openat2",
+            HashMap::from([(outer_ref, inner_ref)]),
+            vec![],
+        );
+
+        let err = state
+            .attach(&object)
+            .expect_err("kprobe map-in-map should route to libbpf loader");
+        let message = err.to_string();
+
+        assert!(
+            !message.contains("Aya-backed live loading of map-in-map runtime map"),
+            "{label} map-in-map should not hit the Aya-only rejection: {err:?}"
+        );
+        assert!(
+            message.contains("libbpf") || message.contains(label),
+            "unexpected {label} map-in-map libbpf dispatch error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_raw_tracepoint_map_in_map_routes_to_libbpf_loader() {
     let state = EbpfState::new();
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();

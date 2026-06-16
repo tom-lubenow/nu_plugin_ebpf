@@ -1085,6 +1085,13 @@ impl EbpfState {
         }
         if matches!(
             program.prog_type.attach_kind(),
+            ProgramAttachKind::Kprobe | ProgramAttachKind::Kretprobe
+        ) && object_has_map_in_map_runtime_map(object)
+        {
+            return self.attach_libbpf_kprobe_object(object, pin_group, program);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepointWritable
         ) {
             return self.attach_libbpf_raw_tracepoint_object(object, pin_group, program);
@@ -2136,6 +2143,28 @@ impl EbpfState {
             elf_bytes,
             &program.name,
             &program.target,
+            program.prog_type.canonical_prefix(),
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
+    }
+
+    fn attach_libbpf_kprobe_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+    ) -> Result<u32, LoadError> {
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_kprobe(
+            elf_bytes,
+            &program.name,
+            &program.target,
+            matches!(
+                program.prog_type.attach_kind(),
+                ProgramAttachKind::Kretprobe
+            ),
             program.prog_type.canonical_prefix(),
             pin_root_path.as_deref(),
         )?;
