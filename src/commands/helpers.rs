@@ -434,13 +434,13 @@ Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner
 template is also emitted as a runtime map. Live `raw_tracepoint`, `fentry`,
-`fexit`, `fmod_ret`, and `tp_btf` map-in-map objects route through libbpf so
-libbpf can materialize `inner_map_fd` from that metadata. Aya-backed and other
-non-libbpf live loading is rejected before Aya because Aya does not materialize
-`inner_map_fd` from BTF `values`. Dry-run outer `map-get` / `map-contains` and
-guarded dynamic inner `map-get $inner`, `map-put $inner`, `map-delete $inner`,
-and `map-contains $inner` operations are modeled; outer maps intentionally do
-not accept `--value-type`.
+`fexit`, `fmod_ret`, `tp_btf`, and `lsm` map-in-map objects route through
+libbpf so libbpf can materialize `inner_map_fd` from that metadata. Aya-backed
+and other non-libbpf live loading is rejected before Aya because Aya does not
+materialize `inner_map_fd` from BTF `values`. Dry-run outer `map-get` /
+`map-contains` and guarded dynamic inner `map-get $inner`, `map-put $inner`,
+`map-delete $inner`, and `map-contains $inner` operations are modeled; outer
+maps intentionally do not accept `--value-type`.
 Arena maps reserve `arena` object maps with `--max-entries` as the page count
 and optional `--map-extra` as a fixed mmap base address. Object emission writes
 libbpf-compatible `map_extra` BTF metadata, while live loading is still rejected

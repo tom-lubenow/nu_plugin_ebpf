@@ -1802,6 +1802,32 @@ fn test_btf_trace_map_in_map_routes_to_libbpf_loader() {
 }
 
 #[test]
+fn test_lsm_map_in_map_routes_to_libbpf_loader() {
+    let state = EbpfState::new();
+    let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+    let object = live_map_in_map_fixture_for_program(
+        EbpfProgramType::Lsm,
+        "file_open",
+        HashMap::from([(outer_ref, inner_ref)]),
+        vec![],
+    );
+
+    let err = state
+        .attach(&object)
+        .expect_err("lsm map-in-map should route to libbpf loader");
+    let message = err.to_string();
+
+    assert!(
+        !message.contains("Aya-backed live loading of map-in-map runtime map"),
+        "lsm map-in-map should not hit the Aya-only rejection: {err:?}"
+    );
+    assert!(
+        message.contains("libbpf") || message.contains("lsm"),
+        "unexpected lsm map-in-map libbpf dispatch error: {err:?}"
+    );
+}
+
+#[test]
 fn test_libbpf_pin_compatible_object_marks_all_maps_by_name() {
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
     let object = live_map_in_map_fixture_for_program(

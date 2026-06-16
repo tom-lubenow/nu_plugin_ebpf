@@ -93,6 +93,7 @@ type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_
 type BpfProgramAttachRawTracepointFn =
     unsafe extern "C" fn(*const bpf_program, *const c_char) -> *mut bpf_link;
 type BpfProgramAttachTraceFn = unsafe extern "C" fn(*const bpf_program) -> *mut bpf_link;
+type BpfProgramAttachLsmFn = unsafe extern "C" fn(*const bpf_program) -> *mut bpf_link;
 type BpfProgramAttachCgroupFn = unsafe extern "C" fn(*const bpf_program, c_int) -> *mut bpf_link;
 type BpfProgramAttachNetfilterFn =
     unsafe extern "C" fn(*const bpf_program, *const BpfNetfilterOpts) -> *mut bpf_link;
@@ -115,6 +116,7 @@ struct LibbpfApi {
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
     bpf_program_attach_trace: BpfProgramAttachTraceFn,
+    bpf_program_attach_lsm: Option<BpfProgramAttachLsmFn>,
     bpf_program_attach_cgroup: Option<BpfProgramAttachCgroupFn>,
     bpf_program_attach_netfilter: Option<BpfProgramAttachNetfilterFn>,
     bpf_program_attach_netkit: Option<BpfProgramAttachNetkitFn>,
@@ -205,6 +207,10 @@ impl LibbpfApi {
                     handle,
                     b"bpf_program__attach_trace\0",
                 )?,
+                bpf_program_attach_lsm: Self::load_optional_symbol(
+                    handle,
+                    b"bpf_program__attach_lsm\0",
+                ),
                 bpf_program_attach_cgroup: Self::load_optional_symbol(
                     handle,
                     b"bpf_program__attach_cgroup\0",
@@ -623,6 +629,50 @@ impl LibbpfProgramHandle {
 
         // SAFETY: `program` is loaded by libbpf with section-preserved tracing metadata.
         let link = unsafe { (api.bpf_program_attach_trace)(program) };
+        let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
+        if attach_err != 0 {
+            close_libbpf_object(object);
+            return Err(pointer_error_message(&attach_context, attach_err));
+        }
+        if link.is_null() {
+            close_libbpf_object(object);
+            return Err(LoadError::Load(format!(
+                "libbpf returned a null {program_label} link"
+            )));
+        }
+
+        Ok(Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+        })
+    }
+
+    pub fn load_and_attach_lsm(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        program_label: &str,
+        pin_root_path: Option<&str>,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let attach_lsm = api.bpf_program_attach_lsm.ok_or_else(|| {
+            LoadError::Load(format!(
+                "libbpf does not provide bpf_program__attach_lsm; {program_label} live attach requires libbpf LSM attach support"
+            ))
+        })?;
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+        let open_context = format!("Failed to open {program_label} object with libbpf");
+        let load_context = format!("Failed to load {program_label} object");
+        let attach_context = format!("Failed to attach {program_label} program");
+
+        let object = open_libbpf_object(&elf_bytes, &open_context, pin_root_path)?;
+        load_libbpf_object(object, &load_context)?;
+        let program = Self::loaded_program(object, &program_name, program_label)?;
+
+        // SAFETY: `program` is a loaded libbpf LSM program.
+        let link = unsafe { attach_lsm(program) };
         let attach_err = unsafe { (api.libbpf_get_error)(link.cast()) };
         if attach_err != 0 {
             close_libbpf_object(object);

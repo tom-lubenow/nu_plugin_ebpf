@@ -1106,6 +1106,11 @@ impl EbpfState {
         {
             return self.attach_libbpf_trace_object(object, pin_group, program);
         }
+        if matches!(program.prog_type.attach_kind(), ProgramAttachKind::Lsm)
+            && object_has_map_in_map_runtime_map(object)
+        {
+            return self.attach_libbpf_lsm_object(object, pin_group, program);
+        }
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::Netfilter
@@ -2111,6 +2116,23 @@ impl EbpfState {
         let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
         let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
         let handle = LibbpfProgramHandle::load_and_attach_trace(
+            elf_bytes,
+            &program.name,
+            program.prog_type.canonical_prefix(),
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
+    }
+
+    fn attach_libbpf_lsm_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+    ) -> Result<u32, LoadError> {
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_lsm(
             elf_bytes,
             &program.name,
             program.prog_type.canonical_prefix(),
