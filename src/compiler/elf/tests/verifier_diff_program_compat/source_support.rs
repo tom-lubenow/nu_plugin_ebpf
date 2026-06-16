@@ -9,8 +9,8 @@ pub(super) fn verifier_diff_source() -> String {
     crate::compiler::verifier_diff_test_support::verifier_diff_source()
 }
 
-pub(super) fn verifier_diff_source_with_fixtures() -> String {
-    crate::compiler::verifier_diff_test_support::verifier_diff_source_with_fixture_chunks()
+pub(super) fn verifier_diff_fixture_coverage_source() -> String {
+    crate::compiler::verifier_diff_test_support::verifier_diff_fixture_coverage_source()
 }
 
 pub(super) const REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES: &[&str] = &[

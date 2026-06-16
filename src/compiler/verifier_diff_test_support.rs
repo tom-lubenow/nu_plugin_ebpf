@@ -220,8 +220,11 @@ pub(crate) fn verifier_diff_source() -> String {
     verifier_diff_source_inner(false)
 }
 
-pub(crate) fn verifier_diff_source_with_fixture_chunks() -> String {
-    verifier_diff_source_inner(true)
+pub(crate) fn verifier_diff_fixture_coverage_source() -> String {
+    let mut source = String::new();
+    append_verifier_diff_metadata_sources(&mut source);
+    append_verifier_diff_fixture_chunks(&mut source);
+    source
 }
 
 fn verifier_diff_source_inner(include_fixture_chunks: bool) -> String {

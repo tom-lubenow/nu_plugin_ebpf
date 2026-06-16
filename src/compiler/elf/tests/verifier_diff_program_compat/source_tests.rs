@@ -55,10 +55,10 @@ fn verifier_diff_helper_call_names(source: &str) -> BTreeSet<String> {
 #[test]
 fn test_verifier_diff_source_fixtures_cover_modeled_kfunc_signatures() {
     let signature_source = include_str!("../../../instruction/kfunc_signature.rs");
-    let verifier_diff = verifier_diff_source_with_fixtures();
+    let fixture_coverage_source = verifier_diff_fixture_coverage_source();
 
     let modeled = modeled_kfunc_signature_names(signature_source);
-    let fixture_calls = verifier_diff_kfunc_call_names(&verifier_diff);
+    let fixture_calls = verifier_diff_kfunc_call_names(&fixture_coverage_source);
     let missing = modeled
         .difference(&fixture_calls)
         .cloned()
@@ -74,10 +74,10 @@ fn test_verifier_diff_source_fixtures_cover_modeled_kfunc_signatures() {
 #[test]
 fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
     let instruction_source = include_str!("../../../instruction.rs");
-    let verifier_diff = verifier_diff_source_with_fixtures();
+    let fixture_coverage_source = verifier_diff_fixture_coverage_source();
 
     let modeled = modeled_helper_names(instruction_source);
-    let fixture_calls = verifier_diff_helper_call_names(&verifier_diff);
+    let fixture_calls = verifier_diff_helper_call_names(&fixture_coverage_source);
     let pending = BTreeSet::<String>::new();
 
     let missing = modeled
