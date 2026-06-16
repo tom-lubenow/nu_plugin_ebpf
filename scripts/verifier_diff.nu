@@ -226,11 +226,15 @@ def verifier-diff-main [options] {
     }
 
     let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
-    let validated_fixtures = (validate-fixture-metadata $fixtures)
+    let validation_fixtures = if $list {
+        select-fixture-gap-fixtures $fixtures $gap_only
+    } else {
+        $fixtures
+    }
+    let validated_fixtures = (validate-fixture-metadata $validation_fixtures)
 
     if $list {
-        let list_fixtures = (select-fixture-gap-fixtures $validated_fixtures $gap_only)
-        let summaries = ($list_fixtures | each {|fixture| fixture-summary-from-derived $fixture $compat_kernel })
+        let summaries = ($validated_fixtures | each {|fixture| fixture-summary-from-derived $fixture $compat_kernel })
         if $json {
             print ($summaries | to json)
             return

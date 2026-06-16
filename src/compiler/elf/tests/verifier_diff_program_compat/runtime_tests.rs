@@ -27,8 +27,9 @@ fn test_verifier_diff_fixture_summary_exposes_target() {
         "human --list output should include the raw fixture target"
     );
     assert!(
-        list_body.contains("select-fixture-gap-fixtures $validated_fixtures $gap_only"),
-        "--list --gap-only should filter fixture summaries to local-accept/kernel-skip gaps"
+        verifier_diff.contains("let validation_fixtures = if $list {")
+            && verifier_diff.contains("select-fixture-gap-fixtures $fixtures $gap_only"),
+        "--list --gap-only should filter fixtures before metadata validation"
     );
 }
 
