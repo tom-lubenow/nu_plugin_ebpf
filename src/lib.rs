@@ -12,6 +12,7 @@ pub mod compiler;
 pub mod kernel_btf;
 #[cfg(target_os = "linux")]
 pub mod loader;
+pub(crate) mod named_chars;
 #[cfg(target_os = "linux")]
 pub mod program_spec;
 #[cfg(target_os = "linux")]
