@@ -228,12 +228,24 @@ fn object_has_map_in_map_runtime_map(object: &EbpfObject) -> bool {
         .any(MapKind::is_map_in_map)
 }
 
+fn object_has_arena_runtime_map(object: &EbpfObject) -> bool {
+    object
+        .maps
+        .iter()
+        .filter_map(|map| map.def.map_kind())
+        .any(|kind| kind == MapKind::Arena)
+}
+
+fn object_needs_libbpf_map_creation(object: &EbpfObject) -> bool {
+    object_has_map_in_map_runtime_map(object) || object_has_arena_runtime_map(object)
+}
+
 pub(super) fn unsupported_live_arena_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
         (kind == MapKind::Arena).then(|| {
             LoadError::Load(format!(
-                "live loading of arena runtime map '{}' is not supported by this loader yet; arena maps require map_extra-aware creation plus userspace mmap setup; use --dry-run to compile",
+                "Aya-backed live loading of arena runtime map '{}' is not supported by this loader yet; Aya's map creation path does not materialize map_extra metadata, and userspace arena mmap setup is not modeled yet; use --dry-run to compile",
                 map.name
             ))
         })
@@ -1080,13 +1092,10 @@ impl EbpfState {
         if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
         }
-        if let Some(err) = unsupported_live_arena_map_error(object) {
-            return Err(err);
-        }
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::Kprobe | ProgramAttachKind::Kretprobe
-        ) && object_has_map_in_map_runtime_map(object)
+        ) && object_needs_libbpf_map_creation(object)
         {
             return self.attach_libbpf_kprobe_object(object, pin_group, program);
         }
@@ -1099,7 +1108,7 @@ impl EbpfState {
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::Tracepoint
-        ) && object_has_map_in_map_runtime_map(object)
+        ) && object_needs_libbpf_map_creation(object)
         {
             let (category, name) = spec.tracepoint_parts().unwrap_or_else(|| {
                 unreachable!("tracepoint attach kind must use tracepoint program spec")
@@ -1110,7 +1119,7 @@ impl EbpfState {
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepoint
-        ) && object_has_map_in_map_runtime_map(object)
+        ) && object_needs_libbpf_map_creation(object)
         {
             return self.attach_libbpf_raw_tracepoint_object(object, pin_group, program);
         }
@@ -1120,12 +1129,12 @@ impl EbpfState {
         if matches!(
             program.prog_type.attach_kind(),
             ProgramAttachKind::Fentry | ProgramAttachKind::Fexit | ProgramAttachKind::TpBtf
-        ) && object_has_map_in_map_runtime_map(object)
+        ) && object_needs_libbpf_map_creation(object)
         {
             return self.attach_libbpf_trace_object(object, pin_group, program);
         }
         if matches!(program.prog_type.attach_kind(), ProgramAttachKind::Lsm)
-            && object_has_map_in_map_runtime_map(object)
+            && object_needs_libbpf_map_creation(object)
         {
             return self.attach_libbpf_lsm_object(object, pin_group, program);
         }
@@ -1164,7 +1173,7 @@ impl EbpfState {
             return self
                 .attach_libbpf_cgroup_sock_addr_unix_object(object, pin_group, program, target);
         }
-        if object_has_map_in_map_runtime_map(object)
+        if object_needs_libbpf_map_creation(object)
             && matches!(
                 program.prog_type.attach_kind(),
                 ProgramAttachKind::CgroupDevice
@@ -1189,6 +1198,9 @@ impl EbpfState {
             );
         }
         if let Some(err) = unsupported_live_map_in_map_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = unsupported_live_arena_map_error(object) {
             return Err(err);
         }
         let syscall_probe_symbols = match &spec {

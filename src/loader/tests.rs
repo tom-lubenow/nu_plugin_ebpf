@@ -1697,6 +1697,27 @@ fn live_map_in_map_fixture_for_program(
     object
 }
 
+fn live_arena_fixture_for_program(prog_type: EbpfProgramType, target: &str) -> EbpfObject {
+    EbpfProgram::with_maps(
+        prog_type,
+        target,
+        "arena_live",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "arena_pages".to_string(),
+            def: BpfMapDef::arena(64),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    )
+    .into_object()
+}
+
 #[test]
 fn test_attach_rejects_live_map_in_map_before_aya_load() {
     let state = EbpfState::new();
@@ -2047,24 +2068,7 @@ fn test_live_map_in_map_diagnostic_reports_ambiguous_inner_template_metadata() {
 
 #[test]
 fn test_live_arena_map_diagnostic_rejects_live_load() {
-    let object = EbpfProgram::with_maps(
-        EbpfProgramType::Xdp,
-        "lo",
-        "arena_live",
-        vec![],
-        0,
-        vec![EbpfMap {
-            name: "arena_pages".to_string(),
-            def: BpfMapDef::arena(64),
-        }],
-        vec![],
-        vec![],
-        None,
-        None,
-        HashMap::new(),
-        HashMap::new(),
-    )
-    .into_object();
+    let object = live_arena_fixture_for_program(EbpfProgramType::Xdp, "lo");
 
     let err =
         unsupported_live_arena_map_error(&object).expect("live arena diagnostic should reject");
@@ -2073,8 +2077,8 @@ fn test_live_arena_map_diagnostic_rejects_live_load() {
         matches!(
             err,
             LoadError::Load(ref msg)
-                if msg.contains("live loading of arena runtime map 'arena_pages'")
-                    && msg.contains("map_extra-aware creation")
+                if msg.contains("Aya-backed live loading of arena runtime map 'arena_pages'")
+                    && msg.contains("map_extra metadata")
                     && msg.contains("mmap setup")
                     && msg.contains("--dry-run")
         ),
@@ -2083,42 +2087,82 @@ fn test_live_arena_map_diagnostic_rejects_live_load() {
 }
 
 #[test]
-fn test_attach_rejects_live_arena_map_before_libbpf_dispatch() {
+fn test_attach_rejects_live_arena_map_before_aya_load() {
     let state = EbpfState::new();
-    let object = EbpfProgram::with_maps(
-        EbpfProgramType::RawTracepointWritable,
-        "sys_enter",
-        "arena_libbpf_live",
-        vec![],
-        0,
-        vec![EbpfMap {
-            name: "arena_pages".to_string(),
-            def: BpfMapDef::arena(64),
-        }],
-        vec![],
-        vec![],
-        None,
-        None,
-        HashMap::new(),
-        HashMap::new(),
-    )
-    .into_object();
+    let object = live_arena_fixture_for_program(EbpfProgramType::Xdp, "lo");
 
     let err = state
         .attach(&object)
-        .expect_err("live arena maps should reject before libbpf dispatch");
+        .expect_err("Aya-backed live arena maps should reject before Aya load");
 
     assert!(
         matches!(
             err,
             LoadError::Load(ref msg)
-                if msg.contains("live loading of arena runtime map 'arena_pages'")
-                    && msg.contains("map_extra-aware creation")
+                if msg.contains("Aya-backed live loading of arena runtime map 'arena_pages'")
+                    && msg.contains("map_extra metadata")
                     && msg.contains("mmap setup")
                     && msg.contains("--dry-run")
         ),
-        "unexpected arena live attach error before libbpf dispatch: {err:?}"
+        "unexpected arena live attach error before Aya load: {err:?}"
     );
+}
+
+#[test]
+fn test_libbpf_map_creation_arena_routes_do_not_hit_aya_rejection() {
+    for (prog_type, target, label) in [
+        (EbpfProgramType::Kprobe, "do_sys_openat2", "kprobe"),
+        (
+            EbpfProgramType::Tracepoint,
+            "syscalls/sys_enter_openat",
+            "tracepoint",
+        ),
+        (
+            EbpfProgramType::RawTracepoint,
+            "sys_enter",
+            "raw_tracepoint",
+        ),
+        (EbpfProgramType::Fentry, "tcp_v4_rcv", "fentry"),
+        (EbpfProgramType::Lsm, "file_open", "lsm"),
+        (
+            EbpfProgramType::CgroupDevice,
+            "/sys/fs/cgroup",
+            "cgroup_device",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w",
+        ),
+        (EbpfProgramType::FmodRet, "tcp_v4_rcv", "fmod_ret"),
+        (EbpfProgramType::Netfilter, "ipv4:pre_routing", "netfilter"),
+        (EbpfProgramType::Netkit, "lo:primary", "netkit"),
+        (
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            "flow_dissector",
+        ),
+    ] {
+        let state = EbpfState::new();
+        let object = live_arena_fixture_for_program(prog_type, target);
+
+        let err = state
+            .attach(&object)
+            .expect_err("libbpf-backed arena map should route before Aya rejection");
+        let message = err.to_string();
+
+        assert!(
+            !message.contains("Aya-backed live loading of arena runtime map"),
+            "{label} arena map should not hit the Aya-only rejection: {err:?}"
+        );
+        assert!(
+            message.contains("libbpf")
+                || message.contains(label)
+                || message.contains("Failed to load")
+                || message.contains("Failed to attach"),
+            "unexpected {label} arena libbpf dispatch error: {err:?}"
+        );
+    }
 }
 
 #[test]
