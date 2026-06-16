@@ -1097,7 +1097,14 @@ impl EbpfState {
             return self.attach_libbpf_raw_tracepoint_object(object, pin_group, program);
         }
         if matches!(program.prog_type.attach_kind(), ProgramAttachKind::FmodRet) {
-            return self.attach_libbpf_fmod_ret_object(object, pin_group, program);
+            return self.attach_libbpf_trace_object(object, pin_group, program);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::Fentry | ProgramAttachKind::Fexit
+        ) && object_has_map_in_map_runtime_map(object)
+        {
+            return self.attach_libbpf_trace_object(object, pin_group, program);
         }
         if matches!(
             program.prog_type.attach_kind(),
@@ -2095,7 +2102,7 @@ impl EbpfState {
         self.insert_libbpf_program_active_probe(handle, program, pin_group)
     }
 
-    fn attach_libbpf_fmod_ret_object(
+    fn attach_libbpf_trace_object(
         &self,
         object: &EbpfObject,
         pin_group: Option<&str>,
