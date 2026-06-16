@@ -99,6 +99,12 @@ struct TypedFixedStringArrayTrim {
     trim_right: bool,
 }
 
+#[derive(Clone, Copy)]
+enum RuntimeStringTrimBytes {
+    Single(u8),
+    AsciiWhitespace,
+}
+
 struct RuntimeIntegerFillResult<'a> {
     src_dst: RegId,
     result_vreg: VReg,
@@ -6403,21 +6409,90 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn typed_fixed_string_array_trim_byte(trim_char: Option<char>) -> Result<u8, CompileError> {
+    fn runtime_string_trim_bytes(
+        trim_char: Option<char>,
+        diagnostic_subject: &str,
+    ) -> Result<RuntimeStringTrimBytes, CompileError> {
         let Some(ch) = trim_char else {
-            return Err(CompileError::UnsupportedInstruction(
-                "str trim on typed fixed string arrays currently requires --char in eBPF".into(),
-            ));
+            return Ok(RuntimeStringTrimBytes::AsciiWhitespace);
         };
         let mut buf = [0u8; 4];
         let encoded = ch.encode_utf8(&mut buf);
         if encoded.len() != 1 {
-            return Err(CompileError::UnsupportedInstruction(
-                "str trim on typed fixed string arrays requires a one-byte --char in eBPF".into(),
-            ));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim on {diagnostic_subject} requires a one-byte --char in eBPF"
+            )));
         }
         let byte = encoded.as_bytes()[0];
-        Ok(byte)
+        Ok(RuntimeStringTrimBytes::Single(byte))
+    }
+
+    fn emit_runtime_string_trim_byte_match(
+        &mut self,
+        candidate_byte: VReg,
+        trim_bytes: RuntimeStringTrimBytes,
+    ) -> VReg {
+        match trim_bytes {
+            RuntimeStringTrimBytes::Single(trim_byte) => {
+                let is_trim_byte = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_trim_byte,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(candidate_byte),
+                    rhs: MirValue::Const(i64::from(trim_byte)),
+                });
+                self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+                is_trim_byte
+            }
+            RuntimeStringTrimBytes::AsciiWhitespace => {
+                let is_space = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_space,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(candidate_byte),
+                    rhs: MirValue::Const(i64::from(b' ')),
+                });
+                self.vreg_type_hints.insert(is_space, MirType::Bool);
+
+                let ge_tab = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: ge_tab,
+                    op: BinOpKind::Ge,
+                    lhs: MirValue::VReg(candidate_byte),
+                    rhs: MirValue::Const(i64::from(b'\t')),
+                });
+                self.vreg_type_hints.insert(ge_tab, MirType::Bool);
+
+                let le_cr = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: le_cr,
+                    op: BinOpKind::Le,
+                    lhs: MirValue::VReg(candidate_byte),
+                    rhs: MirValue::Const(i64::from(b'\r')),
+                });
+                self.vreg_type_hints.insert(le_cr, MirType::Bool);
+
+                let is_ascii_control_whitespace = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_ascii_control_whitespace,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(ge_tab),
+                    rhs: MirValue::VReg(le_cr),
+                });
+                self.vreg_type_hints
+                    .insert(is_ascii_control_whitespace, MirType::Bool);
+
+                let is_trim_byte = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_trim_byte,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(is_space),
+                    rhs: MirValue::VReg(is_ascii_control_whitespace),
+                });
+                self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+                is_trim_byte
+            }
+        }
     }
 
     fn lower_tracked_string_trim_left_len(
@@ -6425,7 +6500,7 @@ impl<'a> HirToMirLowering<'a> {
         out_slot: StackSlotId,
         len_vreg: VReg,
         content_cap: usize,
-        trim_byte: u8,
+        trim_bytes: RuntimeStringTrimBytes,
     ) -> Result<(), CompileError> {
         let probe_count = content_cap;
         if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES {
@@ -6469,14 +6544,7 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.vreg_type_hints.insert(candidate_byte, MirType::U8);
 
-            let is_trim_byte = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: is_trim_byte,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(candidate_byte),
-                rhs: MirValue::Const(i64::from(trim_byte)),
-            });
-            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            let is_trim_byte = self.emit_runtime_string_trim_byte_match(candidate_byte, trim_bytes);
             self.terminate(MirInst::Branch {
                 cond: is_trim_byte,
                 if_true: next_candidate_block,
@@ -6557,7 +6625,7 @@ impl<'a> HirToMirLowering<'a> {
         out_slot: StackSlotId,
         len_vreg: VReg,
         content_cap: usize,
-        trim_byte: u8,
+        trim_bytes: RuntimeStringTrimBytes,
     ) -> Result<(), CompileError> {
         let probe_count = content_cap;
         if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES {
@@ -6600,14 +6668,7 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.vreg_type_hints.insert(candidate_byte, MirType::U8);
 
-            let is_trim_byte = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: is_trim_byte,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(candidate_byte),
-                rhs: MirValue::Const(i64::from(trim_byte)),
-            });
-            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            let is_trim_byte = self.emit_runtime_string_trim_byte_match(candidate_byte, trim_bytes);
             self.terminate(MirInst::Branch {
                 cond: is_trim_byte,
                 if_true: next_candidate_block,
@@ -6649,7 +6710,7 @@ impl<'a> HirToMirLowering<'a> {
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
-        if trim_char.is_none() || Self::exact_string_value(&input_meta).is_some() {
+        if Self::exact_string_value(&input_meta).is_some() {
             return Ok(false);
         }
         let Some(input_slot) = input_meta.string_slot else {
@@ -6659,7 +6720,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char)?;
+        let trim_bytes = Self::runtime_string_trim_bytes(trim_char, "tracked string input")?;
         let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str trim tracked string slot size is unavailable in eBPF".into(),
@@ -6699,10 +6760,10 @@ impl<'a> HirToMirLowering<'a> {
         let trim_start = trim_left || !trim_right;
         let trim_end = trim_right || !trim_left;
         if trim_start {
-            self.lower_tracked_string_trim_left_len(out_slot, len_vreg, content_cap, trim_byte)?;
+            self.lower_tracked_string_trim_left_len(out_slot, len_vreg, content_cap, trim_bytes)?;
         }
         if trim_end {
-            self.lower_tracked_string_trim_right_len(out_slot, len_vreg, content_cap, trim_byte)?;
+            self.lower_tracked_string_trim_right_len(out_slot, len_vreg, content_cap, trim_bytes)?;
         }
 
         self.emit(MirInst::Copy {
@@ -6733,7 +6794,7 @@ impl<'a> HirToMirLowering<'a> {
         output_base_offset: usize,
         input_len_vreg: VReg,
         content_cap: usize,
-        trim_byte: u8,
+        trim_bytes: RuntimeStringTrimBytes,
     ) -> Result<(), CompileError> {
         let probe_count = content_cap;
         if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES {
@@ -6786,14 +6847,7 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.vreg_type_hints.insert(candidate_byte, MirType::U8);
 
-            let is_trim_byte = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: is_trim_byte,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(candidate_byte),
-                rhs: MirValue::Const(i64::from(trim_byte)),
-            });
-            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            let is_trim_byte = self.emit_runtime_string_trim_byte_match(candidate_byte, trim_bytes);
             self.terminate(MirInst::Branch {
                 cond: is_trim_byte,
                 if_true: next_candidate_block,
@@ -6890,7 +6944,7 @@ impl<'a> HirToMirLowering<'a> {
         output_base_offset: usize,
         input_len_vreg: VReg,
         content_cap: usize,
-        trim_byte: u8,
+        trim_bytes: RuntimeStringTrimBytes,
     ) -> Result<(), CompileError> {
         let probe_count = content_cap;
         if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES {
@@ -6942,14 +6996,7 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.vreg_type_hints.insert(candidate_byte, MirType::U8);
 
-            let is_trim_byte = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: is_trim_byte,
-                op: BinOpKind::Eq,
-                lhs: MirValue::VReg(candidate_byte),
-                rhs: MirValue::Const(i64::from(trim_byte)),
-            });
-            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            let is_trim_byte = self.emit_runtime_string_trim_byte_match(candidate_byte, trim_bytes);
             self.terminate(MirInst::Branch {
                 cond: is_trim_byte,
                 if_true: next_candidate_block,
@@ -7014,7 +7061,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char)?;
+        let trim_bytes = Self::runtime_string_trim_bytes(trim_char, "typed fixed string arrays")?;
         let trim_start = trim_left || !trim_right;
         let trim_end = trim_right || !trim_left;
 
@@ -7145,7 +7192,7 @@ impl<'a> HirToMirLowering<'a> {
                     byte_offset,
                     input_len_vreg,
                     *content_cap,
-                    trim_byte,
+                    trim_bytes,
                 )?;
             }
             if trim_end {
@@ -7167,7 +7214,7 @@ impl<'a> HirToMirLowering<'a> {
                     byte_offset,
                     len_vreg,
                     *content_cap,
-                    trim_byte,
+                    trim_bytes,
                 )?;
             }
         }
