@@ -180,6 +180,14 @@ def select-fixture-matrix-rows [rows gap_only: bool] {
     $rows | where {|row| $row.local_accept_kernel_skip > 0 }
 }
 
+def select-fixture-gap-fixtures [fixtures gap_only: bool] {
+    if not $gap_only {
+        return $fixtures
+    }
+
+    $fixtures | where {|fixture| $fixture.local == "accept" and $fixture.kernel == "skip" }
+}
+
 def print-fixture-matrix [fixtures compat_kernel] {
     print-fixture-matrix-rows (fixture-matrix-rows $fixtures $compat_kernel)
 }

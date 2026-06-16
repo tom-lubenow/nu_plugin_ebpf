@@ -85,8 +85,8 @@ def verifier-diff-main [options] {
     if $json and not ($list or $matrix or $chunks) {
         fail "--json is only supported with --list, --matrix, or --chunks"
     }
-    if $gap_only and not $matrix {
-        fail "--gap-only is only supported with --matrix"
+    if $gap_only and not ($list or $matrix) {
+        fail "--gap-only is only supported with --list or --matrix"
     }
     if $compat_kernel != null and not ($list or $matrix) {
         fail "--compat-kernel is only supported with --list or --matrix"
@@ -229,7 +229,8 @@ def verifier-diff-main [options] {
     let validated_fixtures = (validate-fixture-metadata $fixtures)
 
     if $list {
-        let summaries = ($validated_fixtures | each {|fixture| fixture-summary-from-derived $fixture $compat_kernel })
+        let list_fixtures = (select-fixture-gap-fixtures $validated_fixtures $gap_only)
+        let summaries = ($list_fixtures | each {|fixture| fixture-summary-from-derived $fixture $compat_kernel })
         if $json {
             print ($summaries | to json)
             return

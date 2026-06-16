@@ -26,6 +26,10 @@ fn test_verifier_diff_fixture_summary_exposes_target() {
         list_body.contains("target=($summary.target)"),
         "human --list output should include the raw fixture target"
     );
+    assert!(
+        list_body.contains("select-fixture-gap-fixtures $validated_fixtures $gap_only"),
+        "--list --gap-only should filter fixture summaries to local-accept/kernel-skip gaps"
+    );
 }
 
 #[test]
@@ -127,7 +131,7 @@ fn test_verifier_diff_matrix_includes_aggregate_row() {
     );
     assert!(
         verifier_diff.contains("--gap-only"),
-        "verifier_diff.nu should expose a gap-focused matrix mode in the CLI"
+        "verifier_diff.nu should expose gap-focused list and matrix modes in the CLI"
     );
     assert!(
         verifier_diff.contains("select-fixture-matrix-rows $matrix_rows $gap_only"),
