@@ -20,6 +20,7 @@ source ($REPO_ROOT | path join scripts verifier_diff runtime program_target_feat
 source ($REPO_ROOT | path join scripts verifier_diff runtime program_features.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime matrix_validation.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime execution.nu)
+source ($REPO_ROOT | path join scripts verifier_diff runtime chunk_index.nu)
 source ($REPO_ROOT | path join scripts verifier_diff runtime cli_options.nu)
 
 def --wrapped main [...args] {
@@ -42,6 +43,7 @@ def verifier-diff-main [options] {
     let check_host_syscall_tracepoints = $options.check_host_syscall_tracepoints
     let list = $options.list
     let matrix = $options.matrix
+    let chunks = $options.chunks
     let json = $options.json
     let compat_kernel = $options.compat_kernel
     let kernel = $options.kernel
@@ -63,23 +65,24 @@ def verifier-diff-main [options] {
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
     }
-    if $list and $matrix {
-        fail "--list and --matrix are mutually exclusive"
+    let report_mode_count = ([$list $matrix $chunks] | where {|enabled| $enabled } | length)
+    if $report_mode_count > 1 {
+        fail "--list, --matrix, and --chunks are mutually exclusive"
     }
-    if $validate and ($list or $matrix) {
-        fail "--validate cannot be combined with --list or --matrix"
+    if $validate and ($list or $matrix or $chunks) {
+        fail "--validate cannot be combined with --list, --matrix, or --chunks"
     }
     if $validate and $validate_fixture_file != null {
         fail "--validate and --validate-fixture-file are mutually exclusive"
     }
-    if $validate_fixture_file != null and ($list or $matrix) {
-        fail "--validate-fixture-file cannot be combined with --list or --matrix"
+    if $validate_fixture_file != null and ($list or $matrix or $chunks) {
+        fail "--validate-fixture-file cannot be combined with --list, --matrix, or --chunks"
     }
-    if $check_host_syscall_tracepoints and ($validate or $validate_fixture_file != null or $list or $matrix) {
-        fail "--check-host-syscall-tracepoints cannot be combined with --validate, --validate-fixture-file, --list, or --matrix"
+    if $check_host_syscall_tracepoints and ($validate or $validate_fixture_file != null or $list or $matrix or $chunks) {
+        fail "--check-host-syscall-tracepoints cannot be combined with --validate, --validate-fixture-file, --list, --matrix, or --chunks"
     }
-    if $json and not ($list or $matrix) {
-        fail "--json is only supported with --list or --matrix"
+    if $json and not ($list or $matrix or $chunks) {
+        fail "--json is only supported with --list, --matrix, or --chunks"
     }
     if $compat_kernel != null and not ($list or $matrix) {
         fail "--compat-kernel is only supported with --list or --matrix"
@@ -107,6 +110,9 @@ def verifier-diff-main [options] {
     }
     if $smoke and $test_lane != null {
         fail "--smoke and --test-lane are mutually exclusive"
+    }
+    if $chunks and ($smoke or $test_lane != null) {
+        fail "--chunks does not support --smoke or --test-lane; use --list or --matrix for default lane views"
     }
     if $fixture != null and $fixtures != null {
         fail "--fixture and --fixtures are mutually exclusive"
@@ -201,10 +207,20 @@ def verifier-diff-main [options] {
             $smoke
             $full
     )
-    let default_smoke = (not ($list or $matrix) and not $explicit_selection)
+    let default_smoke = (not ($list or $matrix or $chunks) and not $explicit_selection)
     let selected_tier = if ($smoke or $default_smoke or $fast) { "fast" } else { $tier }
     let selected_test_lane = if ($smoke or $default_smoke) { "host-safe" } else { $test_lane }
     let fixture_names = if $fixture == null { $fixtures } else { $fixture }
+    if $chunks {
+        let chunk_rows = (fixture-chunk-index-rows $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
+        if $json {
+            print ($chunk_rows | to json)
+        } else {
+            print-fixture-chunk-index $chunk_rows
+        }
+        return
+    }
+
     let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
     let validated_fixtures = (validate-fixture-metadata $fixtures)
 
@@ -233,7 +249,6 @@ def verifier-diff-main [options] {
         }
         return
     }
-
     let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
     let local_fixture_count = ($local_fixtures | length)
     let local_skip_count = (($fixtures | length) - $local_fixture_count)

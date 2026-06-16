@@ -85,3 +85,27 @@ fn test_verifier_diff_matrix_includes_aggregate_row() {
         "human matrix output should split local-accept/kernel-skip gaps by default lane"
     );
 }
+
+#[test]
+fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
+    let verifier_diff = verifier_diff_source();
+
+    assert!(
+        verifier_diff.contains("--chunks"),
+        "verifier_diff.nu should expose the fixture chunk index mode in the CLI"
+    );
+    assert!(
+        verifier_diff.contains("def fixture-chunk-index-row [\n    path: path\n    fixture_names"),
+        "chunk index rows should keep per-file fixture metadata centralized"
+    );
+    assert!(
+        verifier_diff.contains("line_count: (fixture-chunk-line-count $path)"),
+        "chunk index output should include source line counts for review-growth checks"
+    );
+    assert!(
+        verifier_diff.contains(
+            "chunk=($row.file) lines=($row.line_count) total=($row.total) selected=($row.selected)"
+        ),
+        "human chunk index output should expose per-file line and fixture counts"
+    );
+}

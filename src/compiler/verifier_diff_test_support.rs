@@ -207,6 +207,7 @@ const VERIFIER_DIFF_RUNTIME_SOURCES: &[&str] = &[
     "scripts/verifier_diff/runtime/matrix_rows.nu",
     "scripts/verifier_diff/runtime/matrix_metadata_validation.nu",
     "scripts/verifier_diff/runtime/execution.nu",
+    "scripts/verifier_diff/runtime/chunk_index.nu",
     "scripts/verifier_diff/runtime/cli_options.nu",
 ];
 
