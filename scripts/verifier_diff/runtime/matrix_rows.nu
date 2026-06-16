@@ -172,14 +172,24 @@ def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {
     $rows
 }
 
-def print-fixture-matrix [fixtures compat_kernel] {
-    for row in (fixture-matrix-rows $fixtures $compat_kernel) {
-        print-fixture-matrix-row $row
+def select-fixture-matrix-rows [rows gap_only: bool] {
+    if not $gap_only {
+        return $rows
     }
+
+    $rows | where {|row| $row.local_accept_kernel_skip > 0 }
+}
+
+def print-fixture-matrix [fixtures compat_kernel] {
+    print-fixture-matrix-rows (fixture-matrix-rows $fixtures $compat_kernel)
 }
 
 def print-fixture-matrix-from-derived [derived_fixtures compat_kernel] {
-    for row in (fixture-matrix-rows-from-derived $derived_fixtures $compat_kernel) {
+    print-fixture-matrix-rows (fixture-matrix-rows-from-derived $derived_fixtures $compat_kernel)
+}
+
+def print-fixture-matrix-rows [rows] {
+    for row in $rows {
         print-fixture-matrix-row $row
     }
 }

@@ -45,6 +45,7 @@ def verifier-diff-main [options] {
     let matrix = $options.matrix
     let chunks = $options.chunks
     let json = $options.json
+    let gap_only = $options.gap_only
     let compat_kernel = $options.compat_kernel
     let kernel = $options.kernel
     let no_kernel = $options.no_kernel
@@ -83,6 +84,9 @@ def verifier-diff-main [options] {
     }
     if $json and not ($list or $matrix or $chunks) {
         fail "--json is only supported with --list, --matrix, or --chunks"
+    }
+    if $gap_only and not $matrix {
+        fail "--gap-only is only supported with --matrix"
     }
     if $compat_kernel != null and not ($list or $matrix) {
         fail "--compat-kernel is only supported with --list or --matrix"
@@ -242,10 +246,12 @@ def verifier-diff-main [options] {
         return
     }
     if $matrix {
+        let matrix_rows = (fixture-matrix-rows-from-derived $validated_fixtures $compat_kernel)
+        let selected_matrix_rows = (select-fixture-matrix-rows $matrix_rows $gap_only)
         if $json {
-            print ((fixture-matrix-rows-from-derived $validated_fixtures $compat_kernel) | to json)
+            print ($selected_matrix_rows | to json)
         } else {
-            print-fixture-matrix-from-derived $validated_fixtures $compat_kernel
+            print-fixture-matrix-rows $selected_matrix_rows
         }
         return
     }

@@ -39,6 +39,7 @@ def default-main-options [] {
         matrix: false
         chunks: false
         json: false
+        gap_only: false
         compat_kernel: null
         kernel: false
         no_kernel: false
@@ -72,6 +73,7 @@ def print-main-help [] {
         "  --matrix: Print verifier fixture counts by tier and category, then exit."
         "  --chunks: Print verifier fixture chunk counts by file, then exit."
         "  --json: Emit JSON for --list, --matrix, or --chunks."
+        "  --gap-only: With --matrix, show only rows with local-accept/kernel-skip gaps."
         "  --compat-kernel=<string>: With --list or --matrix, compare effective minimums against this kernel release. Use assignment or quotes so Nushell preserves versions like 5.10."
         "  --kernel: Require kernel verifier checks instead of auto-skipping missing prerequisites."
         "  --no-kernel: Run only local dry-run compiler/VCC checks."
@@ -229,7 +231,7 @@ def parse-main-args [args] {
             }
             $options = ($options | upsert help true)
             $i = ($i + 1)
-        } else if $arg in ["--validate" "--check-host-syscall-tracepoints" "--list" "--matrix" "--chunks" "--json" "--kernel" "--no-kernel" "--smoke" "--fast" "--full"] {
+        } else if $arg in ["--validate" "--check-host-syscall-tracepoints" "--list" "--matrix" "--chunks" "--json" "--gap-only" "--kernel" "--no-kernel" "--smoke" "--fast" "--full"] {
             if $has_value {
                 fail $"($arg) does not take a value"
             }

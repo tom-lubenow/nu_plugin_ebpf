@@ -84,6 +84,18 @@ fn test_verifier_diff_matrix_includes_aggregate_row() {
             .contains("local_accept_kernel_skip_dry_run=($row.local_accept_kernel_skip_dry_run)"),
         "human matrix output should split local-accept/kernel-skip gaps by default lane"
     );
+    assert!(
+        verifier_diff.contains("--gap-only"),
+        "verifier_diff.nu should expose a gap-focused matrix mode in the CLI"
+    );
+    assert!(
+        verifier_diff.contains("select-fixture-matrix-rows $matrix_rows $gap_only"),
+        "matrix output should pass rows through the gap-only selector"
+    );
+    assert!(
+        verifier_diff.contains("$rows | where {|row| $row.local_accept_kernel_skip > 0 }"),
+        "gap-only matrix output should filter out rows without local-accept/kernel-skip gaps"
+    );
 }
 
 #[test]
