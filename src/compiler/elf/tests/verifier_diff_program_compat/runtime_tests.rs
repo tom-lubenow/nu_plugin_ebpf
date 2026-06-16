@@ -153,8 +153,29 @@ fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
         "verifier_diff.nu should expose the fixture chunk index mode in the CLI"
     );
     assert!(
+        verifier_diff
+            .contains("--gap-only: With --list, --matrix, or --chunks, show only local-accept/kernel-skip gaps."),
+        "chunk index output should support the same gap-focused mode as list and matrix output"
+    );
+    assert!(
+        verifier_diff.contains(
+            "fixture-chunk-index-rows $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane $gap_only"
+        ),
+        "chunk index output should receive the gap-only flag from the main CLI"
+    );
+    assert!(
         verifier_diff.contains("def fixture-chunk-index-row [\n    path: path\n    fixture_names"),
         "chunk index rows should keep per-file fixture metadata centralized"
+    );
+    assert!(
+        verifier_diff.contains(
+            "and (not $gap_only or ($fixture.local == \"accept\" and $fixture.kernel == \"skip\"))"
+        ),
+        "gap-only chunk output should select only local-accept/kernel-skip fixtures"
+    );
+    assert!(
+        verifier_diff.contains("or $gap_only"),
+        "gap-only chunk output should filter out chunks with no selected gap fixtures"
     );
     assert!(
         verifier_diff.contains("line_count: (fixture-chunk-line-count $path)"),

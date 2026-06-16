@@ -85,8 +85,8 @@ def verifier-diff-main [options] {
     if $json and not ($list or $matrix or $chunks) {
         fail "--json is only supported with --list, --matrix, or --chunks"
     }
-    if $gap_only and not ($list or $matrix) {
-        fail "--gap-only is only supported with --list or --matrix"
+    if $gap_only and not ($list or $matrix or $chunks) {
+        fail "--gap-only is only supported with --list, --matrix, or --chunks"
     }
     if $compat_kernel != null and not ($list or $matrix) {
         fail "--compat-kernel is only supported with --list or --matrix"
@@ -216,7 +216,7 @@ def verifier-diff-main [options] {
     let selected_test_lane = if ($smoke or $default_smoke) { "host-safe" } else { $test_lane }
     let fixture_names = if $fixture == null { $fixtures } else { $fixture }
     if $chunks {
-        let chunk_rows = (fixture-chunk-index-rows $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
+        let chunk_rows = (fixture-chunk-index-rows $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane $gap_only)
         if $json {
             print ($chunk_rows | to json)
         } else {

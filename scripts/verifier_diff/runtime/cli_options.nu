@@ -73,7 +73,7 @@ def print-main-help [] {
         "  --matrix: Print verifier fixture counts by tier and category, then exit."
         "  --chunks: Print verifier fixture chunk counts by file, then exit."
         "  --json: Emit JSON for --list, --matrix, or --chunks."
-        "  --gap-only: With --list or --matrix, show only local-accept/kernel-skip gaps."
+        "  --gap-only: With --list, --matrix, or --chunks, show only local-accept/kernel-skip gaps."
         "  --compat-kernel=<string>: With --list or --matrix, compare effective minimums against this kernel release. Use assignment or quotes so Nushell preserves versions like 5.10."
         "  --kernel: Require kernel verifier checks instead of auto-skipping missing prerequisites."
         "  --no-kernel: Run only local dry-run compiler/VCC checks."

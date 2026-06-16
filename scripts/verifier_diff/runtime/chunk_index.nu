@@ -37,6 +37,7 @@ def fixture-matches-chunk-index-filters [
     local_status
     kernel_status
     test_lane
+    gap_only: bool
 ] {
     let fixture_tier = (fixture-tier $fixture)
     let declared_test_lane = (optional $fixture default_test_lane "")
@@ -50,6 +51,7 @@ def fixture-matches-chunk-index-filters [
         and ($local_status == null or $fixture.local == $local_status)
         and ($kernel_status == null or $fixture.kernel == $kernel_status)
         and ($test_lane == null or $declared_test_lane == $test_lane)
+        and (not $gap_only or ($fixture.local == "accept" and $fixture.kernel == "skip"))
     )
 }
 
@@ -63,6 +65,7 @@ def fixture-chunk-index-row [
     local_status
     kernel_status
     test_lane
+    gap_only: bool
 ] {
     let fixtures = (parse-verifier-diff-fixture-chunk $path)
     let selected = (
@@ -77,7 +80,8 @@ def fixture-chunk-index-row [
                 $exclude_tier
                 $local_status
                 $kernel_status
-                $test_lane)
+                $test_lane
+                $gap_only)
         }
     )
     let selected_names = ($selected | get name)
@@ -110,6 +114,7 @@ def has-chunk-index-filter [
     local_status
     kernel_status
     test_lane
+    gap_only: bool
 ] {
     (
         $fixture_names != null
@@ -120,6 +125,7 @@ def has-chunk-index-filter [
         or $local_status != null
         or $kernel_status != null
         or $test_lane != null
+        or $gap_only
     )
 }
 
@@ -148,6 +154,7 @@ def fixture-chunk-index-rows [
     local_status
     kernel_status
     test_lane
+    gap_only: bool
 ] {
     validate-tier-option "selected" $tier
     validate-tier-option "excluded" $exclude_tier
@@ -171,11 +178,12 @@ def fixture-chunk-index-rows [
                 $exclude_tier
                 $local_status
                 $kernel_status
-                $test_lane)
+                $test_lane
+                $gap_only)
         }
     )
 
-    let filtered = if (has-chunk-index-filter $fixture_names $category $tag $tier $exclude_tier $local_status $kernel_status $test_lane) {
+    let filtered = if (has-chunk-index-filter $fixture_names $category $tag $tier $exclude_tier $local_status $kernel_status $test_lane $gap_only) {
         $rows | where {|row| $row.selected > 0 }
     } else {
         $rows
