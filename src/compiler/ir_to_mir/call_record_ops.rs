@@ -123,11 +123,12 @@ impl<'a> HirToMirLowering<'a> {
         let Some(MirType::Ptr { address_space, .. }) = input_ty else {
             return false;
         };
-        let fixed_array_len = input_meta
+        let non_empty_static_len = input_meta
             .annotated_semantics
             .as_ref()
             .and_then(|semantics| match semantics {
-                AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len),
+                AnnotatedValueSemantics::Binary { len }
+                | AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len),
                 _ => None,
             })
             .or_else(|| {
@@ -143,7 +144,7 @@ impl<'a> HirToMirLowering<'a> {
                     .as_ref()
                     .and_then(|ty| Self::typed_fixed_array_array_type(ty).map(|(_, len)| len))
             });
-        if !fixed_array_len.is_some_and(|len| len > 0) {
+        if !non_empty_static_len.is_some_and(|len| len > 0) {
             return false;
         }
 
