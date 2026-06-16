@@ -22301,6 +22301,119 @@ fn test_lower_global_define_type_record_default_supports_scalar_fields() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_default_empty_is_passthrough() {
+    let define_decl = DeclId::new(16_920);
+    let global_get_decl = DeclId::new(16_921);
+    let default_decl = DeclId::new(16_922);
+    let get_decl = DeclId::new(16_923);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (default_decl, "default".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,uid:u32,cpu:u32}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("uid".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty on non-empty typed records should pass through");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 8,
+                    ty: MirType::U32,
+                    ..
+                }
+            )),
+        "expected default --empty passthrough to preserve typed record field projection"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed record default --empty output consumed by get should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_merge_supports_scalar_fields() {
     for (case_idx, (merge_field, get_field, expected_offset)) in
         [("tid", "uid", 8), ("uid", "cpu", 12)]

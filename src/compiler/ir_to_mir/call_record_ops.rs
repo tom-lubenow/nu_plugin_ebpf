@@ -123,28 +123,34 @@ impl<'a> HirToMirLowering<'a> {
         let Some(MirType::Ptr { address_space, .. }) = input_ty else {
             return false;
         };
-        let non_empty_static_len = input_meta
-            .annotated_semantics
-            .as_ref()
-            .and_then(|semantics| match semantics {
-                AnnotatedValueSemantics::Binary { len }
-                | AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len),
-                _ => None,
-            })
-            .or_else(|| {
-                if input_meta.annotated_semantics.is_some()
-                    || input_meta.string_slot.is_some()
-                    || input_meta.list_buffer.is_some()
-                {
-                    return None;
-                }
+        let statically_non_empty = !input_meta.record_fields.is_empty()
+            || Self::typed_mutable_global_record_field_count(input_meta)
+                .is_some_and(|count| count > 0)
+            || input_meta
+                .annotated_semantics
+                .as_ref()
+                .is_some_and(|semantics| match semantics {
+                    AnnotatedValueSemantics::Record(fields) => !fields.is_empty(),
+                    AnnotatedValueSemantics::Binary { len }
+                    | AnnotatedValueSemantics::FixedArray { len, .. } => *len > 0,
+                    _ => false,
+                })
+            || input_meta
+                .annotated_semantics
+                .is_none()
+                .then(|| {
+                    if input_meta.string_slot.is_some() || input_meta.list_buffer.is_some() {
+                        return false;
+                    }
 
-                input_meta
-                    .field_type
-                    .as_ref()
-                    .and_then(|ty| Self::typed_fixed_array_array_type(ty).map(|(_, len)| len))
-            });
-        if !non_empty_static_len.is_some_and(|len| len > 0) {
+                    input_meta
+                        .field_type
+                        .as_ref()
+                        .and_then(|ty| Self::typed_fixed_array_array_type(ty).map(|(_, len)| len))
+                        .is_some_and(|len| len > 0)
+                })
+                .unwrap_or(false);
+        if !statically_non_empty {
             return false;
         }
 
