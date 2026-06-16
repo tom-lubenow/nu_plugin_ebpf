@@ -139,6 +139,7 @@ const MAX_DYNAMIC_STRING_INDEX_OF_CANDIDATES: usize = MAX_STRING_SIZE - 1;
 const MAX_TYPED_STRING_ARRAY_REPLACE_PROBES: usize = MAX_STRING_SIZE - 1;
 const MAX_TYPED_STRING_ARRAY_TRIM_LEFT_PROBES: usize = MAX_STRING_SIZE - 1;
 const MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES: usize = MAX_STRING_SIZE - 1;
+const FILL_SUPPORTED_INPUT_TYPES: &str = "string, int, float, filesize, or bool";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
     Left,
@@ -7929,10 +7930,9 @@ impl<'a> HirToMirLowering<'a> {
 
     fn fill_input(&self, input_reg: Option<RegId>) -> Result<KnownFillInput, CompileError> {
         let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) else {
-            return Err(CompileError::UnsupportedInstruction(
-                "fill requires compile-time known string, int, float, or filesize input in eBPF"
-                    .into(),
-            ));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "fill requires compile-time known {FILL_SUPPORTED_INPUT_TYPES} input in eBPF"
+            )));
         };
 
         if let Some(value) = meta.constant_value {
@@ -7952,7 +7952,7 @@ impl<'a> HirToMirLowering<'a> {
                     .collect::<Result<Vec<_>, _>>()
                     .map(KnownFillInput::List),
                 other => Err(CompileError::UnsupportedInstruction(format!(
-                    "fill requires compile-time known string, int, float, or filesize input in eBPF; input has type {}",
+                    "fill requires compile-time known {FILL_SUPPORTED_INPUT_TYPES} input in eBPF; input has type {}",
                     other.get_type()
                 ))),
             };
@@ -7963,10 +7963,9 @@ impl<'a> HirToMirLowering<'a> {
         } else if let Some(input) = meta.literal_int {
             Ok(KnownFillInput::Scalar(input.to_string()))
         } else {
-            Err(CompileError::UnsupportedInstruction(
-                "fill requires compile-time known string, int, float, or filesize input in eBPF"
-                    .into(),
-            ))
+            Err(CompileError::UnsupportedInstruction(format!(
+                "fill requires compile-time known {FILL_SUPPORTED_INPUT_TYPES} input in eBPF"
+            )))
         }
     }
 
@@ -7986,19 +7985,16 @@ impl<'a> HirToMirLowering<'a> {
             nu_protocol::Value::Float { val, .. } => Ok(val.to_string()),
             nu_protocol::Value::Filesize { val, .. } => Ok(val.get().to_string()),
             nu_protocol::Value::Bool { val, .. } => Ok(val.to_string()),
-            other => {
-                let supported = "string, int, float, and filesize";
-                match list_index {
-                    Some(index) => Err(CompileError::UnsupportedInstruction(format!(
-                        "fill supports only {supported} compile-time list items in eBPF; item {index} has type {}",
-                        other.get_type()
-                    ))),
-                    None => Err(CompileError::UnsupportedInstruction(format!(
-                        "fill requires compile-time known {supported} input in eBPF; input has type {}",
-                        other.get_type()
-                    ))),
-                }
-            }
+            other => match list_index {
+                Some(index) => Err(CompileError::UnsupportedInstruction(format!(
+                    "fill supports only {FILL_SUPPORTED_INPUT_TYPES} compile-time list items in eBPF; item {index} has type {}",
+                    other.get_type()
+                ))),
+                None => Err(CompileError::UnsupportedInstruction(format!(
+                    "fill requires compile-time known {FILL_SUPPORTED_INPUT_TYPES} input in eBPF; input has type {}",
+                    other.get_type()
+                ))),
+            },
         }
     }
 

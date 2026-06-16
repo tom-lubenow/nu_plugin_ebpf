@@ -21074,8 +21074,9 @@ fn test_lower_fill_width_rejects_runtime_bool_when_padded_output_exceeds_buffer(
     .expect_err("runtime bool padding beyond the tracked string buffer should remain unsupported");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -21257,8 +21258,9 @@ fn test_lower_fill_rejects_possibly_negative_runtime_signed_int() {
     .expect_err("fill should reject possibly negative runtime signed integer input");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -21389,8 +21391,9 @@ fn test_lower_fill_rejects_padded_tracked_runtime_string() {
     .expect_err("padded fill on tracked runtime strings should remain unsupported");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23039,8 +23042,9 @@ fn test_lower_fill_width_20_right_on_runtime_u64_rejects_unrepresentable_thresho
     .expect_err("fill --width 20 --alignment right should reject runtime u64 input");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23137,8 +23141,9 @@ fn test_lower_fill_width_64_left_with_multi_character_rejects_runtime_unsigned_i
     .expect_err("fill --width 64 --character __ should reject runtime integer trailing padding");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23172,8 +23177,9 @@ fn test_lower_fill_width_four_center_with_multibyte_character_rejects_runtime_un
     .expect_err("fill --width 4 --alignment center --character é should reject runtime integer trailing padding");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23207,8 +23213,9 @@ fn test_lower_fill_width_65_left_with_multibyte_character_rejects_runtime_unsign
     .expect_err("fill --width 65 --character __ should reject runtime integer input");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23242,8 +23249,9 @@ fn test_lower_fill_width_128_right_rejects_runtime_unsigned_int() {
     .expect_err("fill --width 128 --alignment right should reject runtime integer input");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
@@ -23270,8 +23278,9 @@ fn test_lower_fill_width_128_left_rejects_runtime_unsigned_int() {
     .expect_err("fill --width 128 should reject runtime integer input because padding exceeds the string buffer cap");
 
     assert!(
-        err.to_string()
-            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        err.to_string().contains(
+            "fill requires compile-time known string, int, float, filesize, or bool input"
+        ),
         "unexpected error: {err}"
     );
 }
