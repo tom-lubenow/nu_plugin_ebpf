@@ -2130,6 +2130,11 @@ fn test_libbpf_map_creation_arena_routes_do_not_hit_aya_rejection() {
             "cgroup_device",
         ),
         (
+            EbpfProgramType::LsmCgroup,
+            "/definitely/missing/nu_plugin_ebpf_lsm_cgroup:socket_bind",
+            "lsm_cgroup",
+        ),
+        (
             EbpfProgramType::RawTracepointWritable,
             "sys_enter",
             "raw_tracepoint.w",
