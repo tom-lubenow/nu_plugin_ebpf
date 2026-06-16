@@ -115,8 +115,11 @@ def verifier-diff-main [options] {
     if $smoke and $test_lane != null {
         fail "--smoke and --test-lane are mutually exclusive"
     }
-    if $chunks and ($smoke or $test_lane != null) {
-        fail "--chunks does not support --smoke or --test-lane; use --list or --matrix for default lane views"
+    if $chunks and $smoke {
+        fail "--chunks does not support --smoke; use --list or --matrix for default lane views"
+    }
+    if $chunks and $test_lane != null and not $gap_only {
+        fail "--chunks only supports --test-lane together with --gap-only; use --list or --matrix for full default lane views"
     }
     if $fixture != null and $fixtures != null {
         fail "--fixture and --fixtures are mutually exclusive"

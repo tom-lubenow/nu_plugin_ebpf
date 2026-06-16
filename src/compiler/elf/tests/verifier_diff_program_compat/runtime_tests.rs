@@ -164,13 +164,18 @@ fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
         "chunk index output should receive the gap-only flag from the main CLI"
     );
     assert!(
+        verifier_diff.contains(
+            "--chunks only supports --test-lane together with --gap-only; use --list or --matrix for full default lane views"
+        ),
+        "chunk index output should keep broad derived lane filters out of the cheap chunk index"
+    );
+    assert!(
         verifier_diff.contains("def fixture-chunk-index-row [\n    path: path\n    fixture_names"),
         "chunk index rows should keep per-file fixture metadata centralized"
     );
     assert!(
-        verifier_diff.contains(
-            "and (not $gap_only or ($fixture.local == \"accept\" and $fixture.kernel == \"skip\"))"
-        ),
+        verifier_diff.contains("if not $gap_fixture {\n            false\n        } else {\n            (fixture-default-test-lane $fixture) == $test_lane\n        }")
+            && verifier_diff.contains("and (not $gap_only or $gap_fixture)"),
         "gap-only chunk output should select only local-accept/kernel-skip fixtures"
     );
     assert!(

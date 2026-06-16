@@ -53,6 +53,18 @@ def fixture-matches-chunk-index-filters [
 ] {
     let fixture_tier = (fixture-tier $fixture)
     let declared_test_lane = (optional $fixture default_test_lane "")
+    let gap_fixture = ($fixture.local == "accept" and $fixture.kernel == "skip")
+    let lane_matches = if $test_lane == null {
+        true
+    } else if $gap_only {
+        if not $gap_fixture {
+            false
+        } else {
+            (fixture-default-test-lane $fixture) == $test_lane
+        }
+    } else {
+        $declared_test_lane == $test_lane
+    }
 
     (
         ($fixture_names == null or $fixture.name in $fixture_names)
@@ -62,8 +74,8 @@ def fixture-matches-chunk-index-filters [
         and ($exclude_tier == null or $fixture_tier != $exclude_tier)
         and ($local_status == null or $fixture.local == $local_status)
         and ($kernel_status == null or $fixture.kernel == $kernel_status)
-        and ($test_lane == null or $declared_test_lane == $test_lane)
-        and (not $gap_only or ($fixture.local == "accept" and $fixture.kernel == "skip"))
+        and $lane_matches
+        and (not $gap_only or $gap_fixture)
     )
 }
 
@@ -178,8 +190,8 @@ def fixture-chunk-index-rows [
     validate-test-lane-option "selected" $test_lane
     validate-status-option "local" $local_status
     validate-status-option "kernel" $kernel_status
-    if $test_lane != null {
-        fail "--chunks does not support derived --test-lane filters; use --list or --matrix for default lane views"
+    if $test_lane != null and not $gap_only {
+        fail "--chunks only supports --test-lane together with --gap-only; use --list or --matrix for full default lane views"
     }
     validate-chunk-index-fixture-names $fixture_names
 
