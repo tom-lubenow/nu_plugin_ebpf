@@ -182,6 +182,18 @@ fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
         "chunk index output should include source line counts for review-growth checks"
     );
     assert!(
+        verifier_diff
+            .contains("gap_lane_dry_run: (fixture-test-lane-count $gap_lanes \"dry-run\")")
+            && verifier_diff.contains(
+                "gap_lane_host_gated: (fixture-test-lane-count $gap_lanes \"host-gated\")"
+            )
+            && verifier_diff
+                .contains("gap_lane_vm_only: (fixture-test-lane-count $gap_lanes \"vm-only\")")
+            && verifier_diff
+                .contains("gap_lane_host_safe: (fixture-test-lane-count $gap_lanes \"host-safe\")"),
+        "chunk index output should expose derived gap-lane counts"
+    );
+    assert!(
         verifier_diff.contains("def fixture-chunk-index-summary [rows]"),
         "chunk index output should keep aggregate summary counts centralized"
     );
@@ -194,5 +206,11 @@ fn test_verifier_diff_chunk_index_reports_chunk_growth_metadata() {
     assert!(
         verifier_diff.contains("summary chunks=($summary.chunks) lines=($summary.line_count)"),
         "human chunk index output should include an aggregate summary line"
+    );
+    assert!(
+        verifier_diff.contains(
+            "gap_lanes=($summary.gap_lane_dry_run)/($summary.gap_lane_host_gated)/($summary.gap_lane_vm_only)/($summary.gap_lane_host_safe)"
+        ),
+        "human chunk index summary should expose derived gap-lane totals"
     );
 }

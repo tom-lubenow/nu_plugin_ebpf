@@ -19,6 +19,18 @@ def fixture-values-from-raw [fixtures field: string default] {
     | sort
 }
 
+def fixture-gap-default-test-lanes [fixtures] {
+    $fixtures
+    | where {|fixture| $fixture.local == "accept" and $fixture.kernel == "skip" }
+    | each {|fixture| fixture-default-test-lane $fixture }
+}
+
+def fixture-test-lane-count [lanes lane: string] {
+    $lanes
+    | where {|value| $value == $lane }
+    | length
+}
+
 def fixture-has-chunk-index-tag [fixture tag] {
     if $tag == null {
         return true
@@ -85,6 +97,7 @@ def fixture-chunk-index-row [
         }
     )
     let selected_names = ($selected | get name)
+    let gap_lanes = (fixture-gap-default-test-lanes $selected)
 
     {
         file: ($path | path basename)
@@ -100,6 +113,10 @@ def fixture-chunk-index-row [
         kernel_accept: (fixture-status-count-from-raw $selected kernel accept)
         kernel_reject: (fixture-status-count-from-raw $selected kernel reject)
         kernel_skip: (fixture-status-count-from-raw $selected kernel skip)
+        gap_lane_dry_run: (fixture-test-lane-count $gap_lanes "dry-run")
+        gap_lane_host_gated: (fixture-test-lane-count $gap_lanes "host-gated")
+        gap_lane_vm_only: (fixture-test-lane-count $gap_lanes "vm-only")
+        gap_lane_host_safe: (fixture-test-lane-count $gap_lanes "host-safe")
         first_fixture: (if ($selected_names | is-empty) { "" } else { $selected_names | first })
         last_fixture: (if ($selected_names | is-empty) { "" } else { $selected_names | last })
     }
@@ -223,13 +240,17 @@ def fixture-chunk-index-summary [rows] {
         kernel_accept: (chunk-index-field-sum $rows kernel_accept)
         kernel_reject: (chunk-index-field-sum $rows kernel_reject)
         kernel_skip: (chunk-index-field-sum $rows kernel_skip)
+        gap_lane_dry_run: (chunk-index-field-sum $rows gap_lane_dry_run)
+        gap_lane_host_gated: (chunk-index-field-sum $rows gap_lane_host_gated)
+        gap_lane_vm_only: (chunk-index-field-sum $rows gap_lane_vm_only)
+        gap_lane_host_safe: (chunk-index-field-sum $rows gap_lane_host_safe)
     }
 }
 
 def print-fixture-chunk-index [rows] {
     for row in $rows {
-        print $"chunk=($row.file) lines=($row.line_count) total=($row.total) selected=($row.selected) categories=($row.categories | str join ',') tiers=($row.tiers | str join ',') declared_lanes=($row.declared_test_lanes | str join ',') local=($row.local_accept)/($row.local_reject)/($row.local_skip) kernel=($row.kernel_accept)/($row.kernel_reject)/($row.kernel_skip) first=($row.first_fixture) last=($row.last_fixture)"
+        print $"chunk=($row.file) lines=($row.line_count) total=($row.total) selected=($row.selected) categories=($row.categories | str join ',') tiers=($row.tiers | str join ',') declared_lanes=($row.declared_test_lanes | str join ',') local=($row.local_accept)/($row.local_reject)/($row.local_skip) kernel=($row.kernel_accept)/($row.kernel_reject)/($row.kernel_skip) gap_lanes=($row.gap_lane_dry_run)/($row.gap_lane_host_gated)/($row.gap_lane_vm_only)/($row.gap_lane_host_safe) first=($row.first_fixture) last=($row.last_fixture)"
     }
     let summary = (fixture-chunk-index-summary $rows)
-    print $"summary chunks=($summary.chunks) lines=($summary.line_count) total=($summary.total) selected=($summary.selected) categories=($summary.categories | str join ',') tiers=($summary.tiers | str join ',') declared_lanes=($summary.declared_test_lanes | str join ',') local=($summary.local_accept)/($summary.local_reject)/($summary.local_skip) kernel=($summary.kernel_accept)/($summary.kernel_reject)/($summary.kernel_skip)"
+    print $"summary chunks=($summary.chunks) lines=($summary.line_count) total=($summary.total) selected=($summary.selected) categories=($summary.categories | str join ',') tiers=($summary.tiers | str join ',') declared_lanes=($summary.declared_test_lanes | str join ',') local=($summary.local_accept)/($summary.local_reject)/($summary.local_skip) kernel=($summary.kernel_accept)/($summary.kernel_reject)/($summary.kernel_skip) gap_lanes=($summary.gap_lane_dry_run)/($summary.gap_lane_host_gated)/($summary.gap_lane_vm_only)/($summary.gap_lane_host_safe)"
 }
