@@ -434,7 +434,9 @@ Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner
 template is also emitted as a runtime map. Live `raw_tracepoint`, `fentry`,
-`fexit`, `fmod_ret`, `tp_btf`, and `lsm` map-in-map objects route through
+`fexit`, `fmod_ret`, `tp_btf`, `lsm`, and cgroup FD attach families
+(`cgroup_device`, `sock_ops`, `cgroup_skb`, `cgroup_sock`, `cgroup_sysctl`,
+`cgroup_sockopt`, and `cgroup_sock_addr`) route map-in-map objects through
 libbpf so libbpf can materialize `inner_map_fd` from that metadata. Aya-backed
 and other non-libbpf live loading is rejected before Aya because Aya does not
 materialize `inner_map_fd` from BTF `values`. Dry-run outer `map-get` /

@@ -1828,6 +1828,66 @@ fn test_lsm_map_in_map_routes_to_libbpf_loader() {
 }
 
 #[test]
+fn test_cgroup_fd_map_in_map_routes_to_libbpf_loader() {
+    for (prog_type, target, label) in [
+        (
+            EbpfProgramType::CgroupDevice,
+            "/sys/fs/cgroup",
+            "cgroup_device",
+        ),
+        (EbpfProgramType::SockOps, "/sys/fs/cgroup", "sock_ops"),
+        (
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:egress",
+            "cgroup_skb",
+        ),
+        (
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:sock_create",
+            "cgroup_sock",
+        ),
+        (
+            EbpfProgramType::CgroupSysctl,
+            "/sys/fs/cgroup",
+            "cgroup_sysctl",
+        ),
+        (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            "cgroup_sockopt",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect4",
+            "cgroup_sock_addr",
+        ),
+    ] {
+        let state = EbpfState::new();
+        let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+        let object = live_map_in_map_fixture_for_program(
+            prog_type,
+            target,
+            HashMap::from([(outer_ref, inner_ref)]),
+            vec![],
+        );
+
+        let err = state
+            .attach(&object)
+            .expect_err("cgroup map-in-map should route to libbpf loader");
+        let message = err.to_string();
+
+        assert!(
+            !message.contains("Aya-backed live loading of map-in-map runtime map"),
+            "{label} map-in-map should not hit the Aya-only rejection: {err:?}"
+        );
+        assert!(
+            message.contains("libbpf") || message.contains(label) || message.contains("cgroup"),
+            "unexpected {label} map-in-map libbpf dispatch error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_libbpf_pin_compatible_object_marks_all_maps_by_name() {
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
     let object = live_map_in_map_fixture_for_program(

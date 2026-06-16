@@ -1146,6 +1146,30 @@ impl EbpfState {
             return self
                 .attach_libbpf_cgroup_sock_addr_unix_object(object, pin_group, program, target);
         }
+        if object_has_map_in_map_runtime_map(object)
+            && matches!(
+                program.prog_type.attach_kind(),
+                ProgramAttachKind::CgroupDevice
+                    | ProgramAttachKind::SockOps
+                    | ProgramAttachKind::CgroupSkb
+                    | ProgramAttachKind::CgroupSock
+                    | ProgramAttachKind::CgroupSysctl
+                    | ProgramAttachKind::CgroupSockopt
+                    | ProgramAttachKind::CgroupSockAddr
+            )
+        {
+            let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                unreachable!("cgroup attach kind must use a cgroup path program spec")
+            });
+            return self.attach_libbpf_cgroup_object(
+                object,
+                pin_group,
+                program,
+                cgroup_path,
+                program.prog_type.canonical_prefix(),
+                program.prog_type.canonical_prefix(),
+            );
+        }
         if let Some(err) = unsupported_live_map_in_map_error(object) {
             return Err(err);
         }
@@ -2228,13 +2252,31 @@ impl EbpfState {
         program: &EbpfProgramSection,
         target: &CgroupSockAddrTarget,
     ) -> Result<u32, LoadError> {
-        let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+        self.attach_libbpf_cgroup_object(
+            object,
+            pin_group,
+            program,
+            &target.cgroup_path,
+            "cgroup_sock_addr",
+            "cgroup_sock_addr UNIX",
+        )
+    }
+
+    fn attach_libbpf_cgroup_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        cgroup_path: &str,
+        cgroup_error_label: &str,
+        program_label: &str,
+    ) -> Result<u32, LoadError> {
+        let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
             if e.kind() == ErrorKind::PermissionDenied {
                 LoadError::PermissionDenied
             } else {
                 LoadError::Attach(format!(
-                    "Failed to open cgroup_sock_addr cgroup path {}: {e}",
-                    target.cgroup_path
+                    "Failed to open {cgroup_error_label} cgroup path {cgroup_path}: {e}"
                 ))
             }
         })?;
@@ -2244,7 +2286,7 @@ impl EbpfState {
             elf_bytes,
             &program.name,
             cgroup.as_raw_fd(),
-            "cgroup_sock_addr UNIX",
+            program_label,
             pin_root_path.as_deref(),
         )?;
         self.insert_libbpf_program_active_probe(handle, program, pin_group)
@@ -2263,25 +2305,14 @@ impl EbpfState {
                     .to_string(),
             )
         })?;
-        let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
-            if e.kind() == ErrorKind::PermissionDenied {
-                LoadError::PermissionDenied
-            } else {
-                LoadError::Attach(format!(
-                    "Failed to open lsm_cgroup cgroup path {cgroup_path}: {e}"
-                ))
-            }
-        })?;
-        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
-        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
-        let handle = LibbpfProgramHandle::load_and_attach_cgroup(
-            elf_bytes,
-            &program.name,
-            cgroup.as_raw_fd(),
+        self.attach_libbpf_cgroup_object(
+            object,
+            pin_group,
+            program,
+            cgroup_path,
             "lsm_cgroup",
-            pin_root_path.as_deref(),
-        )?;
-        self.insert_libbpf_program_active_probe(handle, program, pin_group)
+            "lsm_cgroup",
+        )
     }
 
     fn insert_libbpf_program_active_probe(
