@@ -17431,6 +17431,49 @@ fn test_lower_global_define_type_u32_array_default_empty_is_passthrough() {
 }
 
 #[test]
+fn test_lower_global_define_type_string_array_default_empty_is_passthrough() {
+    let (hir, decl_names) = make_global_define_type_array_default_empty_length_program(
+        "array{string:8:2}",
+        "names",
+        10_982,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty on non-empty typed string fixed arrays should pass through");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Copy { .. })),
+        "expected default --empty on string fixed arrays to pass through the input pointer"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "default --empty on non-empty string fixed arrays should not rebuild a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array default --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_bool_array_compact_empty_is_passthrough() {
     let (hir, decl_names) = make_global_define_type_array_compact_length_program(
         "array{bool:2}",
