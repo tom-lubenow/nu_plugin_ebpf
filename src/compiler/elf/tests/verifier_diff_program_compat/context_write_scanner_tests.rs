@@ -7,11 +7,11 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
         target: String,
         form: &'static str,
         field_names: Vec<&'static str>,
-        program: String,
         expected_keys: BTreeSet<String>,
     }
 
     let mut expected = Vec::new();
+    let mut checks = Vec::new();
 
     for spec_text in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
         let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
@@ -37,21 +37,20 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
             }
 
             if !expected_keys.is_empty() {
+                checks.push((
+                    (*spec_text).to_string(),
+                    context_write_scanner_source_from_assignments(&assignments, form),
+                ));
                 expected.push(ExpectedWriteFeature {
                     target: (*spec_text).to_string(),
                     form: form.label(),
                     field_names,
-                    program: context_write_scanner_source_from_assignments(&assignments, form),
                     expected_keys,
                 });
             }
         }
     }
 
-    let checks = expected
-        .iter()
-        .map(|check| (check.target.clone(), check.program.clone()))
-        .collect::<Vec<_>>();
     let Some(actual) = verifier_diff_nu_program_context_field_feature_keys(&checks) else {
         return;
     };

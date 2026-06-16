@@ -383,6 +383,8 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
     user_functions: &HashMap<DeclId, HirFunction>,
     decl_signatures: &HashMap<DeclId, UserFunctionSig>,
 ) -> Result<MirLoweringResult, CompileError> {
+    #[cfg(test)]
+    let _test_compile_permit = crate::compiler::mir_to_ebpf::acquire_test_compile_permit();
     let hir_type_hints = type_info.map(mir_hints_from_hir);
     let mutated_capture_vars = collect_mutated_capture_vars(hir, user_functions);
     let forward_named_globals =

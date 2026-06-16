@@ -3,6 +3,8 @@ use std::process::Output;
 
 use super::source_support::run_nu_script;
 
+const NU_PROGRAM_FEATURE_CHECK_BATCH_SIZE: usize = 64;
+
 pub(super) fn verifier_diff_nu_target_feature_keys(
     targets: &[String],
 ) -> Option<Vec<BTreeSet<String>>> {
@@ -43,6 +45,24 @@ $targets
 }
 
 fn verifier_diff_nu_program_feature_keys(
+    function_name: &str,
+    label: &str,
+    checks: &[(String, String)],
+) -> Option<Vec<BTreeSet<String>>> {
+    if checks.len() > NU_PROGRAM_FEATURE_CHECK_BATCH_SIZE {
+        let mut combined = Vec::with_capacity(checks.len());
+        for chunk in checks.chunks(NU_PROGRAM_FEATURE_CHECK_BATCH_SIZE) {
+            let mut batch =
+                verifier_diff_nu_program_feature_keys_batch(function_name, label, chunk)?;
+            combined.append(&mut batch);
+        }
+        return Some(combined);
+    }
+
+    verifier_diff_nu_program_feature_keys_batch(function_name, label, checks)
+}
+
+fn verifier_diff_nu_program_feature_keys_batch(
     function_name: &str,
     label: &str,
     checks: &[(String, String)],

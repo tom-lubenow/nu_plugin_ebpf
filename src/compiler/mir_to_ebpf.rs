@@ -19,6 +19,8 @@
 //! 7. Fix up jumps and emit bytecode
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(test)]
+use std::sync::{Condvar, Mutex, OnceLock};
 
 use crate::compiler::CompileError;
 use crate::compiler::cfg::{AnalysisCfg, BlockLiveness, CFG};
@@ -70,6 +72,79 @@ mod parallel_moves;
 mod remat;
 mod string_lowering;
 mod value_ops;
+
+#[cfg(test)]
+const DEFAULT_TEST_COMPILE_CONCURRENCY_LIMIT: usize = 4;
+
+#[cfg(test)]
+struct TestCompileLimiter {
+    available: Mutex<usize>,
+    condvar: Condvar,
+}
+
+#[cfg(test)]
+pub(crate) struct TestCompilePermit;
+
+#[cfg(test)]
+static TEST_COMPILE_LIMITER: OnceLock<TestCompileLimiter> = OnceLock::new();
+
+#[cfg(test)]
+fn test_compile_concurrency_limit() -> usize {
+    std::env::var("NU_PLUGIN_EBPF_TEST_COMPILE_JOBS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|limit| *limit > 0)
+        .unwrap_or(DEFAULT_TEST_COMPILE_CONCURRENCY_LIMIT)
+}
+
+#[cfg(test)]
+pub(crate) fn acquire_test_compile_permit() -> TestCompilePermit {
+    let limiter = TEST_COMPILE_LIMITER.get_or_init(|| TestCompileLimiter {
+        available: Mutex::new(test_compile_concurrency_limit()),
+        condvar: Condvar::new(),
+    });
+    let mut available = limiter
+        .available
+        .lock()
+        .expect("test compile limiter should not be poisoned");
+    while *available == 0 {
+        available = limiter
+            .condvar
+            .wait(available)
+            .expect("test compile limiter should not be poisoned");
+    }
+    *available -= 1;
+    TestCompilePermit
+}
+
+#[cfg(test)]
+impl Drop for TestCompilePermit {
+    fn drop(&mut self) {
+        let limiter = TEST_COMPILE_LIMITER
+            .get()
+            .expect("test compile limiter should be initialized before permit drop");
+        let mut available = limiter
+            .available
+            .lock()
+            .expect("test compile limiter should not be poisoned");
+        *available += 1;
+        limiter.condvar.notify_one();
+        drop(available);
+
+        #[cfg(target_env = "gnu")]
+        {
+            // Unit tests compile thousands of short-lived programs; glibc tends
+            // to retain those freed arenas until process exit, which can OOM
+            // long default-parallel test runs.
+            unsafe {
+                libc::malloc_trim(0);
+            }
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn acquire_test_compile_permit() {}
 
 /// Result of MIR to eBPF compilation
 pub struct MirCompileResult {
@@ -712,6 +787,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
     data_globals: Vec<DataGlobal>,
     bss_globals: Vec<BssGlobal>,
 ) -> Result<MirCompileResult, CompileError> {
+    let _test_compile_permit = acquire_test_compile_permit();
     validate_mir_program_for_compile(mir)?;
 
     let mut program = mir.clone();
