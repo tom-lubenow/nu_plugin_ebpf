@@ -109,6 +109,56 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn default_empty_runtime_passthrough_is_safe(
+        input_meta: Option<&RegMetadata>,
+        input_ty: Option<&MirType>,
+    ) -> bool {
+        if input_ty.is_some_and(MirType::is_scalar_like) {
+            return true;
+        }
+
+        let Some(input_meta) = input_meta else {
+            return false;
+        };
+        let Some(MirType::Ptr { address_space, .. }) = input_ty else {
+            return false;
+        };
+        let fixed_array_len = input_meta
+            .annotated_semantics
+            .as_ref()
+            .and_then(|semantics| match semantics {
+                AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len),
+                _ => None,
+            })
+            .or_else(|| {
+                if input_meta.annotated_semantics.is_some()
+                    || input_meta.string_slot.is_some()
+                    || input_meta.list_buffer.is_some()
+                {
+                    return None;
+                }
+
+                input_meta
+                    .field_type
+                    .as_ref()
+                    .and_then(|ty| Self::typed_fixed_array_array_type(ty).map(|(_, len)| len))
+            });
+        if !fixed_array_len.is_some_and(|len| len > 0) {
+            return false;
+        }
+
+        match address_space {
+            AddressSpace::Map => {
+                input_meta.mutable_global_runtime
+                    && !input_meta.is_context
+                    && !input_meta.trusted_btf
+            }
+            AddressSpace::Kernel => false,
+            AddressSpace::Stack | AddressSpace::Context => true,
+            AddressSpace::User | AddressSpace::Packet => false,
+        }
+    }
+
     fn rename_column_arg(&self) -> Option<(VReg, RegId)> {
         self.named_args
             .get("column")
@@ -2092,10 +2142,11 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| meta.constant_value.as_ref())
                     .is_none()
             {
-                if self
-                    .typed_value_runtime_type(input_reg, input_vreg)
-                    .is_some_and(|ty| ty.is_scalar_like())
-                {
+                let input_ty = self.typed_value_runtime_type(input_reg, input_vreg);
+                if Self::default_empty_runtime_passthrough_is_safe(
+                    input_meta.as_ref(),
+                    input_ty.as_ref(),
+                ) {
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
                         src: MirValue::VReg(input_vreg),

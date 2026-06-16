@@ -17167,6 +17167,93 @@ fn make_global_define_type_array_compact_length_program(
     )
 }
 
+fn make_global_define_type_array_default_empty_length_program(
+    type_spec: &str,
+    global_name: &str,
+    base_decl: usize,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let define_decl = DeclId::new(base_decl);
+    let global_get_decl = DeclId::new(base_decl + 1);
+    let default_decl = DeclId::new(base_decl + 2);
+    let length_decl = DeclId::new(base_decl + 3);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (default_decl, "default".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String(global_name.into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(type_spec.into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::list(
+                        vec![Value::int(9, Span::test_data())],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+
+    (
+        HirProgram::new(func, HashMap::new(), vec![], None),
+        decl_names,
+    )
+}
+
 #[test]
 fn test_lower_global_define_type_u32_array_compact_empty_is_passthrough() {
     let (hir, decl_names) = make_global_define_type_array_compact_length_program(
@@ -17208,6 +17295,26 @@ fn test_lower_global_define_type_u32_array_compact_empty_is_passthrough() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed u32 array compact --empty consumed by length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_u32_array_default_empty_is_passthrough() {
+    let (hir, decl_names) =
+        make_global_define_type_array_default_empty_length_program("array{u32:2}", "ports", 10_978);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty on non-empty typed fixed arrays should pass through");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed u32 array default --empty consumed by length should compile through codegen",
     );
 }
 
