@@ -15903,6 +15903,82 @@ fn test_lower_str_length_on_string_copies_tracked_length() {
 }
 
 #[test]
+fn test_lower_str_length_chars_on_runtime_tracked_string_counts_codepoints() {
+    let str_length_decl = DeclId::new(16_917);
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("comm")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: str_length_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"chars".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should lower on runtime tracked strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    rhs: MirValue::Const(0xC0),
+                    ..
+                }
+            )),
+        "expected runtime str length --chars to mask UTF-8 byte tags"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime str length --chars should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_length_grapheme_clusters_on_known_string_materializes_count() {
     let str_length_decl = DeclId::new(162);
     let hir = make_string_pipeline_call_program_with_flags(
