@@ -222,6 +222,80 @@ fn test_int_to_string_zero_compare_initializes_r0_and_preserves_r0_value() {
 }
 
 #[test]
+fn test_int_to_string_non_zero_copies_digits_to_buffer_start() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let slot = StackSlotId(0);
+    let val = VReg(0);
+    let len = VReg(1);
+
+    compiler.slot_offsets.insert(slot, -32);
+    compiler.vreg_to_phys.insert(val, EbpfReg::R1);
+    compiler.vreg_to_phys.insert(len, EbpfReg::R2);
+
+    compiler
+        .compile_int_to_string(slot, len, val)
+        .expect("IntToString should lower non-zero digit copy");
+
+    let copy_start_idx = compiler
+        .instructions
+        .windows(2)
+        .position(|pair| {
+            pair[0].opcode == opcode::MOV64_IMM
+                && pair[0].dst_reg == EbpfReg::R5.as_u8()
+                && pair[0].imm == 20
+                && pair[1].opcode == opcode::SUB64_REG
+                && pair[1].dst_reg == EbpfReg::R5.as_u8()
+                && pair[1].src_reg == EbpfReg::R4.as_u8()
+        })
+        .expect("expected copy start calculation R5 = 20 - R4");
+
+    let jge_reg = opcode::BPF_JMP | opcode::BPF_JGE | opcode::BPF_X;
+    let copy_guard_idx = copy_start_idx
+        + compiler.instructions[copy_start_idx..]
+            .iter()
+            .position(|insn| {
+                insn.opcode == jge_reg
+                    && insn.dst_reg == EbpfReg::R0.as_u8()
+                    && insn.src_reg == EbpfReg::R4.as_u8()
+                    && insn.offset == 9
+            })
+            .expect("expected guarded copy loop");
+
+    let copy_body = &compiler.instructions[copy_guard_idx + 1..copy_guard_idx + 10];
+    assert_eq!(copy_body[0].opcode, opcode::MOV64_REG);
+    assert_eq!(copy_body[0].dst_reg, EbpfReg::R1.as_u8());
+    assert_eq!(copy_body[0].src_reg, EbpfReg::R10.as_u8());
+
+    assert_eq!(copy_body[2].opcode, opcode::ADD64_REG);
+    assert_eq!(copy_body[2].dst_reg, EbpfReg::R1.as_u8());
+    assert_eq!(copy_body[2].src_reg, EbpfReg::R5.as_u8());
+
+    assert_eq!(
+        copy_body[4].opcode,
+        opcode::BPF_LDX | opcode::BPF_B | opcode::BPF_MEM
+    );
+    assert_eq!(copy_body[4].dst_reg, EbpfReg::R0.as_u8());
+    assert_eq!(copy_body[4].src_reg, EbpfReg::R1.as_u8());
+
+    assert_eq!(copy_body[5].opcode, opcode::MOV64_REG);
+    assert_eq!(copy_body[5].dst_reg, EbpfReg::R2.as_u8());
+    assert_eq!(copy_body[5].src_reg, EbpfReg::R10.as_u8());
+
+    assert_eq!(
+        copy_body[8].opcode,
+        opcode::BPF_STX | opcode::BPF_B | opcode::BPF_MEM
+    );
+    assert_eq!(copy_body[8].dst_reg, EbpfReg::R2.as_u8());
+    assert_eq!(copy_body[8].src_reg, EbpfReg::R0.as_u8());
+
+    let len_update = compiler.instructions.last().unwrap();
+    assert_eq!(len_update.opcode, opcode::MOV64_REG);
+    assert_eq!(len_update.dst_reg, EbpfReg::R2.as_u8());
+    assert_eq!(len_update.src_reg, EbpfReg::R4.as_u8());
+}
+
+#[test]
 fn test_string_append_slot() {
     // Test appending from another string slot
     use crate::compiler::mir::*;

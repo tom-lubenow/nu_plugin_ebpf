@@ -304,7 +304,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         let zero_done_jmp_idx = self.instructions.len();
         self.instructions.push(EbpfInsn::jump(0));
 
-        // For non-zero: extract digits (simplified - handles up to 10 digits)
+        // For non-zero: extract digits into dst_buffer[20 - digit_count..20].
         // This is a bounded loop for the verifier
         // R3 = working value, R4 = digit count, R5 = temp buffer offset
         self.instructions
@@ -345,8 +345,46 @@ impl<'a> MirToEbpfCompiler<'a> {
             self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R4, 1));
         }
 
-        // Copy digits from temp area to beginning (reverse order)
-        // R4 now has the digit count
+        // Copy digits from the tail scratch area back to the beginning.
+        // R5 = start position in dst_buffer = 20 - R4.
+        self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R5, 20));
+        self.instructions
+            .push(EbpfInsn::sub64_reg(EbpfReg::R5, EbpfReg::R4));
+
+        for i in 0..20 {
+            // Skip if we've copied all digits (i >= R4).
+            self.instructions.push(EbpfInsn::mov64_imm(EbpfReg::R0, i));
+            let skip_copy = 9i16;
+            self.instructions.push(EbpfInsn::new(
+                opcode::BPF_JMP | opcode::BPF_JGE | opcode::BPF_X,
+                EbpfReg::R0.as_u8(),
+                EbpfReg::R4.as_u8(),
+                skip_copy,
+                0,
+            ));
+
+            // Load byte from dst_buffer + R5 + i.
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R10));
+            self.instructions
+                .push(EbpfInsn::add64_imm(EbpfReg::R1, dst_offset as i32));
+            self.instructions
+                .push(EbpfInsn::add64_reg(EbpfReg::R1, EbpfReg::R5));
+            self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R1, i));
+            self.instructions
+                .push(EbpfInsn::ldxb(EbpfReg::R0, EbpfReg::R1, 0));
+
+            // Store byte to dst_buffer + i.
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+            self.instructions
+                .push(EbpfInsn::add64_imm(EbpfReg::R2, dst_offset as i32));
+            self.instructions.push(EbpfInsn::add64_imm(EbpfReg::R2, i));
+            self.instructions
+                .push(EbpfInsn::stxb(EbpfReg::R2, 0, EbpfReg::R0));
+        }
+
+        // R4 now has the digit count.
         self.instructions
             .push(EbpfInsn::mov64_reg(len_reg, EbpfReg::R4));
         let zero_done_offset = i16::try_from(self.instructions.len() - zero_done_jmp_idx - 1)
