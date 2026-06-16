@@ -1744,6 +1744,32 @@ fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
 }
 
 #[test]
+fn test_raw_tracepoint_map_in_map_routes_to_libbpf_loader() {
+    let state = EbpfState::new();
+    let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+    let object = live_map_in_map_fixture_for_program(
+        EbpfProgramType::RawTracepoint,
+        "sys_enter",
+        HashMap::from([(outer_ref, inner_ref)]),
+        vec![],
+    );
+
+    let err = state
+        .attach(&object)
+        .expect_err("raw_tracepoint map-in-map should route to libbpf loader");
+    let message = err.to_string();
+
+    assert!(
+        !message.contains("Aya-backed live loading of map-in-map runtime map"),
+        "raw_tracepoint map-in-map should not hit the Aya-only rejection: {err:?}"
+    );
+    assert!(
+        message.contains("libbpf") || message.contains("raw_tracepoint"),
+        "unexpected raw_tracepoint map-in-map libbpf dispatch error: {err:?}"
+    );
+}
+
+#[test]
 fn test_libbpf_pin_compatible_object_marks_all_maps_by_name() {
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
     let object = live_map_in_map_fixture_for_program(

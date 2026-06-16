@@ -220,6 +220,14 @@ pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<L
     })
 }
 
+fn object_has_map_in_map_runtime_map(object: &EbpfObject) -> bool {
+    object
+        .maps
+        .iter()
+        .filter_map(|map| map.def.map_kind())
+        .any(MapKind::is_map_in_map)
+}
+
 pub(super) fn unsupported_live_arena_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
@@ -1079,7 +1087,14 @@ impl EbpfState {
             program.prog_type.attach_kind(),
             ProgramAttachKind::RawTracepointWritable
         ) {
-            return self.attach_libbpf_raw_tracepoint_writable_object(object, pin_group, program);
+            return self.attach_libbpf_raw_tracepoint_object(object, pin_group, program);
+        }
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::RawTracepoint
+        ) && object_has_map_in_map_runtime_map(object)
+        {
+            return self.attach_libbpf_raw_tracepoint_object(object, pin_group, program);
         }
         if matches!(program.prog_type.attach_kind(), ProgramAttachKind::FmodRet) {
             return self.attach_libbpf_fmod_ret_object(object, pin_group, program);
@@ -2062,7 +2077,7 @@ impl EbpfState {
         Ok(id)
     }
 
-    fn attach_libbpf_raw_tracepoint_writable_object(
+    fn attach_libbpf_raw_tracepoint_object(
         &self,
         object: &EbpfObject,
         pin_group: Option<&str>,
@@ -2074,6 +2089,7 @@ impl EbpfState {
             elf_bytes,
             &program.name,
             &program.target,
+            program.prog_type.canonical_prefix(),
             pin_root_path.as_deref(),
         )?;
         self.insert_libbpf_program_active_probe(handle, program, pin_group)

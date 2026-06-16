@@ -558,6 +558,7 @@ impl LibbpfProgramHandle {
         elf_bytes: Vec<u8>,
         program_name: &str,
         tracepoint_name: &str,
+        program_label: &str,
         pin_root_path: Option<&str>,
     ) -> Result<Self, LoadError> {
         let api = libbpf_api()?;
@@ -570,12 +571,12 @@ impl LibbpfProgramHandle {
 
         let object = open_libbpf_object(
             &elf_bytes,
-            "Failed to open raw_tracepoint.w object with libbpf",
+            &format!("Failed to open {program_label} object with libbpf"),
             pin_root_path,
         )?;
-        load_libbpf_object(object, "Failed to load raw_tracepoint.w object")?;
+        load_libbpf_object(object, &format!("Failed to load {program_label} object"))?;
 
-        let program = Self::loaded_program(object, &program_name, "raw_tracepoint.w")?;
+        let program = Self::loaded_program(object, &program_name, program_label)?;
 
         // SAFETY: `program` is loaded by libbpf and `tracepoint_name` names the raw tracepoint.
         let link =
@@ -584,15 +585,15 @@ impl LibbpfProgramHandle {
         if attach_err != 0 {
             close_libbpf_object(object);
             return Err(pointer_error_message(
-                "Failed to attach raw_tracepoint.w program",
+                &format!("Failed to attach {program_label} program"),
                 attach_err,
             ));
         }
         if link.is_null() {
             close_libbpf_object(object);
-            return Err(LoadError::Load(
-                "libbpf returned a null raw_tracepoint.w link".to_string(),
-            ));
+            return Err(LoadError::Load(format!(
+                "libbpf returned a null {program_label} link"
+            )));
         }
 
         Ok(Self {
