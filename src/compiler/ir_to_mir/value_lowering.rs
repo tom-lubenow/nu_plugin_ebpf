@@ -270,6 +270,7 @@ impl<'a> HirToMirLowering<'a> {
                     string_slot_len,
                     string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                     zero_initialized_type_spec: false,
+                    constant_value: None,
                 },
             );
             if let Some(semantics) = Self::annotated_mutable_global_semantics(

@@ -377,6 +377,7 @@ struct MutableCaptureGlobal {
     string_slot_len: Option<usize>,
     string_content_cap: Option<usize>,
     zero_initialized_type_spec: bool,
+    constant_value: Option<Value>,
 }
 
 impl PartialEq for MutableCaptureGlobal {

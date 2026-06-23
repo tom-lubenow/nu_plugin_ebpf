@@ -382,17 +382,23 @@ impl<'a> HirToMirLowering<'a> {
             ignore_case,
         } = sort;
 
+        let metadata_array_ty = Self::metadata_fixed_array_layout(input_meta)?;
+        let runtime_ty = self.typed_value_runtime_type(input_reg, input_vreg);
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
         ) && !matches!(
             input_meta.annotated_semantics,
             Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) {
+        ) && metadata_array_ty.is_none()
+            && runtime_ty
+                .as_ref()
+                .is_none_or(|ty| Self::typed_fixed_array_stack_list_array_type(ty).is_none())
+        {
             return Ok(false);
         }
 
-        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+        let Some(mut base_runtime_ty) = metadata_array_ty.or(runtime_ty) else {
             return Ok(false);
         };
         let Some((elem_ty, array_len)) =
@@ -401,7 +407,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_sort_scalar_type(&elem_ty)
+        if input_meta.constant_value.is_some()
             && self.try_lower_typed_fixed_array_compile_time_sort(
                 src_dst,
                 input_meta,
@@ -558,12 +564,6 @@ impl<'a> HirToMirLowering<'a> {
             )?;
             return Ok(true);
         };
-        if !matches!(
-            first,
-            CompileTimeSortKey::Binary(_) | CompileTimeSortKey::String(_)
-        ) {
-            return Ok(false);
-        }
         if rest
             .iter()
             .any(|key| std::mem::discriminant(key) != std::mem::discriminant(first))

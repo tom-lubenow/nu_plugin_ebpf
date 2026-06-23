@@ -16271,6 +16271,126 @@ fn test_lower_global_define_type_u32_array_sort_materializes_fixed_array() {
 }
 
 #[test]
+fn test_lower_global_define_type_u32_array_large_initializer_sort_first_folds_constant() {
+    let define_decl = DeclId::new(11_340);
+    let global_get_decl = DeclId::new(11_341);
+    let sort_decl = DeclId::new(11_342);
+    let first_decl = DeclId::new(11_343);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (sort_decl, "sort".to_string()),
+        (first_decl, "first".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        (0..=16)
+                            .map(|value| Value::int(value, Span::test_data()))
+                            .collect::<Vec<_>>(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("array{u32:17}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sort_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: first_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compile-time initialized u32 fixed-array sort should fold before runtime capacity");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected sorted first element to fold to zero"
+    );
+    assert!(
+        instructions.iter().all(|inst| !matches!(
+            inst,
+            MirInst::StoreSlot {
+                ty: MirType::U32,
+                ..
+            }
+        )),
+        "compile-time initialized large sort should not emit runtime u32 compare/swap stores"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compile-time initialized u32 fixed-array sort should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_define_type_bool_array_sort_materializes_fixed_array() {
     let define_decl = DeclId::new(10_641);
     let global_get_decl = DeclId::new(10_642);

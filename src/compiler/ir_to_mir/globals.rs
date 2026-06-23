@@ -382,7 +382,41 @@ fn named_global_constant_kind(value: &Value) -> &'static str {
     }
 }
 
+impl NamedGlobalTypeShape {
+    fn preserves_source_constant_value(&self, value: &Value) -> bool {
+        match self {
+            Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::Duration
+            | Self::Filesize
+            | Self::U8
+            | Self::U16
+            | Self::U32
+            | Self::U64 => named_global_numeric_constant_i64(value).is_some(),
+            Self::Bool => matches!(value, Value::Bool { .. }),
+            Self::FixedArray { elem, len } => {
+                let Value::List { vals, .. } = value else {
+                    return false;
+                };
+                vals.len() == *len
+                    && vals
+                        .iter()
+                        .all(|value| elem.shape.preserves_source_constant_value(value))
+            }
+            _ => false,
+        }
+    }
+}
+
 impl ParsedNamedGlobalType {
+    fn complete_initializer_constant_value(&self, value: &Value) -> Option<Value> {
+        self.shape
+            .preserves_source_constant_value(value)
+            .then(|| value.clone())
+    }
+
     fn is_fixed_array_element_type(&self) -> bool {
         matches!(
             &self.shape,
@@ -1149,6 +1183,7 @@ impl ParsedNamedGlobalType {
                 string_slot_len: self.string_slot_len,
                 string_content_cap: self.string_content_cap,
                 zero_initialized_type_spec: false,
+                constant_value: None,
             },
             self.semantics.clone(),
         )
@@ -1774,6 +1809,7 @@ impl<'a> HirToMirLowering<'a> {
                     string_slot_len: None,
                     string_content_cap: None,
                     zero_initialized_type_spec: false,
+                    constant_value: None,
                 });
             }
 
@@ -1795,6 +1831,7 @@ impl<'a> HirToMirLowering<'a> {
                         meta.string_len_bound.unwrap_or(slot_len.saturating_sub(1)),
                     ),
                     zero_initialized_type_spec: false,
+                    constant_value: None,
                 });
             }
 
@@ -1821,6 +1858,7 @@ impl<'a> HirToMirLowering<'a> {
                         string_slot_len: None,
                         string_content_cap: None,
                         zero_initialized_type_spec: false,
+                        constant_value: None,
                     });
                 }
             }
@@ -1833,6 +1871,7 @@ impl<'a> HirToMirLowering<'a> {
                     string_slot_len: None,
                     string_content_cap: None,
                     zero_initialized_type_spec: false,
+                    constant_value: None,
                 });
             }
         }
@@ -1870,6 +1909,7 @@ impl<'a> HirToMirLowering<'a> {
                 string_slot_len: None,
                 string_content_cap: None,
                 zero_initialized_type_spec: false,
+                constant_value: None,
             }),
             _ => Err(CompileError::UnsupportedInstruction(
                 "global-set requires a scalar, string, fixed binary, numeric list, or representable aggregate value".into(),
@@ -1908,6 +1948,7 @@ impl<'a> HirToMirLowering<'a> {
                     string_slot_len: *string_slot_len,
                     string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
                     zero_initialized_type_spec: false,
+                    constant_value: constant_value.clone(),
                 }
             } else {
                 self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?
@@ -1922,6 +1963,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             if let Some(existing) = self.named_program_globals.get_mut(name) {
                 existing.zero_initialized_type_spec = false;
+                existing.constant_value = constant_value.clone();
             }
             if let Some(semantics) = value_semantics {
                 self.merge_named_program_global_semantics(name, semantics)?;
@@ -1999,6 +2041,7 @@ impl<'a> HirToMirLowering<'a> {
             string_slot_len,
             string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
             zero_initialized_type_spec: false,
+            constant_value: initialize.then(|| value.clone()),
         };
 
         if let Some(existing) = self.named_program_globals.get(name).cloned() {
@@ -2010,6 +2053,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             if let Some(existing) = self.named_program_globals.get_mut(name) {
                 existing.zero_initialized_type_spec = false;
+                existing.constant_value = initialize.then(|| value.clone());
             }
             if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
                 self.merge_named_program_global_semantics(name, semantics)?;
@@ -2094,9 +2138,10 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
         let parsed = ParsedNamedGlobalType::parse(spec)?;
-        let (inferred, semantics) = parsed.layout(symbol.clone());
+        let (mut inferred, semantics) = parsed.layout(symbol.clone());
         let data = parsed.initializer_bytes(value, spec)?;
         let semantics = parsed.initializer_semantics(Some(value))?.or(semantics);
+        inferred.constant_value = parsed.complete_initializer_constant_value(value);
 
         if let Some(existing) = self.named_program_globals.get(name).cloned() {
             if existing != inferred {
@@ -2107,6 +2152,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             if let Some(existing) = self.named_program_globals.get_mut(name) {
                 existing.zero_initialized_type_spec = false;
+                existing.constant_value = inferred.constant_value.clone();
             }
             if let Some(semantics) = semantics {
                 self.merge_named_program_global_semantics(name, semantics)?;
@@ -2159,14 +2205,17 @@ impl<'a> HirToMirLowering<'a> {
             .insert(global_ptr, global_ptr_ty.clone());
 
         self.reg_metadata.insert(dst.get(), RegMetadata::default());
-        let zero_initialized_global = !self.unknown_named_program_global_set
-            && global.zero_initialized_type_spec
+        let named_global_unwritten = !self.unknown_named_program_global_set
             && !self
                 .named_program_global_set_symbols
                 .contains(&global.symbol);
+        let zero_initialized_global = named_global_unwritten && global.zero_initialized_type_spec;
         let meta = self.get_or_create_metadata(dst);
         meta.mutable_global_runtime = true;
         meta.zero_initialized_global = zero_initialized_global;
+        if named_global_unwritten {
+            meta.constant_value = global.constant_value.clone();
+        }
 
         if let Some(max_len) = global.list_max_len {
             let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
