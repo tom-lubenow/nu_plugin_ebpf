@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2497_2502 = [
     {
-        name: "core-string-ends-with-rejects-extra-suffix"
+        name: "core-string-ends-with-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str ends-with diagnostics reject]
+        tags: [string str ends-with diagnostics reject cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2497_2502 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str ends-with accepts exactly one suffix argument in eBPF"
+        error_contains: "str ends-with cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-ends-with-rejects-dynamic-non-string-input"

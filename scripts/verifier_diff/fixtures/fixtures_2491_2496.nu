@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2491_2496 = [
     {
-        name: "core-string-starts-with-rejects-extra-prefix"
+        name: "core-string-starts-with-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str starts-with diagnostics reject]
+        tags: [string str starts-with diagnostics reject cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2491_2496 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str starts-with accepts exactly one prefix argument in eBPF"
+        error_contains: "str starts-with cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-starts-with-rejects-dynamic-non-string-input"

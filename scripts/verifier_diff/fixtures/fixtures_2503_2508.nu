@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2503_2508 = [
     {
-        name: "core-string-contains-rejects-extra-substring"
+        name: "core-string-contains-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str contains diagnostics reject]
+        tags: [string str contains diagnostics reject cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2503_2508 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str contains accepts exactly one substring argument in eBPF"
+        error_contains: "str contains cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-contains-rejects-dynamic-non-string-input"

@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2538_2545 = [
     {
-        name: "core-string-str-index-of-rejects-extra-substring"
+        name: "core-string-str-index-of-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str index-of diagnostics reject]
+        tags: [string str index-of diagnostics reject cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2538_2545 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str index-of accepts exactly one substring argument in eBPF"
+        error_contains: "str index-of cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-index-of-accepts-dynamic-substring"

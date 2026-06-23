@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2487_2490 = [
     {
-        name: "core-string-str-length-rejects-extra-argument"
+        name: "core-string-str-length-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str length diagnostics reject]
+        tags: [string str length diagnostics reject cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2487_2490 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str length does not accept arguments in eBPF"
+        error_contains: "str length cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-length-rejects-duplicate-mode-flags"
