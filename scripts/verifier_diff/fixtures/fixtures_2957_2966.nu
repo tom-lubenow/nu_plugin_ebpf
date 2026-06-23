@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2957_2966 = [
     {
-        name: "core-bytes-length-rejects-cell-path-argument"
+        name: "core-bytes-length-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [binary bytes length diagnostics reject arguments]
+        tags: [binary bytes length diagnostics reject arguments cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2957_2966 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bytes length does not accept arguments in eBPF"
+        error_contains: "bytes length cell-path arguments require compile-time known record or table input in eBPF; input has type binary"
     }
     {
         name: "core-bytes-at-rejects-extra-cell-path-argument"

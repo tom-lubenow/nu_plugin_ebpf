@@ -43928,6 +43928,184 @@ fn test_lower_bytes_length_on_binary_list_materializes_numeric_lengths() {
 }
 
 #[test]
+fn test_lower_bytes_length_record_cell_path_materializes_field_count() {
+    let bytes_length_decl = DeclId::new(80940);
+    let mut record = Record::new();
+    record.push("data", Value::binary(vec![1, 2, 3, 4], Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("data")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: bytes_length_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("data")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(2),
+                        path: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(bytes_length_decl, "bytes length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes length should lower for compile-time known record cell-path input");
+
+    assert_program_returns_constant(&result.program, 4, "bytes length record cell path");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes length record cell-path result consumed by field projection should compile");
+}
+
+#[test]
+fn test_lower_bytes_length_table_nested_cell_path_projects_field_count() {
+    let bytes_length_decl = DeclId::new(80941);
+    let get_decl = DeclId::new(80942);
+    let mut first_inner = Record::new();
+    first_inner.push("data", Value::binary(vec![1, 2], Span::test_data()));
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push("data", Value::binary(vec![3, 4, 5], Span::test_data()));
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("data")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: bytes_length_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3)],
+                            pipeline_input: Some(RegId::new(2)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("data")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(4),
+                        op: Operator::Comparison(Comparison::Equal),
+                        rhs: RegId::new(6),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bytes_length_decl, "bytes length".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes length should lower for compile-time known nested table cell-path input");
+
+    assert_no_runtime_list_operations(&result.program, "bytes length nested table cell path");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes length nested table cell-path result consumed by projection should compile");
+}
+
+#[test]
 fn test_lower_bytes_length_rejects_string_input() {
     let bytes_length_decl = DeclId::new(211);
     let func = HirFunction {

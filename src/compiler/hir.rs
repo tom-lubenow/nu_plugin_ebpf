@@ -303,6 +303,7 @@ pub enum FixedLayoutValueConsumer {
     BytesIndexOf,
     BytesReverse,
     BytesCollect,
+    BytesLengthCellPath,
     StrJoin,
     Length,
     EmptyPredicate,
@@ -602,6 +603,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::BytesIndexOf,
         FixedLayoutValueConsumer::BytesReverse,
         FixedLayoutValueConsumer::BytesCollect,
+        FixedLayoutValueConsumer::BytesLengthCellPath,
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
         FixedLayoutValueConsumer::EmptyPredicate,
@@ -962,6 +964,15 @@ fn compile_time_value_consumer_matches(
             decl_name == Some("bytes collect")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BytesLengthCellPath => {
+            decl_name == Some("bytes length")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && !args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()

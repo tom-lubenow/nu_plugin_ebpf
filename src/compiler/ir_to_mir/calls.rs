@@ -183,6 +183,172 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
+    fn lower_bytes_length_cell_paths(
+        &mut self,
+        src_dst: RegId,
+        input_reg: Option<RegId>,
+        path_regs: &[RegId],
+    ) -> Result<(), CompileError> {
+        let paths = path_regs
+            .iter()
+            .map(|reg| self.bytes_length_cell_path_arg(*reg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes length cell-path arguments require record or table input in eBPF".into(),
+            )
+        })?;
+        let mut output = self
+            .get_metadata(input_reg)
+            .and_then(|meta| meta.constant_value.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes length cell-path arguments require compile-time known record or table input in eBPF"
+                        .into(),
+                )
+            })?;
+
+        match output {
+            nu_protocol::Value::Record { .. } | nu_protocol::Value::List { .. } => {}
+            ref other => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes length cell-path arguments require compile-time known record or table input in eBPF; input has type {}",
+                    other.get_type()
+                )));
+            }
+        }
+
+        for path in &paths {
+            Self::transform_known_binary_length_at_cell_path(&mut output, &path.members)?;
+        }
+
+        if self.current_call_result_metadata_only
+            || self.current_call_result_list_transform_metadata_only
+        {
+            self.lower_compile_time_only_constant_value(src_dst, &output);
+        } else {
+            self.lower_constant_value(src_dst, &output)?;
+        }
+        Ok(())
+    }
+
+    fn bytes_length_cell_path_arg(&self, reg: RegId) -> Result<CellPath, CompileError> {
+        let meta = self.get_metadata(reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes length cell-path arguments must be compile-time known in eBPF".into(),
+            )
+        })?;
+
+        let path = meta
+            .cell_path
+            .clone()
+            .or_else(|| match meta.constant_value.as_ref() {
+                Some(nu_protocol::Value::CellPath { val, .. }) => Some(val.clone()),
+                _ => None,
+            })
+            .or_else(|| {
+                meta.literal_string
+                    .clone()
+                    .or_else(|| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::String { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .map(|name| CellPath {
+                        members: vec![PathMember::string(
+                            name,
+                            false,
+                            Casing::Sensitive,
+                            Span::unknown(),
+                        )],
+                    })
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes length cell-path arguments must be compile-time known in eBPF".into(),
+                )
+            })?;
+
+        match path.members.first() {
+            Some(PathMember::String { .. }) => Ok(path),
+            Some(PathMember::Int { .. }) => Err(CompileError::UnsupportedInstruction(
+                "bytes length cell-path arguments must start with a record field in eBPF".into(),
+            )),
+            None => Err(CompileError::UnsupportedInstruction(
+                "bytes length does not support empty cell paths in eBPF".into(),
+            )),
+        }
+    }
+
+    fn transform_known_binary_length_at_cell_path(
+        value: &mut nu_protocol::Value,
+        members: &[PathMember],
+    ) -> Result<(), CompileError> {
+        let Some((member, rest)) = members.split_first() else {
+            return match value {
+                nu_protocol::Value::Binary { val, .. } => {
+                    *value = nu_protocol::Value::int(val.len() as i64, Span::unknown());
+                    Ok(())
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes length cell-path target must be binary in eBPF; target has type {}",
+                    other.get_type()
+                ))),
+            };
+        };
+
+        match member {
+            PathMember::String {
+                val: field, casing, ..
+            } => match value {
+                nu_protocol::Value::Record { val: record, .. } => {
+                    let Some(field_value) = record.to_mut().cased_mut(*casing).get_mut(field)
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes length cannot find record field '{field}' in eBPF"
+                        )));
+                    };
+                    Self::transform_known_binary_length_at_cell_path(field_value, rest)
+                }
+                nu_protocol::Value::List { vals, .. } => {
+                    for item in vals.iter_mut() {
+                        let nu_protocol::Value::Record { val: record, .. } = item else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "bytes length cell-path field '{field}' requires table rows to be records in eBPF"
+                            )));
+                        };
+                        let Some(field_value) = record.to_mut().cased_mut(*casing).get_mut(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "bytes length cannot find record field '{field}' in eBPF"
+                            )));
+                        };
+                        Self::transform_known_binary_length_at_cell_path(field_value, rest)?;
+                    }
+                    Ok(())
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes length cannot access field '{field}' on {} in eBPF",
+                    other.get_type()
+                ))),
+            },
+            PathMember::Int { val: index, .. } => match value {
+                nu_protocol::Value::List { vals, .. } => {
+                    let len = vals.len();
+                    let Some(item) = vals.get_mut(*index) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes length cell-path index {index} is out of bounds for list length {len} in eBPF"
+                        )));
+                    };
+                    Self::transform_known_binary_length_at_cell_path(item, rest)
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes length cannot access index {index} on {} in eBPF",
+                    other.get_type()
+                ))),
+            },
+        }
+    }
+
     fn lower_fixed_binary_pattern_match(
         &mut self,
         input_vreg: VReg,
@@ -6840,13 +7006,20 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg
                 };
 
-                if !self.named_flags.is_empty()
-                    || !self.named_args.is_empty()
-                    || !self.positional_args.is_empty()
-                {
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
-                        "bytes length does not accept arguments in eBPF".into(),
+                        "bytes length currently supports only the default form and cell-path arguments in eBPF"
+                            .into(),
                     ));
+                }
+
+                if !self.positional_args.is_empty() {
+                    let path_regs = self
+                        .positional_args
+                        .iter()
+                        .map(|(_, reg)| *reg)
+                        .collect::<Vec<_>>();
+                    return self.lower_bytes_length_cell_paths(src_dst, input_reg, &path_regs);
                 }
 
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg)).cloned();
