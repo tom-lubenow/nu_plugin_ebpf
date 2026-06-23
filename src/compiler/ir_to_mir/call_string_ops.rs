@@ -3601,6 +3601,23 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if use_grapheme_clusters {
+            if input_meta.zero_initialized_global {
+                if *len > MAX_STACK_NUMERIC_LIST_CAPACITY {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "str index-of output exceeds stack-backed numeric list capacity {MAX_STACK_NUMERIC_LIST_CAPACITY} in eBPF"
+                    )));
+                }
+                let (search_start, search_end) = self.string_index_of_search_bounds(0)?;
+                let index = Self::grapheme_index_of_in_byte_range(
+                    "",
+                    needle,
+                    search_from_end,
+                    search_start,
+                    search_end,
+                )?;
+                self.lower_known_i64_list_result(src_dst, vec![index; *len])?;
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(
                 "str index-of --grapheme-clusters requires compile-time known string input in eBPF"
                     .into(),

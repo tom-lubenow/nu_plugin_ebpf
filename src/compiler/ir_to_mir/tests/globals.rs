@@ -14195,14 +14195,16 @@ fn test_lower_global_define_type_string_array_str_index_of_supports_nul_substrin
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_index_of_grapheme_rejects_runtime_array() {
+fn test_string_array_index_of_grapheme_zero_fill_materializes_numeric_list() {
     let define_decl = DeclId::new(10_595);
     let global_get_decl = DeclId::new(10_596);
     let index_of_decl = DeclId::new(10_597);
+    let sum_decl = DeclId::new(10_968);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (index_of_decl, "str index-of".to_string()),
+        (sum_decl, "math sum".to_string()),
     ]);
 
     let func = HirFunction {
@@ -14248,19 +14250,27 @@ fn test_lower_global_define_type_string_array_str_index_of_grapheme_rejects_runt
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(5) },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 6,
+        register_count: 7,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -14268,14 +14278,22 @@ fn test_lower_global_define_type_string_array_str_index_of_grapheme_rejects_runt
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err(
-        "str index-of --grapheme-clusters should remain compile-time-only for typed arrays",
-    );
+    .expect("str index-of --grapheme-clusters should fold zero-filled typed arrays");
 
-    assert!(
-        err.to_string()
-            .contains("str index-of --grapheme-clusters requires compile-time known string input"),
-        "expected compile-time-only grapheme diagnostic, got: {err}"
+    assert_eq!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count(),
+        0,
+        "expected zero-filled grapheme index results to materialize as a constant numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "zero-filled typed string array grapheme index results consumed by math sum should compile",
     );
 }
 
