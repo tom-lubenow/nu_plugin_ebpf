@@ -1741,28 +1741,20 @@ impl<'a> HirToMirLowering<'a> {
         stmt_index: usize,
         dst: RegId,
     ) -> Option<DirectListProjection> {
-        let next_index = stmt_index.saturating_add(1);
-        let HirStmt::Call {
-            decl_id,
-            args,
-            src_dst: next_dst,
-            ..
-        } = stmts.get(next_index)?
-        else {
-            return None;
-        };
-        if args.pipeline_input != Some(dst)
-            || !args.rest.is_empty()
-            || !args.named.is_empty()
-            || !args.flags.is_empty()
-            || !args.parser_info.is_empty()
-        {
-            return None;
-        }
+        let (consumer_index, decl_id, next_dst, args) =
+            Self::next_direct_list_projection_call(stmts, stmt_index.saturating_add(1), dst)?;
 
-        let projection = match self.decl_names.get(decl_id).map(String::as_str) {
-            Some("first") if args.positional.is_empty() => DirectListProjection::First,
-            Some("last") if args.positional.is_empty() => DirectListProjection::Last,
+        let (projection, final_consumer_index, original_overwritten) = match self
+            .decl_names
+            .get(&decl_id)
+            .map(String::as_str)
+        {
+            Some("first") if args.positional.is_empty() => {
+                (DirectListProjection::First, consumer_index, next_dst == dst)
+            }
+            Some("last") if args.positional.is_empty() => {
+                (DirectListProjection::Last, consumer_index, next_dst == dst)
+            }
             Some("get") if args.positional.len() == 1 => {
                 let index = args.positional.first().and_then(|arg| {
                     self.get_metadata(*arg).and_then(|meta| {
@@ -1776,26 +1768,20 @@ impl<'a> HirToMirLowering<'a> {
                         })
                     })
                 })?;
-                DirectListProjection::Index(index)
+                (
+                    DirectListProjection::Index(index),
+                    consumer_index,
+                    next_dst == dst,
+                )
             }
             Some("reverse") if args.positional.is_empty() => {
-                let HirStmt::Call {
-                    decl_id: consumer_decl_id,
-                    args: consumer_args,
-                    ..
-                } = stmts.get(next_index.saturating_add(1))?
-                else {
-                    return None;
-                };
-                if consumer_args.pipeline_input != Some(*next_dst)
-                    || !consumer_args.rest.is_empty()
-                    || !consumer_args.named.is_empty()
-                    || !consumer_args.flags.is_empty()
-                    || !consumer_args.parser_info.is_empty()
-                {
-                    return None;
-                }
-                match self.decl_names.get(consumer_decl_id).map(String::as_str) {
+                let (reverse_consumer_index, consumer_decl_id, reverse_consumer_dst, consumer_args) =
+                    Self::next_direct_list_projection_call(
+                        stmts,
+                        consumer_index.saturating_add(1),
+                        next_dst,
+                    )?;
+                let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
                     Some("first") if consumer_args.positional.is_empty() => {
                         DirectListProjection::ReverseFirst
                     }
@@ -1818,23 +1804,64 @@ impl<'a> HirToMirLowering<'a> {
                         DirectListProjection::ReverseIndex(index)
                     }
                     _ => return None,
-                }
+                };
+                (
+                    projection,
+                    reverse_consumer_index,
+                    next_dst == dst || reverse_consumer_dst == dst,
+                )
             }
             _ => return None,
         };
 
-        let reuse_start = match projection {
-            DirectListProjection::ReverseFirst
-            | DirectListProjection::ReverseLast
-            | DirectListProjection::ReverseIndex(_) => stmt_index.saturating_add(3),
-            _ => stmt_index.saturating_add(2),
-        };
+        if original_overwritten {
+            return Some(projection);
+        }
+
+        let reuse_start = final_consumer_index.saturating_add(1);
         let old_value_reused = stmts
             .get(reuse_start..)
             .into_iter()
             .flatten()
             .any(|stmt| Self::append_prepend_item_stmt_touches_reg(stmt, dst));
         (!old_value_reused).then_some(projection)
+    }
+
+    fn next_direct_list_projection_call(
+        stmts: &[HirStmt],
+        mut index: usize,
+        input: RegId,
+    ) -> Option<(usize, DeclId, RegId, &HirCallArgs)> {
+        loop {
+            match stmts.get(index)? {
+                HirStmt::Collect { src_dst } | HirStmt::Span { src_dst } if *src_dst == input => {
+                    index = index.saturating_add(1);
+                }
+                HirStmt::CheckErrRedirected { src } if *src == input => {
+                    index = index.saturating_add(1);
+                }
+                HirStmt::RedirectOut { .. } | HirStmt::RedirectErr { .. } => {
+                    index = index.saturating_add(1);
+                }
+                HirStmt::Call {
+                    decl_id,
+                    args,
+                    src_dst,
+                    ..
+                } => {
+                    if args.pipeline_input != Some(input)
+                        || !args.rest.is_empty()
+                        || !args.named.is_empty()
+                        || !args.flags.is_empty()
+                        || !args.parser_info.is_empty()
+                    {
+                        return None;
+                    }
+                    return Some((index, *decl_id, *src_dst, args));
+                }
+                _ => return None,
+            }
+        }
     }
 
     fn lower_compile_time_only_list_push(

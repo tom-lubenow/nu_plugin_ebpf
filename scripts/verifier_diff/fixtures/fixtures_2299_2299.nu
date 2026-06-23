@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2299_2299 = [
     {
-        name: "global-typed-record-values-string-first-rejects"
+        name: "global-typed-record-values-first-accepts-scalar-field"
         category: "globals"
-        tags: [globals records typed values first string reject diagnostic]
+        tags: [globals records typed values first scalar accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -10,8 +10,8 @@ const VERIFIER_DIFF_FIXTURES_2299_2299 = [
             '  global-get seen_state | values | first | is-empty'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "values on typed record input currently supports only scalar output fields"
+        default_test_lane: "dry-run"
     }
 ]

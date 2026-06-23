@@ -6,6 +6,7 @@ use crate::compiler::mir::{BinOpKind, COUNTER_MAP_NAME, StructField, UnaryOpKind
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
 use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
 use nu_protocol::casing::Casing;
+use nu_protocol::ir::RedirectMode;
 use nu_protocol::{Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
@@ -23201,9 +23202,15 @@ fn test_lower_global_define_type_record_values_first_projects_scalar_field() {
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::RedirectOut {
+                    mode: RedirectMode::Pipe,
+                },
+                HirStmt::Collect {
+                    src_dst: RegId::new(4),
+                },
                 HirStmt::Call {
                     decl_id: first_decl,
-                    src_dst: RegId::new(5),
+                    src_dst: RegId::new(4),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(4)),
                         ..HirCallArgs::default()
@@ -23211,20 +23218,20 @@ fn test_lower_global_define_type_record_values_first_projects_scalar_field() {
                 },
                 HirStmt::Call {
                     decl_id: is_empty_decl,
-                    src_dst: RegId::new(6),
+                    src_dst: RegId::new(4),
                     args: HirCallArgs {
-                        pipeline_input: Some(RegId::new(5)),
+                        pipeline_input: Some(RegId::new(4)),
                         ..HirCallArgs::default()
                     },
                 },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(6) },
+            terminator: HirTerminator::Return { src: RegId::new(4) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 7,
+        register_count: 5,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
