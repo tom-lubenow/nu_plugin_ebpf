@@ -2582,6 +2582,19 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_reg) = input_reg
+            && self
+                .get_metadata(input_reg)
+                .is_some_and(|meta| meta.string_slot.is_some() && meta.string_len_vreg.is_some())
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            return Ok(());
+        }
+
         let input = self.exact_string_input(input_reg, "str join")?;
         self.lower_known_string_result(src_dst, result_vreg, input)
     }

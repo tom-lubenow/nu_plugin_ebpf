@@ -14,17 +14,17 @@ const VERIFIER_DIFF_FIXTURES_2512_2513 = [
         error_contains: "str join separator requires a compile-time string literal"
     }
     {
-        name: "core-string-join-rejects-runtime-string-input"
+        name: "core-string-join-accepts-runtime-string-input"
         category: "language-core"
-        tags: [string str join diagnostics reject]
+        tags: [string str join accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | str join ":"'
+            '  $ctx.comm | str join ":" | str length'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "str join requires compile-time known string input in eBPF"
+        default_test_lane: "dry-run"
     }
 ]
