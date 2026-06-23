@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2403_2403 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind sockmap names a socket map"
+        error_contains: "use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb"
     }
 ]

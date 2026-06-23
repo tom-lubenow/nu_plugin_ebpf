@@ -1128,7 +1128,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Some(map_kind) if map_kind.is_socket_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} names a socket map; socket maps carry kernel socket references and use specialized redirect/update helpers"
+                    "{context} --kind {kind} names a socket map; socket maps carry kernel socket references and use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects"
                 )))
             }
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(

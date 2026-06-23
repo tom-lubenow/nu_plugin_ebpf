@@ -4526,6 +4526,32 @@ fn test_map_define_max_entries_registers_capacity() {
 }
 
 #[test]
+fn test_map_define_rejects_socket_map_kind_with_supported_surfaces() {
+    let (hir, decl_names) = map_define_with_max_entries_hir(128, "sockmap");
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-define should reject socket map kinds");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map-define --kind sockmap names a socket map"));
+    assert!(msg.contains("map-put from sock_ops"));
+    assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
+}
+
+#[test]
 fn test_map_define_arena_registers_capacity_and_map_extra() {
     let map_define_decl = DeclId::new(41);
     let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
