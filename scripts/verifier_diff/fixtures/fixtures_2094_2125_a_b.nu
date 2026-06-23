@@ -188,4 +188,21 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-record-transpose-runtime-empty-counted-first-last"
+        category: "language-core"
+        tags: [aggregate record transpose take first last count empty accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let take_first_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | take 0 | first | is-empty)'
+            '  let take_last_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | take 0 | last | is-empty)'
+            '  let last_first_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | last 0 | first | is-empty)'
+            '  let last_last_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | last 0 | last | is-empty)'
+            '  $take_first_empty and ($take_last_empty and ($last_first_empty and $last_last_empty))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]

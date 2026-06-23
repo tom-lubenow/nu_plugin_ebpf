@@ -9,6 +9,9 @@ documentation changes that matter to external alpha consumers.
 - Extended metadata-backed record `values` direct projections through
   zero-count `take` / `first N` / `last N` chains so scalar `first` / `last`
   return `nothing` instead of falling off the optimized lowering path.
+- Added verifier and Rust coverage for metadata-backed runtime `transpose`
+  zero-count direct row projections, and documented the runtime transpose
+  consumer surface in the reference.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

@@ -54736,6 +54736,60 @@ fn make_runtime_record_transpose_drop_direct_get_field_program(
     hir
 }
 
+fn make_runtime_record_transpose_empty_transform_first_last_is_empty_program(
+    random_decl: DeclId,
+    transpose_decl: DeclId,
+    transform_decl: DeclId,
+    consumer_decl: DeclId,
+    is_empty_decl: DeclId,
+    count: i64,
+) -> HirProgram {
+    let mut hir = make_runtime_record_transpose_shape_consumer_program(
+        random_decl,
+        transpose_decl,
+        transform_decl,
+        Vec::new(),
+    );
+    let block = &mut hir.main.blocks[0];
+    block.stmts.pop();
+    block.stmts.extend([
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(count),
+        },
+        HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: RegId::new(9),
+            args: HirCallArgs {
+                positional: vec![RegId::new(8)],
+                pipeline_input: Some(RegId::new(7)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: RegId::new(10),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(9)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: is_empty_decl,
+            src_dst: RegId::new(11),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(10)),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(11),
+    };
+    hir.main.register_count = 12;
+    hir
+}
+
 fn make_runtime_record_transpose_as_record_field_item_program(
     random_decl: DeclId,
     transpose_decl: DeclId,
@@ -54937,6 +54991,64 @@ fn test_lower_transpose_on_runtime_record_drop_direct_projects_row_value() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("runtime record transpose drop {consumer_name} value should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_transpose_on_runtime_record_empty_counted_first_last_return_nothing() {
+    for (offset, transform_name, count, consumer_name) in [
+        (0, "take", 0, "first"),
+        (10, "take", 0, "last"),
+        (20, "first", 0, "first"),
+        (30, "first", 0, "last"),
+        (40, "last", 0, "first"),
+        (50, "last", 0, "last"),
+    ] {
+        let random_decl = DeclId::new(81990 + offset);
+        let transpose_decl = DeclId::new(81991 + offset);
+        let transform_decl = DeclId::new(81992 + offset);
+        let consumer_decl = DeclId::new(81993 + offset);
+        let is_empty_decl = DeclId::new(81994 + offset);
+        let hir = make_runtime_record_transpose_empty_transform_first_last_is_empty_program(
+            random_decl,
+            transpose_decl,
+            transform_decl,
+            consumer_decl,
+            is_empty_decl,
+            count,
+        );
+        let decl_names = HashMap::from([
+            (random_decl, "random int".to_string()),
+            (transpose_decl, "transpose".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (consumer_decl, consumer_name.to_string()),
+            (is_empty_decl, "is-empty".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "runtime metadata-record transpose | {transform_name} {count} | {consumer_name} should return nothing: {err}"
+            )
+        });
+
+        let label =
+            format!("runtime record transpose {transform_name} {count} empty {consumer_name}");
+        assert_program_returns_constant(&result.program, 1, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "runtime record transpose | {transform_name} {count} | {consumer_name} should compile: {err}"
+                )
             });
     }
 }
