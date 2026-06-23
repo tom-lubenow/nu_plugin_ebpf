@@ -297,7 +297,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn lower_runtime_string_equality(
+    pub(in crate::compiler::ir_to_mir) fn lower_runtime_string_equality(
         &mut self,
         lhs_dst: RegId,
         rhs: RegId,

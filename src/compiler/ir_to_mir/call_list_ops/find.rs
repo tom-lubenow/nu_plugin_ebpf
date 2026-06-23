@@ -1,5 +1,7 @@
 use super::*;
 
+const MAX_FIND_SHAPE_LIST_CAPACITY: usize = 60;
+
 struct TypedFixedArrayFind<'a> {
     src_dst: RegId,
     dst_vreg: VReg,
@@ -59,6 +61,17 @@ impl<'a> HirToMirLowering<'a> {
                         .map(|value| nu_protocol::Value::int(value, Span::unknown()))
                 })
             else {
+                if self.current_call_result_list_shape_metadata_only
+                    && let Some(strings) = Self::compile_time_string_values(&values)
+                {
+                    return self.lower_compile_time_string_list_find_shape(
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        &strings,
+                        needle_reg,
+                    );
+                }
                 if values
                     .iter()
                     .any(|value| Self::numeric_value_from_value(value).is_none())
@@ -337,6 +350,89 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_compile_time_string_list_find_shape(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        values: &[String],
+        needle_reg: RegId,
+    ) -> Result<(), CompileError> {
+        if values.len() > MAX_FIND_SHAPE_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "find output exceeds stack-backed numeric list capacity {MAX_FIND_SHAPE_LIST_CAPACITY} in eBPF"
+            )));
+        }
+        if !self
+            .get_metadata(needle_reg)
+            .is_some_and(Self::metadata_is_string_find_needle)
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "find search argument must be a tracked string for compile-time known string lists feeding shape consumers in eBPF"
+                    .into(),
+            ));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, values.len());
+
+        if !values.is_empty() {
+            let continuation_block = self.func.alloc_block();
+            for (index, value) in values.iter().enumerate() {
+                let literal_reg = self.alloc_synthetic_reg("find")?;
+                let literal_vreg = self.get_vreg(literal_reg);
+                self.lower_string_like_literal(literal_reg, literal_vreg, value.as_bytes())?;
+                if !self.lower_runtime_string_equality(literal_reg, needle_reg, false)? {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "find search argument must be a tracked string for compile-time known string lists feeding shape consumers in eBPF"
+                            .into(),
+                    ));
+                }
+
+                let found_vreg = self.get_vreg(literal_reg);
+                let push_block = self.func.alloc_block();
+                let next_block = if index + 1 == values.len() {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+                self.terminate(MirInst::Branch {
+                    cond: found_vreg,
+                    if_true: push_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = push_block;
+                let marker = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: marker,
+                    src: MirValue::Const(1),
+                });
+                self.vreg_type_hints.insert(marker, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: marker,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+                self.current_block = next_block;
+            }
+            self.current_block = continuation_block;
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            values.len(),
+            None,
+        );
+        Ok(())
+    }
+
     fn typed_fixed_array_find_constant_value(
         input_meta: &RegMetadata,
         needle_const: Option<i64>,
@@ -540,6 +636,27 @@ impl<'a> HirToMirLowering<'a> {
             nu_protocol::Value::Int { val, .. } => Some(*val),
             _ => None,
         }
+    }
+
+    fn compile_time_string_values(values: &[nu_protocol::Value]) -> Option<Vec<String>> {
+        values
+            .iter()
+            .map(|value| match value {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    Some(val.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn metadata_is_string_find_needle(meta: &RegMetadata) -> bool {
+        (meta.string_slot.is_some() && meta.string_len_vreg.is_some())
+            || meta.literal_string.is_some()
+            || matches!(
+                meta.constant_value,
+                Some(nu_protocol::Value::String { .. } | nu_protocol::Value::Glob { .. })
+            )
     }
 
     fn typed_fixed_array_find_scalar_type(ty: &MirType) -> bool {

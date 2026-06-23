@@ -15610,6 +15610,118 @@ fn test_lower_string_list_builder_find_join_constant_values() {
 }
 
 #[test]
+fn test_lower_string_list_builder_find_dynamic_tracked_string_length() {
+    let find_decl = DeclId::new(10_450);
+    let length_decl = DeclId::new(10_451);
+    let ctx_var = VarId::new(0);
+    let values = ["ab", "sys_clone", "cd"];
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let needle_reg = RegId::new(5);
+    let path_reg = RegId::new(6);
+    stmts.push(HirStmt::LoadVariable {
+        dst: needle_reg,
+        var_id: ctx_var,
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: path_reg,
+        lit: HirLiteral::CellPath(Box::new(CellPath {
+            members: vec![string_member("comm")],
+        })),
+    });
+    stmts.push(HirStmt::FollowCellPath {
+        src_dst: needle_reg,
+        path: path_reg,
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: find_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![needle_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("dynamic tracked string find should feed shape-only consumers");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected dynamic string-list find to compare literal items against the tracked needle"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected dynamic string-list find to push shape markers for matching items"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("dynamic tracked string-list find length should compile through codegen");
+}
+
+#[test]
 fn test_lower_string_list_builder_compact_empty_join_constant_values() {
     let compact_decl = DeclId::new(332);
     let join_decl = DeclId::new(333);

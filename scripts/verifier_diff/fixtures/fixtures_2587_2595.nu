@@ -42,6 +42,19 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         error_contains: "find search argument must be compile-time constant for compile-time known fixed lists in eBPF"
     }
     {
+        name: "core-list-find-dynamic-string-fixed-list-length"
+        category: "language-core"
+        tags: [list find string length accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "b"] | find $ctx.comm | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-find-float-seq-length"
         category: "language-core"
         tags: [list seq find float length accept]
