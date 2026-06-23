@@ -23,6 +23,106 @@ fn int_member(index: usize) -> PathMember {
     }
 }
 
+fn assert_no_runtime_list_pushes(program: &MirProgram, context: &str) {
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "expected {context} not to push runtime list items"
+    );
+}
+
+fn assert_no_runtime_string_comparisons(program: &MirProgram, context: &str) {
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::StrCmp { .. })),
+        "expected {context} not to emit runtime string comparisons"
+    );
+}
+
+fn assert_uses_rodata_const(program: &MirProgram, context: &str) {
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal { symbol, .. } if symbol.starts_with("__nu_rodata_const")
+            )),
+        "expected {context} to materialize folded values from rodata constants; program:\n{program:#?}"
+    );
+}
+
+fn assert_string_append_literal(program: &MirProgram, expected: &[u8], context: &str) {
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(expected)
+            ) || matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::LiteralExact { bytes, len },
+                    ..
+                } if *len == expected.len()
+                    && bytes.get(..*len) == Some(expected)
+            )),
+        "expected {context} to append folded literal {:?}; program:\n{program:#?}",
+        expected
+    );
+}
+
+fn assert_program_returns_constant(program: &MirProgram, expected: i64, context: &str) {
+    let returns_expected = program
+        .main
+        .blocks
+        .iter()
+        .any(|block| match &block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::Const(value)),
+            } => *value == expected,
+            MirInst::Return {
+                val: Some(MirValue::VReg(return_vreg)),
+            } => program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::Const(value),
+                        } if dst == return_vreg
+                            && *value == expected
+                    )
+                }),
+            _ => false,
+        });
+
+    assert!(
+        returns_expected,
+        "expected {context} to return constant {expected}; program:\n{program:#?}"
+    );
+}
+
 #[test]
 fn test_lower_mutated_captured_int_variable_uses_data_global() {
     let capture_var = VarId::new(17);
@@ -1231,18 +1331,13 @@ fn test_lower_global_get_string_compares_literal_equality_and_inequality() {
     )
     .expect("global-get string should compare against literals");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
-        "expected runtime string equality/inequality to lower through bounded StrCmp"
+    assert_program_returns_constant(
+        &result.program,
+        1,
+        "initialized global string equality/inequality",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime string equality and inequality should compile through codegen");
+        .expect("folded string equality and inequality should compile through codegen");
 }
 
 #[test]
@@ -1584,18 +1679,9 @@ fn test_lower_global_get_string_match_literal_pattern() {
     )
     .expect("global-get string should match against a literal pattern");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
-        "expected runtime string match to lower through bounded StrCmp"
-    );
+    assert_program_returns_constant(&result.program, 10, "initialized global string match");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime string match should compile through codegen");
+        .expect("folded string match should compile through codegen");
 }
 
 #[test]
@@ -1940,18 +2026,6 @@ fn test_lower_global_get_string_ends_with_runtime_length() {
     )
     .expect("global-get string should run str ends-with using runtime length");
 
-    let comparisons = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
-        .count();
-    assert_eq!(
-        comparisons, 7,
-        "expected runtime ends-with to test each possible suffix offset for string:8"
-    );
     assert!(
         result
             .program
@@ -1963,12 +2037,11 @@ fn test_lower_global_get_string_ends_with_runtime_length() {
                 inst,
                 MirInst::StrCmp {
                     lhs_offset: 3,
-                    rhs_offset: 0,
                     len: 2,
                     ..
                 }
             )),
-        "expected runtime ends-with to include the offset for length 5"
+        "expected initialized global string ends-with to compare the runtime suffix bytes"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime ends-with should compile through codegen");
@@ -2188,37 +2261,9 @@ fn test_lower_global_get_string_contains_runtime_length() {
     )
     .expect("global-get string should run str contains using runtime length");
 
-    let comparisons = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
-        .count();
-    assert_eq!(
-        comparisons, 7,
-        "expected runtime contains to test each possible substring offset for string:8"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Ge,
-                    rhs: MirValue::Const(4),
-                    ..
-                }
-            )),
-        "expected runtime contains to guard offset 2 by requiring length at least 4"
-    );
+    assert_program_returns_constant(&result.program, 1, "initialized global string contains");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime contains should compile through codegen");
+        .expect("folded contains should compile through codegen");
 }
 
 fn lower_global_get_string_index_of_runtime_length(
@@ -2347,53 +2392,9 @@ fn test_lower_global_get_string_index_of_runtime_length() {
     let result = lower_global_get_string_index_of_runtime_length(false, "l", None)
         .expect("global-get string should run str index-of using runtime length");
 
-    let comparisons = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
-        .count();
-    assert_eq!(
-        comparisons, 8,
-        "expected runtime index-of to test each possible substring offset for string:8"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Ge,
-                    rhs: MirValue::Const(3),
-                    ..
-                }
-            )),
-        "expected runtime index-of to guard offset 2 by requiring length at least 3"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Copy {
-                    src: MirValue::Const(2),
-                    ..
-                }
-            )),
-        "expected runtime index-of to emit the first matching byte offset"
-    );
+    assert_program_returns_constant(&result.program, 2, "initialized global string index-of");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime index-of should compile through codegen");
+        .expect("folded index-of should compile through codegen");
 }
 
 #[test]
@@ -2401,54 +2402,13 @@ fn test_lower_global_get_string_index_of_end_runtime_length() {
     let result = lower_global_get_string_index_of_runtime_length(true, "l", None)
         .expect("global-get string should run str index-of --end using runtime length");
 
-    let comparisons = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
-        .count();
-    assert_eq!(
-        comparisons, 8,
-        "expected runtime index-of --end to test each possible substring offset for string:8"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::StrCmp {
-                    lhs_offset: 7,
-                    rhs_offset: 0,
-                    len: 1,
-                    ..
-                }
-            )),
-        "expected runtime index-of --end to probe the highest bounded offset"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Copy {
-                    src: MirValue::Const(3),
-                    ..
-                }
-            )),
-        "expected runtime index-of --end to emit the last matching byte offset"
+    assert_program_returns_constant(
+        &result.program,
+        3,
+        "initialized global string index-of --end",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime index-of --end should compile through codegen");
+        .expect("folded index-of --end should compile through codegen");
 }
 
 #[test]
@@ -2460,54 +2420,13 @@ fn test_lower_global_get_string_index_of_range_runtime_length() {
     )
     .expect("global-get string should run str index-of --range using runtime length");
 
-    let comparisons = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
-        .count();
-    assert_eq!(
-        comparisons, 4,
-        "expected runtime index-of --range to test offsets 2 through 5 for string:8"
-    );
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::StrCmp {
-                    lhs_offset: 1,
-                    len: 1,
-                    ..
-                }
-            )),
-        "expected runtime index-of --range to skip offsets before the bounded range"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Ge,
-                    rhs: MirValue::Const(4),
-                    ..
-                }
-            )),
-        "expected runtime index-of --range to guard offset 3 by requiring length at least 4"
+    assert_program_returns_constant(
+        &result.program,
+        2,
+        "initialized global string index-of --range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime index-of --range should compile through codegen");
+        .expect("folded index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2519,51 +2438,13 @@ fn test_lower_global_get_string_index_of_empty_range_runtime_length() {
     )
     .expect("global-get string should run empty str index-of --range using runtime length");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
-        "expected empty runtime index-of --range not to compare bytes"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Lt,
-                    rhs: MirValue::Const(2),
-                    ..
-                }
-            )),
-        "expected empty runtime index-of --range to clamp start against runtime length"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Copy {
-                    src: MirValue::Const(2),
-                    ..
-                }
-            )),
-        "expected empty runtime index-of --range to emit the static start bound"
+    assert_program_returns_constant(
+        &result.program,
+        2,
+        "initialized global empty string index-of --range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty runtime index-of --range should compile through codegen");
+        .expect("folded empty index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2575,51 +2456,13 @@ fn test_lower_global_get_string_index_of_empty_end_range_runtime_length() {
     )
     .expect("global-get string should run empty str index-of --end --range using runtime length");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
-        "expected empty runtime index-of --end --range not to compare bytes"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Lt,
-                    rhs: MirValue::Const(6),
-                    ..
-                }
-            )),
-        "expected empty runtime index-of --end --range to clamp end against runtime length"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Copy {
-                    src: MirValue::Const(6),
-                    ..
-                }
-            )),
-        "expected empty runtime index-of --end --range to emit the static end bound"
+    assert_program_returns_constant(
+        &result.program,
+        5,
+        "initialized global empty string index-of --end --range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty runtime index-of --end --range should compile through codegen");
+        .expect("folded empty index-of --end --range should compile through codegen");
 }
 
 #[test]
@@ -2631,42 +2474,13 @@ fn test_lower_global_get_string_index_of_negative_end_range_runtime_length() {
     )
     .expect("global-get string should run str index-of with a negative end range");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::StrCmp {
-                    lhs_offset: 0,
-                    len: 1,
-                    ..
-                }
-            )),
-        "expected negative-end runtime index-of --range to preserve the static start bound"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Ge,
-                    rhs: MirValue::Const(5),
-                    ..
-                }
-            )),
-        "expected negative-end runtime index-of --range to guard offset 3 by requiring length at least 5"
+    assert_program_returns_constant(
+        &result.program,
+        2,
+        "initialized global string index-of negative-end range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("negative-end runtime index-of --range should compile through codegen");
+        .expect("folded negative-end index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2678,25 +2492,13 @@ fn test_lower_global_get_string_index_of_negative_start_range_runtime_length() {
     )
     .expect("global-get string should run str index-of with a negative start range");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Le,
-                    rhs: MirValue::Const(5),
-                    ..
-                }
-            )),
-        "expected negative-start runtime index-of --range to guard offset 2 with length <= 5"
+    assert_program_returns_constant(
+        &result.program,
+        2,
+        "initialized global string index-of negative-start range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("negative-start runtime index-of --range should compile through codegen");
+        .expect("folded negative-start index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2708,35 +2510,13 @@ fn test_lower_global_get_string_index_of_empty_negative_end_range_runtime_length
     )
     .expect("empty runtime str index-of --range should support a negative end bound");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
-        "expected empty negative-end runtime index-of --range not to compare bytes"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Lt,
-                    rhs: MirValue::Const(1),
-                    ..
-                }
-            )),
-        "expected empty negative-end runtime index-of --range to clamp the positive start against runtime length"
+    assert_program_returns_constant(
+        &result.program,
+        1,
+        "initialized global empty string index-of negative-end range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty negative-end runtime index-of --range should compile through codegen");
+        .expect("folded empty negative-end index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2748,35 +2528,13 @@ fn test_lower_global_get_string_index_of_empty_negative_start_range_runtime_leng
     )
     .expect("empty runtime str index-of --range should support a negative start bound");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
-        "expected empty negative-start runtime index-of --range not to compare bytes"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Sub,
-                    rhs: MirValue::Const(3),
-                    ..
-                }
-            )),
-        "expected empty negative-start runtime index-of --range to compute len - 3 when length permits"
+    assert_program_returns_constant(
+        &result.program,
+        2,
+        "initialized global empty string index-of negative-start range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty negative-start runtime index-of --range should compile through codegen");
+        .expect("folded empty negative-start index-of --range should compile through codegen");
 }
 
 #[test]
@@ -2788,53 +2546,13 @@ fn test_lower_global_get_string_index_of_empty_end_negative_range_runtime_length
     )
     .expect("empty runtime str index-of --end --range should support a negative end bound");
 
-    assert!(
-        !result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
-        "expected empty negative-end runtime index-of --end --range not to compare bytes"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Sub,
-                    rhs: MirValue::Const(1),
-                    ..
-                }
-            )),
-        "expected empty negative-end runtime index-of --end --range to compute the resolved end bound"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::Gt,
-                    lhs: MirValue::VReg(_),
-                    rhs: MirValue::VReg(_),
-                    ..
-                }
-            )),
-        "expected empty negative-end runtime index-of --end --range to select max(start, end)"
+    assert_program_returns_constant(
+        &result.program,
+        4,
+        "initialized global empty string index-of --end negative-end range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty negative-end runtime index-of --end --range should compile through codegen");
+        .expect("folded empty negative-end index-of --end --range should compile through codegen");
 }
 
 #[test]
@@ -12826,28 +12544,8 @@ fn test_lower_global_define_type_string_array_str_length_materializes_numeric_li
     )
     .expect("global-define --type array{string:N:N} str length should lower as a numeric list");
 
-    let pushes = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
-        .count();
-    assert_eq!(
-        pushes, 2,
-        "expected str length to push each fixed-array string length"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
-        "expected math sum to consume the str length numeric-list result"
-    );
+    assert_uses_rodata_const(&result.program, "initialized typed string array str length");
+    assert_no_runtime_list_pushes(&result.program, "initialized typed string array str length");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str length consumed by math sum should compile through codegen",
     );
@@ -12945,22 +12643,13 @@ fn test_lower_global_define_type_string_array_str_length_chars_materializes_nume
     )
     .expect("str length --chars should lower for typed string arrays");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::BinOp {
-                    op: BinOpKind::And,
-                    rhs: MirValue::Const(0xC0),
-                    ..
-                }
-            )),
-        "expected str length --chars to mask UTF-8 byte tags"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str length --chars",
+    );
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str length --chars",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str length --chars consumed by math sum should compile through codegen",
@@ -13239,34 +12928,17 @@ fn test_lower_global_define_type_string_array_str_starts_with_supports_nul_prefi
     )
     .expect("global-define --type array{string:N:N} str starts-with should lower as a bool list");
 
-    let pushes = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
-        .count();
-    assert_eq!(
-        pushes, 3,
-        "expected str starts-with to push each fixed-array string predicate result"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str starts-with",
     );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Load {
-                    offset: 8,
-                    ty: MirType::U8,
-                    ..
-                }
-            )),
-        "expected str starts-with to compare the first byte of each fixed-array string"
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str starts-with",
+    );
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array str starts-with",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str starts-with consumed by math sum should compile through codegen",
@@ -13553,27 +13225,17 @@ fn test_lower_global_define_type_string_array_str_ends_with_supports_nul_suffix(
     )
     .expect("global-define --type array{string:N:N} str ends-with should lower as a bool list");
 
-    let pushes = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
-        .count();
-    assert_eq!(
-        pushes, 3,
-        "expected str ends-with to push each fixed-array string predicate result"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str ends-with",
     );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
-        "expected str ends-with to compare suffix bytes through StrCmp"
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str ends-with",
+    );
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array str ends-with",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str ends-with consumed by math sum should compile through codegen",
@@ -13860,27 +13522,17 @@ fn test_lower_global_define_type_string_array_str_contains_supports_nul_substrin
     )
     .expect("global-define --type array{string:N:N} str contains should lower as a bool list");
 
-    let pushes = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
-        .count();
-    assert_eq!(
-        pushes, 3,
-        "expected str contains to push each fixed-array string predicate result"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str contains",
     );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
-        "expected str contains to compare substring bytes through StrCmp"
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str contains",
+    );
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array str contains",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str contains consumed by math sum should compile through codegen",
@@ -14167,27 +13819,11 @@ fn test_lower_global_define_type_string_array_str_index_of_supports_nul_substrin
     )
     .expect("global-define --type array{string:N:N} str index-of should lower as a numeric list");
 
-    let pushes = result
-        .program
-        .main
-        .blocks
-        .iter()
-        .flat_map(|block| block.instructions.iter())
-        .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
-        .count();
-    assert_eq!(
-        pushes, 3,
-        "expected str index-of to push each fixed-array string index result"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
-        "expected str index-of to compare substring bytes through StrCmp"
+    assert_uses_rodata_const(&result.program, "initialized typed string array index-of");
+    assert_no_runtime_list_pushes(&result.program, "initialized typed string array index-of");
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array index-of",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str index-of consumed by math sum should compile through codegen",
@@ -14477,15 +14113,17 @@ fn test_lower_global_define_type_string_array_str_index_of_end_materializes_nume
     )
     .expect("typed string array str index-of --end should lower as a numeric list");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
-        "expected str index-of --end to push fixed-array string index results"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str index-of --end",
+    );
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str index-of --end",
+    );
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array str index-of --end",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str index-of --end consumed by math sum should compile through codegen",
@@ -14613,22 +14251,17 @@ fn test_lower_global_define_type_string_array_str_index_of_range_materializes_nu
     )
     .expect("typed string array str index-of --range should lower as a numeric list");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::StrCmp {
-                    lhs_offset: 1,
-                    len: 1,
-                    ..
-                }
-            )),
-        "expected str index-of --range to compare inside the bounded byte range"
+    assert_uses_rodata_const(
+        &result.program,
+        "initialized typed string array str index-of --range",
+    );
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array str index-of --range",
+    );
+    assert_no_runtime_string_comparisons(
+        &result.program,
+        "initialized typed string array str index-of --range",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str index-of --range consumed by math sum should compile through codegen",
@@ -14766,31 +14399,14 @@ fn test_lower_global_define_type_string_array_str_substring_range_feeds_join() {
     )
     .expect("typed string array str substring range should lower as a fixed string array");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::Load {
-                    offset: 9,
-                    ty: MirType::U8,
-                    ..
-                }
-            )),
-        "expected str substring 1..2 to copy runtime string bytes from element content offset 1"
+    assert_string_append_literal(
+        &result.program,
+        b"bc,y,",
+        "initialized typed string array substring/join",
     );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
-        "expected str substring to branch on each runtime string length"
+    assert_no_runtime_list_pushes(
+        &result.program,
+        "initialized typed string array substring/join",
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str substring result consumed by str join should compile through codegen",
@@ -15056,33 +14672,13 @@ fn test_lower_global_define_type_string_array_str_replace_all_supports_nul_bytes
     )
     .expect("typed string array str replace --all should lower as a fixed string array");
 
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
-        "expected str replace to compare literal bytes against each fixed string element"
+    assert_string_append_literal(
+        &result.program,
+        b"\0a,b\0b",
+        "initialized typed string array replace",
     );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::StoreSlot {
-                    val: MirValue::Const(0),
-                    ty: MirType::U8,
-                    ..
-                }
-            )),
-        "expected str replace to store replacement NUL byte"
-    );
+    assert_no_runtime_list_pushes(&result.program, "initialized typed string array replace");
+    assert_no_runtime_string_comparisons(&result.program, "initialized typed string array replace");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "typed string array str replace result consumed by str join should compile through codegen",
     );

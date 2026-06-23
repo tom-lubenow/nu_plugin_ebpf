@@ -40314,63 +40314,99 @@ fn test_lower_uniq_on_numeric_list_removes_duplicate_values() {
         .expect("uniq should compile through codegen");
 }
 
+fn make_runtime_appended_numeric_list_sort_then_get_program(
+    sort_decl: DeclId,
+    append_decl: DeclId,
+    random_decl: DeclId,
+    get_decl: DeclId,
+    reverse: bool,
+) -> HirProgram {
+    let mut sort_flags = Vec::new();
+    if reverse {
+        sort_flags.push(b"reverse".to_vec());
+    }
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(30, Span::test_data()),
+                            Value::int(10, Span::test_data()),
+                            Value::int(20, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: append_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sort_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        flags: sort_flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_sort_on_numeric_list_uses_bounded_compare_swaps() {
     let sort_decl = DeclId::new(121);
     let get_decl = DeclId::new(122);
-    let hir = HirProgram::new(
-        HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadValue {
-                        dst: RegId::new(0),
-                        val: Box::new(Value::list(
-                            vec![
-                                Value::int(30, Span::test_data()),
-                                Value::int(10, Span::test_data()),
-                                Value::int(20, Span::test_data()),
-                            ],
-                            Span::test_data(),
-                        )),
-                    },
-                    HirStmt::Call {
-                        decl_id: sort_decl,
-                        src_dst: RegId::new(1),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(0)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(2),
-                        lit: HirLiteral::Int(0),
-                    },
-                    HirStmt::Call {
-                        decl_id: get_decl,
-                        src_dst: RegId::new(3),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(1)),
-                            positional: vec![RegId::new(2)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(3) },
-            }],
-            entry: HirBlockId(0),
-            spans: Vec::new(),
-            ast: Vec::new(),
-            comments: Vec::new(),
-            register_count: 4,
-            file_count: 0,
-        },
-        HashMap::new(),
-        vec![],
-        None,
+    let append_decl = DeclId::new(1201);
+    let random_decl = DeclId::new(1202);
+    let hir = make_runtime_appended_numeric_list_sort_then_get_program(
+        sort_decl,
+        append_decl,
+        random_decl,
+        get_decl,
+        false,
     );
     let decl_names = HashMap::from([
         (sort_decl, "sort".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
         (get_decl, "get".to_string()),
     ]);
 
@@ -40382,7 +40418,7 @@ fn test_lower_sort_on_numeric_list_uses_bounded_compare_swaps() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("sort should lower on small stack-backed numeric lists");
+    .expect("sort should lower on runtime stack-backed numeric lists");
     let instructions = result
         .program
         .main
@@ -40410,20 +40446,26 @@ fn test_lower_sort_on_numeric_list_uses_bounded_compare_swaps() {
         "expected sort to rewrite stack slots during compare/swap"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("sort followed by get should compile through codegen");
+        .expect("runtime sort followed by get should compile through codegen");
 }
 
 #[test]
 fn test_lower_sort_reverse_on_numeric_list_uses_descending_compare() {
     let sort_decl = DeclId::new(123);
     let get_decl = DeclId::new(124);
-    let mut hir = make_numeric_list_call_then_get_program(sort_decl, get_decl, None, 0);
-    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
-        panic!("expected sort call");
-    };
-    args.flags.push(b"reverse".to_vec());
+    let append_decl = DeclId::new(1203);
+    let random_decl = DeclId::new(1204);
+    let hir = make_runtime_appended_numeric_list_sort_then_get_program(
+        sort_decl,
+        append_decl,
+        random_decl,
+        get_decl,
+        true,
+    );
     let decl_names = HashMap::from([
         (sort_decl, "sort".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
         (get_decl, "get".to_string()),
     ]);
 
@@ -40435,7 +40477,7 @@ fn test_lower_sort_reverse_on_numeric_list_uses_descending_compare() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("sort --reverse should lower on small stack-backed numeric lists");
+    .expect("sort --reverse should lower on runtime stack-backed numeric lists");
 
     assert!(
         result
@@ -40454,7 +40496,7 @@ fn test_lower_sort_reverse_on_numeric_list_uses_descending_compare() {
         "expected reverse sort to swap when the left value is smaller"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("sort --reverse followed by get should compile through codegen");
+        .expect("runtime sort --reverse followed by get should compile through codegen");
 }
 
 #[test]
@@ -40784,9 +40826,11 @@ fn test_lower_sort_values_on_numeric_list_is_supported() {
 }
 
 #[test]
-fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
+fn test_lower_sort_large_compile_time_numeric_list_folds_before_runtime_capacity() {
     let sort_decl = DeclId::new(125);
+    let get_decl = DeclId::new(126);
     let values = (0..17)
+        .rev()
         .map(|value| Value::int(value, Span::test_data()))
         .collect::<Vec<_>>();
     let hir = HirProgram::new(
@@ -40806,23 +40850,39 @@ fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
                             ..HirCallArgs::default()
                         },
                     },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
                 ],
-                terminator: HirTerminator::Return { src: RegId::new(1) },
+                terminator: HirTerminator::Return { src: RegId::new(3) },
             }],
             entry: HirBlockId(0),
             spans: Vec::new(),
             ast: Vec::new(),
             comments: Vec::new(),
-            register_count: 2,
+            register_count: 4,
             file_count: 0,
         },
         HashMap::new(),
         vec![],
         None,
     );
-    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -40830,13 +40890,16 @@ fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("large-capacity sort should be rejected instead of generating huge MIR");
+    .expect("large compile-time sort should fold before runtime stack-list capacity checks");
 
-    assert!(
-        err.to_string()
-            .contains("sort supports stack-backed numeric lists with capacity <= 16"),
-        "unexpected error: {err}"
+    assert_program_returns_constant(
+        &result.program,
+        0,
+        "large compile-time numeric sort followed by get",
     );
+    assert_no_runtime_list_operations(&result.program, "large compile-time numeric sort");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("large compile-time sort followed by get should compile through codegen");
 }
 
 #[test]
