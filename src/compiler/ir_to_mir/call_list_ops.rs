@@ -886,6 +886,23 @@ impl<'a> HirToMirLowering<'a> {
             self.lower_compile_time_list_transform_result(src_dst, &projected)?;
         } else if input_meta
             .as_ref()
+            .is_some_and(|meta| meta.direct_projected_list_consumer.is_some())
+        {
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            if let Some(out_meta) = self.reg_metadata.get_mut(&src_dst.get()) {
+                out_meta.direct_projected_list_consumer = None;
+            }
+        } else if input_meta
+            .as_ref()
             .and_then(|meta| meta.list_buffer)
             .is_some()
         {
@@ -1460,7 +1477,7 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
         let static_count = self.stack_list_static_count_arg(cmd_name, raw_count)?;
-        if matches!(cmd_name, "take" | "skip")
+        if matches!(cmd_name, "take" | "skip" | "drop")
             && input_meta.direct_projected_list_consumer.is_some()
             && let (Some(input_reg), Some(count)) = (input_reg, static_count)
         {

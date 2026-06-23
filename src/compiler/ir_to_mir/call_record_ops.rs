@@ -1408,6 +1408,111 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn record_values_direct_projection_index(
+        projection: DirectListProjection,
+        len: usize,
+        context: &str,
+    ) -> Result<(usize, bool, Option<DirectListProjection>), CompileError> {
+        let index_to_usize = |index: i64| {
+            if index < 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get index must be non-negative for {context} in eBPF"
+                )));
+            }
+            usize::try_from(index).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "get index is too large for {context} in eBPF"
+                ))
+            })
+        };
+        let count_to_usize = |count: i64| {
+            if count < 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "list slice count must be non-negative for {context} in eBPF"
+                )));
+            }
+            usize::try_from(count).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "list slice count is too large for {context} in eBPF"
+                ))
+            })
+        };
+
+        let (index, strict_bounds, pass_through_marker) = match projection {
+            DirectListProjection::First => (0, false, None),
+            DirectListProjection::Last => (len.saturating_sub(1), false, None),
+            DirectListProjection::Index(index) => (
+                index_to_usize(index)?,
+                true,
+                Some(DirectListProjection::Index(index)),
+            ),
+            DirectListProjection::TakeLast(count) => {
+                let out_len = count_to_usize(count)?.min(len);
+                if out_len == 0 {
+                    (len, true, Some(DirectListProjection::Last))
+                } else {
+                    (out_len - 1, true, Some(DirectListProjection::Last))
+                }
+            }
+            DirectListProjection::SkipLast(count) => {
+                let count = count_to_usize(count)?;
+                if count >= len {
+                    (len, true, Some(DirectListProjection::Last))
+                } else {
+                    (len - 1, true, Some(DirectListProjection::Last))
+                }
+            }
+            DirectListProjection::DropFirst(count) => {
+                let drop_count = count_to_usize(count)?.min(len);
+                let out_len = len.saturating_sub(drop_count);
+                if out_len == 0 {
+                    (len, true, Some(DirectListProjection::First))
+                } else {
+                    (0, true, Some(DirectListProjection::First))
+                }
+            }
+            DirectListProjection::DropLast(count) => {
+                let drop_count = count_to_usize(count)?.min(len);
+                let out_len = len.saturating_sub(drop_count);
+                if out_len == 0 {
+                    (len, true, Some(DirectListProjection::Last))
+                } else {
+                    (out_len - 1, true, Some(DirectListProjection::Last))
+                }
+            }
+            DirectListProjection::DropIndex { drop, index } => {
+                let index_usize = index_to_usize(index)?;
+                let drop_count = count_to_usize(drop)?.min(len);
+                let out_len = len.saturating_sub(drop_count);
+                if index_usize >= out_len {
+                    (len, true, Some(DirectListProjection::Index(index)))
+                } else {
+                    (index_usize, true, Some(DirectListProjection::Index(index)))
+                }
+            }
+            DirectListProjection::ReverseFirst => (
+                len.saturating_sub(1),
+                false,
+                Some(DirectListProjection::First),
+            ),
+            DirectListProjection::ReverseLast => (0, false, Some(DirectListProjection::Last)),
+            DirectListProjection::ReverseIndex(index) => {
+                let index_usize = index_to_usize(index)?;
+                if index_usize >= len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get index {index_usize} is out of bounds for {context} with length {len} in eBPF",
+                    )));
+                }
+                (
+                    len.saturating_sub(1).saturating_sub(index_usize),
+                    false,
+                    Some(DirectListProjection::Index(index)),
+                )
+            }
+        };
+        Ok((index, strict_bounds, pass_through_marker))
+    }
+
     fn lower_metadata_record_values_direct_projection(
         &mut self,
         src_dst: RegId,
@@ -1416,60 +1521,12 @@ impl<'a> HirToMirLowering<'a> {
         input_meta: RegMetadata,
         projection: DirectListProjection,
     ) -> Result<(), CompileError> {
-        let (index, strict_bounds, pass_through_marker) = match projection {
-            DirectListProjection::First => (0, false, None),
-            DirectListProjection::Last => (
-                input_meta.record_fields.len().saturating_sub(1),
-                false,
-                None,
-            ),
-            DirectListProjection::Index(index) => {
-                if index < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get index must be non-negative for metadata record values in eBPF".into(),
-                    ));
-                }
-                let index = usize::try_from(index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "get index is too large for metadata record values in eBPF".into(),
-                    )
-                })?;
-                (index, true, Some(DirectListProjection::Index(index as i64)))
-            }
-            DirectListProjection::ReverseFirst => (
-                input_meta.record_fields.len().saturating_sub(1),
-                false,
-                Some(DirectListProjection::First),
-            ),
-            DirectListProjection::ReverseLast => (0, false, Some(DirectListProjection::Last)),
-            DirectListProjection::ReverseIndex(index) => {
-                if index < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get index must be non-negative for metadata record values in eBPF".into(),
-                    ));
-                }
-                let index = usize::try_from(index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "get index is too large for metadata record values in eBPF".into(),
-                    )
-                })?;
-                if index >= input_meta.record_fields.len() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "get index {index} is out of bounds for metadata record values with length {} in eBPF",
-                        input_meta.record_fields.len()
-                    )));
-                }
-                (
-                    input_meta
-                        .record_fields
-                        .len()
-                        .saturating_sub(1)
-                        .saturating_sub(index),
-                    false,
-                    Some(DirectListProjection::Index(index as i64)),
-                )
-            }
-        };
+        let (index, strict_bounds, pass_through_marker) =
+            Self::record_values_direct_projection_index(
+                projection,
+                input_meta.record_fields.len(),
+                "metadata record values",
+            )?;
         let Some(field) = input_meta.record_fields.get(index).cloned() else {
             if strict_bounds {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -1554,52 +1611,12 @@ impl<'a> HirToMirLowering<'a> {
             projection,
         } = values;
 
-        let (index, strict_bounds, pass_through_marker) = match projection {
-            DirectListProjection::First => (0, false, None),
-            DirectListProjection::Last => (typed_fields.len().saturating_sub(1), false, None),
-            DirectListProjection::Index(index) => {
-                if index < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get index must be non-negative for typed record values in eBPF".into(),
-                    ));
-                }
-                let index = usize::try_from(index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "get index is too large for typed record values in eBPF".into(),
-                    )
-                })?;
-                (index, true, Some(DirectListProjection::Index(index as i64)))
-            }
-            DirectListProjection::ReverseFirst => (
-                typed_fields.len().saturating_sub(1),
-                false,
-                Some(DirectListProjection::First),
-            ),
-            DirectListProjection::ReverseLast => (0, false, Some(DirectListProjection::Last)),
-            DirectListProjection::ReverseIndex(index) => {
-                if index < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get index must be non-negative for typed record values in eBPF".into(),
-                    ));
-                }
-                let index = usize::try_from(index).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "get index is too large for typed record values in eBPF".into(),
-                    )
-                })?;
-                if index >= typed_fields.len() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "get index {index} is out of bounds for typed record values with length {} in eBPF",
-                        typed_fields.len()
-                    )));
-                }
-                (
-                    typed_fields.len().saturating_sub(1).saturating_sub(index),
-                    false,
-                    Some(DirectListProjection::Index(index as i64)),
-                )
-            }
-        };
+        let (index, strict_bounds, pass_through_marker) =
+            Self::record_values_direct_projection_index(
+                projection,
+                typed_fields.len(),
+                "typed record values",
+            )?;
         let Some(field) = typed_fields.get(index) else {
             if strict_bounds {
                 return Err(CompileError::UnsupportedInstruction(format!(

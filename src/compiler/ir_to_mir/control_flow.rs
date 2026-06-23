@@ -1790,6 +1790,9 @@ impl<'a> HirToMirLowering<'a> {
                     Some("first") if consumer_args.positional.is_empty() => {
                         DirectListProjection::Index(skip_count)
                     }
+                    Some("last") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::SkipLast(skip_count)
+                    }
                     Some("get") if consumer_args.positional.len() == 1 => {
                         let index = self.direct_list_projection_index_arg(
                             stmts,
@@ -1827,6 +1830,9 @@ impl<'a> HirToMirLowering<'a> {
                     Some("first") if consumer_args.positional.is_empty() && take_count > 0 => {
                         DirectListProjection::Index(0)
                     }
+                    Some("last") if consumer_args.positional.is_empty() && take_count > 0 => {
+                        DirectListProjection::TakeLast(take_count)
+                    }
                     Some("get") if consumer_args.positional.len() == 1 => {
                         let index = self.direct_list_projection_index_arg(
                             stmts,
@@ -1845,6 +1851,53 @@ impl<'a> HirToMirLowering<'a> {
                     projection,
                     take_consumer_index,
                     next_dst == dst || take_consumer_dst == dst,
+                )
+            }
+            Some("drop") if args.positional.len() <= 1 => {
+                let drop_count = if let Some(arg) = args.positional.first() {
+                    self.direct_list_projection_count_arg(
+                        stmts,
+                        search_start,
+                        consumer_index,
+                        *arg,
+                    )?
+                } else {
+                    1
+                };
+                let (drop_consumer_index, consumer_decl_id, drop_consumer_dst, consumer_args) =
+                    Self::next_direct_list_projection_call(
+                        stmts,
+                        consumer_index.saturating_add(1),
+                        next_dst,
+                    )?;
+                let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
+                    Some("first") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::DropFirst(drop_count)
+                    }
+                    Some("last") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::DropLast(drop_count)
+                    }
+                    Some("get") if consumer_args.positional.len() == 1 => {
+                        let index = self.direct_list_projection_index_arg(
+                            stmts,
+                            search_start,
+                            drop_consumer_index,
+                            *consumer_args.positional.first()?,
+                        )?;
+                        if index < 0 {
+                            return None;
+                        }
+                        DirectListProjection::DropIndex {
+                            drop: drop_count,
+                            index,
+                        }
+                    }
+                    _ => return None,
+                };
+                (
+                    projection,
+                    drop_consumer_index,
+                    next_dst == dst || drop_consumer_dst == dst,
                 )
             }
             Some("reverse") if args.positional.is_empty() => {

@@ -22919,106 +22919,165 @@ fn test_lower_global_define_type_record_values_get_string_field_direct_projectio
 
 #[test]
 fn test_lower_global_define_type_record_values_slice_get_string_field_direct_projection() {
-    for (case_idx, (transform_name, count, index)) in
-        [("skip", 1_i64, 0_i64), ("take", 2_i64, 1_i64)]
-            .into_iter()
-            .enumerate()
+    for (case_idx, (transform_name, count, consumer_name, index, type_spec)) in [
+        (
+            "skip",
+            1_i64,
+            "get",
+            Some(0_i64),
+            "record{pid:i64,comm:string:8,cpu:i64}",
+        ),
+        (
+            "take",
+            2_i64,
+            "get",
+            Some(1_i64),
+            "record{pid:i64,comm:string:8,cpu:i64}",
+        ),
+        (
+            "drop",
+            1_i64,
+            "get",
+            Some(1_i64),
+            "record{pid:i64,comm:string:8,cpu:i64}",
+        ),
+        (
+            "skip",
+            1_i64,
+            "last",
+            None,
+            "record{pid:i64,cpu:i64,comm:string:8}",
+        ),
+        (
+            "take",
+            2_i64,
+            "last",
+            None,
+            "record{pid:i64,comm:string:8,cpu:i64}",
+        ),
+        (
+            "drop",
+            1_i64,
+            "last",
+            None,
+            "record{pid:i64,comm:string:8,cpu:i64}",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let base_decl = 10_670 + case_idx * 10;
         let define_decl = DeclId::new(base_decl);
         let global_get_decl = DeclId::new(base_decl + 1);
         let values_decl = DeclId::new(base_decl + 2);
         let transform_decl = DeclId::new(base_decl + 3);
-        let get_decl = DeclId::new(base_decl + 4);
+        let consumer_decl = DeclId::new(base_decl + 4);
         let length_decl = DeclId::new(base_decl + 5);
         let decl_names = HashMap::from([
             (define_decl, "global-define".to_string()),
             (global_get_decl, "global-get".to_string()),
             (values_decl, "values".to_string()),
             (transform_decl, transform_name.to_string()),
-            (get_decl, "get".to_string()),
+            (consumer_decl, consumer_name.to_string()),
             (length_decl, "str length".to_string()),
         ]);
+
+        let mut stmts = vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::String("seen_state".into()),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(type_spec.into()),
+            },
+            HirStmt::Call {
+                decl_id: define_decl,
+                src_dst: RegId::new(2),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    named: vec![(b"type".to_vec(), RegId::new(1))],
+                    ..HirCallArgs::default()
+                },
+            },
+            HirStmt::Call {
+                decl_id: global_get_decl,
+                src_dst: RegId::new(3),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    ..HirCallArgs::default()
+                },
+            },
+            HirStmt::Call {
+                decl_id: values_decl,
+                src_dst: RegId::new(4),
+                args: HirCallArgs {
+                    pipeline_input: Some(RegId::new(3)),
+                    ..HirCallArgs::default()
+                },
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(5),
+                lit: HirLiteral::Int(count),
+            },
+            HirStmt::Call {
+                decl_id: transform_decl,
+                src_dst: RegId::new(6),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(5)],
+                    pipeline_input: Some(RegId::new(4)),
+                    ..HirCallArgs::default()
+                },
+            },
+        ];
+
+        let (projected_reg, length_reg, register_count) = if let Some(index) = index {
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(7),
+                lit: HirLiteral::Int(index),
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: consumer_decl,
+                src_dst: RegId::new(8),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(7)],
+                    pipeline_input: Some(RegId::new(6)),
+                    ..HirCallArgs::default()
+                },
+            });
+            (RegId::new(8), RegId::new(9), 10)
+        } else {
+            stmts.push(HirStmt::Call {
+                decl_id: consumer_decl,
+                src_dst: RegId::new(7),
+                args: HirCallArgs {
+                    pipeline_input: Some(RegId::new(6)),
+                    ..HirCallArgs::default()
+                },
+            });
+            (RegId::new(7), RegId::new(8), 9)
+        };
+
+        stmts.push(HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: length_reg,
+            args: HirCallArgs {
+                pipeline_input: Some(projected_reg),
+                ..HirCallArgs::default()
+            },
+        });
 
         let func = HirFunction {
             blocks: vec![HirBlock {
                 id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(0),
-                        lit: HirLiteral::String("seen_state".into()),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
-                    },
-                    HirStmt::Call {
-                        decl_id: define_decl,
-                        src_dst: RegId::new(2),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(0)],
-                            named: vec![(b"type".to_vec(), RegId::new(1))],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: global_get_decl,
-                        src_dst: RegId::new(3),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(0)],
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: values_decl,
-                        src_dst: RegId::new(4),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(3)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(5),
-                        lit: HirLiteral::Int(count),
-                    },
-                    HirStmt::Call {
-                        decl_id: transform_decl,
-                        src_dst: RegId::new(6),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(5)],
-                            pipeline_input: Some(RegId::new(4)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(7),
-                        lit: HirLiteral::Int(index),
-                    },
-                    HirStmt::Call {
-                        decl_id: get_decl,
-                        src_dst: RegId::new(8),
-                        args: HirCallArgs {
-                            positional: vec![RegId::new(7)],
-                            pipeline_input: Some(RegId::new(6)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                    HirStmt::Call {
-                        decl_id: length_decl,
-                        src_dst: RegId::new(9),
-                        args: HirCallArgs {
-                            pipeline_input: Some(RegId::new(8)),
-                            ..HirCallArgs::default()
-                        },
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(9) },
+                stmts,
+                terminator: HirTerminator::Return { src: length_reg },
             }],
             entry: HirBlockId(0),
             spans: Vec::new(),
             ast: Vec::new(),
             comments: Vec::new(),
-            register_count: 10,
+            register_count,
             file_count: 0,
         };
         let hir = HirProgram::new(func, HashMap::new(), vec![], None);
@@ -23032,7 +23091,7 @@ fn test_lower_global_define_type_record_values_slice_get_string_field_direct_pro
             &HashMap::new(),
         )
         .unwrap_or_else(|err| {
-            panic!("typed record values | {transform_name} | get string field should lower directly: {err:?}")
+            panic!("typed record values | {transform_name} | {consumer_name} string field should lower directly: {err:?}")
         });
         let instructions = result
             .program
@@ -23047,12 +23106,12 @@ fn test_lower_global_define_type_record_values_slice_get_string_field_direct_pro
                 inst,
                 MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
             )),
-            "expected values | {transform_name} | get string field to avoid materializing a numeric values list"
+            "expected values | {transform_name} | {consumer_name} string field to avoid materializing a numeric values list"
         );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!(
-                    "typed record values | {transform_name} | get string field should compile through codegen: {err:?}"
+                    "typed record values | {transform_name} | {consumer_name} string field should compile through codegen: {err:?}"
                 )
             });
     }
