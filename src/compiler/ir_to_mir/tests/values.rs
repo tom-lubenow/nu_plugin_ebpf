@@ -52918,6 +52918,49 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_drop_get_directly()
 }
 
 #[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_drop_last_directly() {
+    let values_decl = DeclId::new(81_790);
+    let drop_decl = DeclId::new(81_791);
+    let last_decl = DeclId::new(81_792);
+    let starts_with_decl = DeclId::new(81_793);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        last_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::DropCount {
+            decl_id: drop_decl,
+            count: 1,
+        }),
+        None,
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (drop_decl, "drop".to_string()),
+        (last_decl, "last".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values drop last should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string drop last",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values drop last string should compile through codegen");
+}
+
+#[test]
 fn test_lower_values_on_mixed_constant_record_feeds_first_last() {
     let values_decl = DeclId::new(1126);
     let first_decl = DeclId::new(1127);
@@ -54722,7 +54765,9 @@ fn test_lower_transpose_on_runtime_record_direct_projects_row_value() {
 
 #[test]
 fn test_lower_transpose_on_runtime_record_drop_direct_projects_row_value() {
-    for (offset, consumer_name, use_index_get) in [(0, "first", false), (10, "get", true)] {
+    for (offset, consumer_name, use_index_get) in
+        [(0, "first", false), (10, "get", true), (20, "last", false)]
+    {
         let random_decl = DeclId::new(81960 + offset);
         let transpose_decl = DeclId::new(81961 + offset);
         let drop_decl = DeclId::new(81962 + offset);

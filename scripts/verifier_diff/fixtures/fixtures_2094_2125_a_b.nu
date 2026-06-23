@@ -160,13 +160,14 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
     {
         name: "core-record-transpose-runtime-drop-direct-row-projection"
         category: "language-core"
-        tags: [aggregate record transpose drop first get accept runtime]
+        tags: [aggregate record transpose drop first get last accept runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let first_value = ({ pid: $ctx.pid cpu: 7 } | transpose key value | drop 1 | first | get value)'
             '  let get_value = ({ pid: $ctx.pid cpu: 7 } | transpose key value | drop 1 | get 0 | get value)'
-            '  ($first_value == 7) and ($get_value == 7)'
+            '  let last_value = ({ pid: $ctx.pid cpu: 7 } | transpose key value | drop 1 | last | get value)'
+            '  ($first_value == 7) and (($get_value == 7) and ($last_value == 7))'
             '}'
         ]
         local: "accept"

@@ -23342,7 +23342,7 @@ fn test_lower_global_define_type_record_values_slice_get_string_field_direct_pro
             1_i64,
             "get",
             Some(1_i64),
-            "record{pid:i64,comm:string:8,cpu:i64}",
+            "record{pid:i64,cpu:i64,comm:string:8}",
         ),
         (
             "skip",
@@ -23363,7 +23363,7 @@ fn test_lower_global_define_type_record_values_slice_get_string_field_direct_pro
             1_i64,
             "last",
             None,
-            "record{pid:i64,comm:string:8,cpu:i64}",
+            "record{pid:i64,cpu:i64,comm:string:8}",
         ),
     ]
     .into_iter()
@@ -25685,6 +25685,7 @@ fn test_lower_global_define_type_record_values_drop_direct_consumers_project_str
     let first_decl = DeclId::new(10_389);
     let get_decl = DeclId::new(10_390);
     let str_length_decl = DeclId::new(10_391);
+    let last_decl = DeclId::new(10_392);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
@@ -25693,11 +25694,13 @@ fn test_lower_global_define_type_record_values_drop_direct_consumers_project_str
         (first_decl, "first".to_string()),
         (get_decl, "get".to_string()),
         (str_length_decl, "str length".to_string()),
+        (last_decl, "last".to_string()),
     ]);
 
     for (case_name, consumer_decl, consumer_positional) in [
         ("drop first", first_decl, Vec::new()),
         ("drop get", get_decl, vec![RegId::new(2)]),
+        ("drop last", last_decl, Vec::new()),
     ] {
         let func = HirFunction {
             blocks: vec![HirBlock {

@@ -17,14 +17,15 @@ const VERIFIER_DIFF_FIXTURES_2299_2299 = [
     {
         name: "global-typed-record-values-drop-projects-string-field"
         category: "globals"
-        tags: [globals records typed values drop first get string accept]
+        tags: [globals records typed values drop first get last string accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
             '  global-define --type "record{pid:int,comm:string:8}" seen_state'
             '  let first_len = (global-get seen_state | values | drop 1 | first | str length --utf-8-bytes)'
             '  let get_len = (global-get seen_state | values | drop 1 | get 0 | str length --utf-8-bytes)'
-            '  ($first_len == 0) and ($get_len == 0)'
+            '  let last_len = (global-get seen_state | values | drop 1 | last | str length --utf-8-bytes)'
+            '  ($first_len == 0) and (($get_len == 0) and ($last_len == 0))'
             '}'
         ]
         local: "accept"
