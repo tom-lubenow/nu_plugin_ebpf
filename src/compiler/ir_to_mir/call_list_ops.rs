@@ -1865,6 +1865,22 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
         let static_count = self.stack_list_static_count_arg("last", raw_count)?;
+        if input_meta.direct_projected_list_consumer.is_some()
+            && let (Some(input_reg), Some(count)) = (input_reg, static_count)
+            && count > 0
+        {
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            return Ok(());
+        }
         if let (Some(input_reg), Some(count)) = (input_reg, static_count)
             && self.lower_typed_fixed_array_count_slice(TypedFixedArrayCountSlice {
                 cmd_name: "last",

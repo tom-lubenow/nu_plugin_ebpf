@@ -107,6 +107,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-runtime-string-counted-last-first"
+        category: "language-core"
+        tags: [aggregate record values last first string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid comm: $ctx.comm } | values | last 1 | first | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-first-last"
         category: "language-core"
         tags: [aggregate record values list mixed first last reverse string]

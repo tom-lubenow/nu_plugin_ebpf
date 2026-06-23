@@ -1756,6 +1756,37 @@ impl<'a> HirToMirLowering<'a> {
             Some("last") if args.positional.is_empty() => {
                 (DirectListProjection::Last, consumer_index, next_dst == dst)
             }
+            Some("last") if args.positional.len() == 1 => {
+                let last_count = self.direct_list_projection_count_arg(
+                    stmts,
+                    search_start,
+                    consumer_index,
+                    *args.positional.first()?,
+                )?;
+                if last_count <= 0 {
+                    return None;
+                }
+                let (last_consumer_index, consumer_decl_id, last_consumer_dst, consumer_args) =
+                    Self::next_direct_list_projection_call(
+                        stmts,
+                        consumer_index.saturating_add(1),
+                        next_dst,
+                    )?;
+                let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
+                    Some("first") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::LastFirst(last_count)
+                    }
+                    Some("last") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::Last
+                    }
+                    _ => return None,
+                };
+                (
+                    projection,
+                    last_consumer_index,
+                    next_dst == dst || last_consumer_dst == dst,
+                )
+            }
             Some("get") if args.positional.len() == 1 => {
                 let index = self.direct_list_projection_index_arg(
                     stmts,

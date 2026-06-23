@@ -1516,6 +1516,18 @@ impl<'a> HirToMirLowering<'a> {
                     (out_len - 1, true, Some(DirectListProjection::Last))
                 }
             }
+            DirectListProjection::LastFirst(count) => {
+                let out_len = count_to_usize(count)?.min(len);
+                if out_len == 0 {
+                    (len, true, Some(DirectListProjection::First))
+                } else {
+                    (
+                        len.saturating_sub(out_len),
+                        true,
+                        Some(DirectListProjection::First),
+                    )
+                }
+            }
             DirectListProjection::SkipLast(count) => {
                 let count = count_to_usize(count)?;
                 if count >= len {

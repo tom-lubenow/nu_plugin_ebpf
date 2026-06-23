@@ -398,6 +398,7 @@ enum DirectListProjection {
     Last,
     Index(i64),
     TakeLast(i64),
+    LastFirst(i64),
     SkipLast(i64),
     DropFirst(i64),
     DropLast(i64),
