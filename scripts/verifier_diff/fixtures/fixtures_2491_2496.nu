@@ -69,9 +69,9 @@ const VERIFIER_DIFF_FIXTURES_2491_2496 = [
         kernel: "accept"
     }
     {
-        name: "core-string-starts-with-rejects-ignore-case-runtime-input"
+        name: "core-string-starts-with-ignore-case-initialized-global"
         category: "language-core"
-        tags: [string str starts-with diagnostics reject]
+        tags: [string str starts-with ignore-case globals accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -80,8 +80,7 @@ const VERIFIER_DIFF_FIXTURES_2491_2496 = [
             '  $left | str starts-with --ignore-case "he"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str starts-with --ignore-case requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
 ]

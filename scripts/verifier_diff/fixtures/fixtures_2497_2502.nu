@@ -69,9 +69,9 @@ const VERIFIER_DIFF_FIXTURES_2497_2502 = [
         kernel: "accept"
     }
     {
-        name: "core-string-ends-with-rejects-ignore-case-runtime-input"
+        name: "core-string-ends-with-ignore-case-initialized-global"
         category: "language-core"
-        tags: [string str ends-with diagnostics reject]
+        tags: [string str ends-with ignore-case globals accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -80,8 +80,7 @@ const VERIFIER_DIFF_FIXTURES_2497_2502 = [
             '  $left | str ends-with --ignore-case "LO"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str ends-with --ignore-case requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
 ]

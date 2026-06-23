@@ -69,9 +69,9 @@ const VERIFIER_DIFF_FIXTURES_2503_2508 = [
         kernel: "accept"
     }
     {
-        name: "core-string-contains-rejects-ignore-case-runtime-input"
+        name: "core-string-contains-ignore-case-initialized-global"
         category: "language-core"
-        tags: [string str contains diagnostics reject]
+        tags: [string str contains ignore-case globals accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -80,8 +80,7 @@ const VERIFIER_DIFF_FIXTURES_2503_2508 = [
             '  $left | str contains --ignore-case "LL"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str contains --ignore-case requires compile-time known string input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
 ]
