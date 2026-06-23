@@ -931,6 +931,72 @@ fn test_lower_map_contains_task_storage_uses_storage_lookup() {
 }
 
 #[test]
+fn test_lower_map_contains_rejects_redirect_map_kind_with_redirect_guidance() {
+    let map_contains_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(map_contains_decl, "map-contains".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"devices".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"devmap".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: map_contains_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"kind".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-contains should reject redirect map kinds");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-contains --kind devmap is reserved for redirect-map"),
+                "{msg}"
+            );
+            assert!(
+                msg.contains("use redirect-map for map-backed redirects"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_put_get_record_string_field_preserves_semantics() {
     let capture_var = VarId::new(320);
     let lookup_var = VarId::new(321);

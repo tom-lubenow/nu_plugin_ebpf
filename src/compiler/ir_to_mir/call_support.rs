@@ -1136,7 +1136,7 @@ impl<'a> HirToMirLowering<'a> {
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map"
+                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map; use redirect-map for map-backed redirects instead of map-define"
                 )))
             }
             Some(map_kind) => Err(
@@ -1282,7 +1282,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Some(map_kind) if map_kind.is_redirect_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map"
+                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map; use redirect-map for map-backed redirects instead of map-contains"
                 )))
             }
             Some(map_kind) if map_kind.is_socket_map() => {

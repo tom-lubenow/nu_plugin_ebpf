@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2402_2402 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind devmap is reserved for redirect-map / bpf_redirect_map"
+        error_contains: "use redirect-map for map-backed redirects"
     }
 ]
