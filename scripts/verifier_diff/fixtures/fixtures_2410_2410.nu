@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2410_2410 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind user-ringbuf is reserved for user-ringbuf helper surfaces"
+        error_contains: "use helper-call user_ringbuf_drain"
     }
 ]

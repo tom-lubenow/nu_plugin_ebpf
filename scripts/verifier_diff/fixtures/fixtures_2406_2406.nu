@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2406_2406 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind stack-trace is reserved for stack-trace maps"
+        error_contains: "use ctx.kstack/ctx.ustack or modeled stack helpers"
     }
 ]

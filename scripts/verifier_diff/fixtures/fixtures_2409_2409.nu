@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2409_2409 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind struct-ops is reserved for struct_ops objects"
+        error_contains: "use struct_ops attach syntax"
     }
 ]

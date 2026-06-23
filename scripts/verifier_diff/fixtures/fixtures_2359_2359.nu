@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2359_2359 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-put --kind prog-array is reserved for program-array maps"
+        error_contains: "use tail-call instead of generic map commands"
     }
 ]

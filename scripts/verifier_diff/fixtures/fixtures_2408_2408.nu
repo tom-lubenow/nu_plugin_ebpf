@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2408_2408 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind reuseport-sockarray is reserved for sk_reuseport socket selection"
+        error_contains: "use redirect-socket with --kind reuseport-sockarray"
     }
 ]

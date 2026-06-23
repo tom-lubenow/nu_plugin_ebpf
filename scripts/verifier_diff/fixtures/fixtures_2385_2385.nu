@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2385_2385 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind struct-ops is reserved for struct_ops objects"
+        error_contains: "use struct_ops attach syntax"
     }
 ]

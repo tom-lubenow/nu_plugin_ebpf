@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2381_2381 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind ringbuf is reserved for ring-buffer event maps"
+        error_contains: "use emit or modeled ringbuf helpers"
     }
 ]

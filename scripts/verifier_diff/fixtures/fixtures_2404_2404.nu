@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2404_2404 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind perf-event-array is reserved for perf-event output maps"
+        error_contains: "use emit/perf-event output surfaces"
     }
 ]

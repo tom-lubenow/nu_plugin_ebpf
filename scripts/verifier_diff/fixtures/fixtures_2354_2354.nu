@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2354_2354 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind stack-trace is reserved for stack-trace maps"
+        error_contains: "use ctx.kstack/ctx.ustack or modeled stack helpers"
     }
 ]
