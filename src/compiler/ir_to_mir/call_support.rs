@@ -1270,7 +1270,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::CgroupArray) => Ok(MapKind::CgroupArray),
             Some(map_kind) if map_kind.is_queue_or_stack() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is not a lookup map; use map-peek or map-pop for queue/stack entries"
+                    "{context} --kind {kind} is not a lookup map; use map-peek to read entries or map-pop to read and remove entries"
                 )))
             }
             Some(map_kind) if map_kind.is_redirect_map() => {

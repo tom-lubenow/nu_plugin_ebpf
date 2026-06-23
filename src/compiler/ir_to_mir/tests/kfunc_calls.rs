@@ -9488,6 +9488,10 @@ fn test_map_contains_rejects_non_lookup_map_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("not a lookup map"), "{msg}");
+            assert!(
+                msg.contains("use map-peek to read entries or map-pop to read and remove entries"),
+                "{msg}"
+            );
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
