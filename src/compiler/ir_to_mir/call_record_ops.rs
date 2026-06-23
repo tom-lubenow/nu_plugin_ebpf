@@ -676,9 +676,10 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut selected_fields = Vec::with_capacity(selected_typed_fields.len());
         for field in selected_typed_fields {
-            selected_fields.push(self.project_typed_record_scalar_field(
+            let scratch_reg = self.alloc_synthetic_reg(cmd_name)?;
+            selected_fields.push(self.project_typed_record_field(
                 cmd_name,
-                src_dst,
+                scratch_reg,
                 input_vreg,
                 &input_runtime_ty,
                 &input_meta,
@@ -772,7 +773,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok((input_vreg, input_runtime_ty))
     }
 
-    fn project_typed_record_scalar_field(
+    fn project_typed_record_field(
         &mut self,
         cmd_name: &str,
         scratch_reg: RegId,
@@ -812,23 +813,78 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.trusted_btf,
             projected_semantics.as_ref(),
         )?;
-        if !projected_ty.is_scalar_like() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed record input currently supports only scalar output fields in eBPF; field '{}' has type {:?}",
-                field.name, projected_ty
-            )));
-        }
+        let field_ty = self
+            .vreg_type_hints
+            .get(&field_vreg)
+            .cloned()
+            .and_then(|ty| match ty {
+                MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map,
+                } if Self::aggregate_call_value_type(&projected_ty).is_some() => {
+                    Some(pointee.as_ref().clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| projected_ty.clone());
+        let source_reg = if projected_ty.is_scalar_like() {
+            None
+        } else {
+            let value_runtime_ty = self.vreg_type_hints.get(&field_vreg).cloned();
+            let mut source_meta = self.get_metadata(scratch_reg).cloned().unwrap_or_default();
+            source_meta.is_context = false;
+            source_meta.field_type = Some(field_ty.clone());
+            source_meta.root_ctx_field = input_meta.root_ctx_field.clone();
+            source_meta.trusted_btf = input_meta.trusted_btf
+                && matches!(
+                    value_runtime_ty,
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    })
+                );
+            source_meta.annotated_semantics = projected_semantics.clone();
+            source_meta.source_var = None;
+            self.reg_metadata.insert(scratch_reg.get(), source_meta);
+            Some(scratch_reg)
+        };
 
         Ok(RecordField {
             name: field.name.clone(),
             value_vreg: field_vreg,
-            source_reg: None,
+            source_reg,
             stack_offset: None,
-            ty: projected_ty,
+            ty: field_ty,
             semantics: projected_semantics,
             is_context: false,
             root_ctx_field: input_meta.root_ctx_field.clone(),
         })
+    }
+
+    fn project_typed_record_scalar_field(
+        &mut self,
+        cmd_name: &str,
+        scratch_reg: RegId,
+        input_vreg: VReg,
+        input_runtime_ty: &MirType,
+        input_meta: &RegMetadata,
+        field: &StructField,
+    ) -> Result<RecordField, CompileError> {
+        let projected_field = self.project_typed_record_field(
+            cmd_name,
+            scratch_reg,
+            input_vreg,
+            input_runtime_ty,
+            input_meta,
+            field,
+        )?;
+        if !projected_field.ty.is_scalar_like() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed record input currently supports only scalar output fields in eBPF; field '{}' has type {:?}",
+                field.name, projected_field.ty
+            )));
+        }
+        Ok(projected_field)
     }
 
     fn project_typed_record_scalar_fields(
@@ -1513,6 +1569,20 @@ impl<'a> HirToMirLowering<'a> {
         Ok((index, strict_bounds, pass_through_marker))
     }
 
+    fn metadata_record_field_result_type_hint(&self, field: &RecordField) -> MirType {
+        self.vreg_type_hints
+            .get(&field.value_vreg)
+            .cloned()
+            .filter(|ty| {
+                Self::aggregate_call_value_type(&field.ty).is_some()
+                    && matches!(
+                        ty,
+                        MirType::Ptr { pointee, .. } if pointee.as_ref() == &field.ty
+                    )
+            })
+            .unwrap_or_else(|| field.ty.clone())
+    }
+
     fn lower_metadata_record_values_direct_projection(
         &mut self,
         src_dst: RegId,
@@ -1572,7 +1642,10 @@ impl<'a> HirToMirLowering<'a> {
             dst: result_vreg,
             src,
         });
-        self.vreg_type_hints.insert(result_vreg, field.ty.clone());
+        self.vreg_type_hints.insert(
+            result_vreg,
+            self.metadata_record_field_result_type_hint(&field),
+        );
 
         let mut out_meta = field_source_meta.unwrap_or_default();
         out_meta.is_context = field.is_context;
@@ -2079,7 +2152,10 @@ impl<'a> HirToMirLowering<'a> {
             dst: result_vreg,
             src,
         });
-        self.vreg_type_hints.insert(result_vreg, field.ty.clone());
+        self.vreg_type_hints.insert(
+            result_vreg,
+            self.metadata_record_field_result_type_hint(&field),
+        );
 
         let mut out_meta = field_source_meta.unwrap_or_default();
         out_meta.is_context = field.is_context;

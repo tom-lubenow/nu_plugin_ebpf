@@ -194,6 +194,24 @@ impl<'a> HirToMirLowering<'a> {
         vreg
     }
 
+    pub(super) fn alloc_synthetic_reg(&mut self, context: &str) -> Result<RegId, CompileError> {
+        while let Some(candidate) = self.next_synthetic_reg.checked_sub(1) {
+            let reg = self.next_synthetic_reg;
+            self.next_synthetic_reg = candidate;
+            if self.reg_map.contains_key(&reg)
+                || self.reg_metadata.contains_key(&reg)
+                || self.current_type_hints.contains_key(&reg)
+            {
+                continue;
+            }
+            return Ok(RegId::new(reg));
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{context} exhausted lowering-internal synthetic registers"
+        )))
+    }
+
     pub(super) fn materialize_context_pointer_arg(&mut self) -> VReg {
         let ctx_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadCtxField {

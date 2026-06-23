@@ -415,6 +415,8 @@ pub struct HirToMirLowering<'a> {
     reg_map: HashMap<u32, VReg>,
     /// Metadata for each register
     reg_metadata: HashMap<u32, RegMetadata>,
+    /// Monotonic high register IDs reserved for lowering-internal metadata.
+    next_synthetic_reg: u32,
     /// Current basic block being built
     current_block: BlockId,
     /// Probe context for field access (reserved for future BTF/CO-RE support)
@@ -656,6 +658,7 @@ impl<'a> HirToMirLowering<'a> {
             func: MirFunction::new(),
             reg_map: HashMap::new(),
             reg_metadata: HashMap::new(),
+            next_synthetic_reg: u32::MAX - 16,
             current_block: BlockId(0),
             probe_ctx,
             decl_names,
