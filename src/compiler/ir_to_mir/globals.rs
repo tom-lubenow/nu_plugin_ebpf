@@ -396,9 +396,7 @@ impl NamedGlobalTypeShape {
             | Self::U32
             | Self::U64 => named_global_numeric_constant_i64(value).is_some(),
             Self::Bool => matches!(value, Value::Bool { .. }),
-            Self::Bytes { len } => {
-                matches!(value, Value::Binary { val, .. } if val.len() <= *len)
-            }
+            Self::Bytes { len } => matches!(value, Value::Binary { val, .. } if val.len() == *len),
             Self::String { content_cap, .. } => {
                 matches!(value, Value::String { val, .. } | Value::Glob { val, .. } if val.len() <= *content_cap)
             }
