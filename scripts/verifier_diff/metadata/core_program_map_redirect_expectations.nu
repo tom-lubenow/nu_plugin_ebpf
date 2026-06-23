@@ -31,13 +31,4 @@ const PROGRAM_MAP_REDIRECT_KERNEL_FEATURE_EXPECTATIONS = [
             "map:BPF_MAP_TYPE_REUSEPORT_SOCKARRAY"
         ]
     }
-    {
-        program: [
-            '{|ctx|'
-            '  helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
-            '  0'
-            '}'
-        ]
-        feature_keys: ["map:BPF_MAP_TYPE_DEVMAP_HASH"]
-    }
 ]
