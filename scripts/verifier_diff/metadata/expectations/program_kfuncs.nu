@@ -26,6 +26,16 @@ const PROGRAM_KFUNC_RAW_TRACEPOINT_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  kfunc-call bpf_rcu_read_lock; kfunc-call "bpf_rcu_read_unlock"'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["kfunc:bpf_rcu_read_lock" "kfunc:bpf_rcu_read_unlock"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  kfunc-call "bpf_preempt_disable"'
             '  kfunc-call "bpf_preempt_enable"'
             '  0'

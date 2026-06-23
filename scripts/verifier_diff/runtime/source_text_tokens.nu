@@ -2,6 +2,8 @@ def normalize-map-kind-token [token: string] {
     $token
     | str trim
     | str replace --all ")" ""
+    | str replace --all "}" ""
+    | str replace --all "]" ""
     | str replace --all "," ""
     | str replace --all "\"" ""
     | str replace --all "'" ""
@@ -25,9 +27,12 @@ def normalize-helper-name-token [token: string] {
     $token
     | str trim
     | str replace --all ")" ""
+    | str replace --all "}" ""
+    | str replace --all "]" ""
     | str replace --all "," ""
     | str replace --all "\"" ""
     | str replace --all "'" ""
+    | str replace --all ";" ""
 }
 
 def normalize-kfunc-name-token [token: string] {

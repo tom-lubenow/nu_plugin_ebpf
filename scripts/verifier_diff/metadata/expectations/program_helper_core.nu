@@ -13,6 +13,18 @@ const PROGRAM_CORE_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  helper-call bpf_get_current_pid_tgid; helper-call "bpf_ktime_get_ns"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_get_current_pid_tgid"
+            "helper:bpf_ktime_get_ns"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  let arg0 = "01234567"'
             '  let retval = "01234567"'
             '  (helper-call "bpf_get_func_arg" $ctx 0 $arg0) | count'
