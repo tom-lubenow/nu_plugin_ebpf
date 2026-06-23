@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2353_2353 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind bloom-filter is not deletable"
+        error_contains: "use map-push to insert values and map-contains --kind bloom-filter"
     }
 ]

@@ -15,6 +15,8 @@ documentation changes that matter to external alpha consumers.
 - Improved unsupported runtime `transpose` diagnostics to suggest supported
   shape-only, direct-row, and `--as-record` consumers instead of implying all
   runtime metadata-backed records are unsupported.
+- Improved unsupported `map-delete` diagnostics for array, queue/stack, and
+  bloom-filter map kinds so rejects point to the supported map surfaces.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

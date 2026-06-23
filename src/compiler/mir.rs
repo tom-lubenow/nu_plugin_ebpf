@@ -443,6 +443,19 @@ impl MapKind {
     }
 
     pub fn generic_map_op_error(self, op: MapOpKind, map_name: &str) -> String {
+        if op == MapOpKind::Delete && self.is_map_in_map() {
+            return format!(
+                "map-delete is not supported for map-in-map outer map '{map_name}' ({}); use map-get for outer and guarded dynamic inner map-delete",
+                self
+            );
+        }
+        if op == MapOpKind::Delete && self.is_socket_map() {
+            return format!(
+                "map-delete is not supported for socket map kind {} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
+                self, map_name
+            );
+        }
+
         if !self.supports_any_generic_map_op() {
             return format!(
                 "map operations do not support map kind {} for '{}'",
@@ -460,10 +473,16 @@ impl MapKind {
                 )
             }
             (MapOpKind::Delete, MapKind::BloomFilter) => {
-                format!("map delete is not supported for bloom-filter map '{map_name}'")
+                format!(
+                    "map delete is not supported for bloom-filter map '{map_name}'; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
+                )
             }
             (MapOpKind::Delete, MapKind::Array | MapKind::PerCpuArray) => format!(
-                "map delete is not supported for array map kind {} ('{}')",
+                "map delete is not supported for array map kind {} ('{}'); arrays are fixed index maps and do not support bpf_map_delete_elem",
+                self, map_name
+            ),
+            (MapOpKind::Delete, MapKind::Queue | MapKind::Stack) => format!(
+                "map delete is not supported for queue/stack map kind {} ('{}'); use map-pop to remove entries or map-peek to read without removal",
                 self, map_name
             ),
             (MapOpKind::Push, _) => format!(

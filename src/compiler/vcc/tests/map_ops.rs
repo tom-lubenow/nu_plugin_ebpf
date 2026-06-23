@@ -748,7 +748,10 @@ fn test_verify_mir_map_delete_rejects_array_map_kind() {
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
                 && e.message
-                    .contains("map delete is not supported for array map kind")),
+                    .contains("map delete is not supported for array map kind")
+                && e.message.contains(
+                    "arrays are fixed index maps and do not support bpf_map_delete_elem"
+                )),
         "unexpected error messages: {:?}",
         err
     );

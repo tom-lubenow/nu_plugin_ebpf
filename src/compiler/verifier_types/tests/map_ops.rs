@@ -769,7 +769,9 @@ fn test_map_delete_rejects_array_map_kind() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("map delete is not supported for array map kind")),
+            .contains("map delete is not supported for array map kind")
+            && e.message
+                .contains("arrays are fixed index maps and do not support bpf_map_delete_elem")),
         "unexpected errors: {:?}",
         err
     );

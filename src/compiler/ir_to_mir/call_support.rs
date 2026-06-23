@@ -1091,7 +1091,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
             ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is not deletable"
+                "{context} --kind {kind} is not deletable; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
             ))),
             Some(map_kind) => Err(
                 Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {
@@ -1737,13 +1737,13 @@ impl<'a> HirToMirLowering<'a> {
         }
         if map_kind.is_array_index_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for array map kind {} ('{}')",
+                "map delete is not supported for array map kind {} ('{}'); arrays are fixed index maps and do not support bpf_map_delete_elem",
                 map_kind, map_name
             )));
         }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for map kind {} ('{}')",
+                "map delete is not supported for queue/stack map kind {} ('{}'); use map-pop to remove entries or map-peek to read without removal",
                 map_kind, map_name
             )));
         }

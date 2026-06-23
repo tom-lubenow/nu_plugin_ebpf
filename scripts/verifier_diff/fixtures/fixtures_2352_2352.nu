@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2352_2352 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map delete is not supported for map kind"
+        error_contains: "use map-pop to remove entries or map-peek to read without removal"
     }
 ]

@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2351_2351 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map delete is not supported for array map kind"
+        error_contains: "arrays are fixed index maps and do not support bpf_map_delete_elem"
     }
 ]

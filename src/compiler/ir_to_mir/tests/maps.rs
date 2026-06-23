@@ -3542,8 +3542,11 @@ fn test_lower_map_delete_rejects_queue_kind() {
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("map delete is not supported for map kind"));
+            assert!(msg.contains("map delete is not supported for queue/stack map kind"));
             assert!(msg.contains("queue"));
+            assert!(
+                msg.contains("use map-pop to remove entries or map-peek to read without removal")
+            );
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -3569,6 +3572,10 @@ fn test_lower_map_delete_rejects_bloom_filter_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
                 msg.contains("map-delete --kind bloom-filter is not deletable"),
+                "{msg}"
+            );
+            assert!(
+                msg.contains("use map-push to insert values and map-contains --kind bloom-filter"),
                 "{msg}"
             );
         }
