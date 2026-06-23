@@ -9693,6 +9693,115 @@ fn make_record_mixed_values_then_get_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_record_values_string_get_starts_with_program(
+    values_decl: DeclId,
+    get_decl: DeclId,
+    starts_with_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 2 },
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(2),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("comm")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(2),
+            path: RegId::new(4),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"comm".to_vec()),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(3),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(3),
+            path: RegId::new(4),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"pid".to_vec()),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(3),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(5)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(7),
+            lit: HirLiteral::String(b"n".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(8),
+            args: HirCallArgs {
+                positional: vec![RegId::new(7)],
+                pipeline_input: Some(RegId::new(6)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(8) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_record_mixed_values_first_program(values_decl: DeclId, first_decl: DeclId) -> HirProgram {
     let mut record = Record::new();
     record.push("pid", Value::int(7, Span::test_data()));
@@ -52209,6 +52318,38 @@ fn test_lower_values_on_mixed_constant_record_feeds_metadata_get() {
     assert_no_runtime_list_operations(&result.program, "mixed record values get");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values get should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_get_directly() {
+    let values_decl = DeclId::new(81_680);
+    let get_decl = DeclId::new(81_681);
+    let starts_with_decl = DeclId::new(81_682);
+    let hir = make_runtime_record_values_string_get_starts_with_program(
+        values_decl,
+        get_decl,
+        starts_with_decl,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values should direct-project tracked string fields");
+
+    assert_no_runtime_list_operations(&result.program, "runtime mixed record values string get");
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values string get should compile through codegen");
 }
 
 #[test]

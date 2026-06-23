@@ -98,6 +98,14 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn metadata_record_values_direct_projection_supported_field(field: &RecordField) -> bool {
+        Self::metadata_record_values_supported_field(&RegMetadata::default(), field)
+            || matches!(
+                field.semantics,
+                Some(AnnotatedValueSemantics::String { .. })
+            )
+    }
+
     fn default_should_replace_value(value: &nu_protocol::Value, replace_empty: bool) -> bool {
         match value {
             nu_protocol::Value::Nothing { .. } => true,
@@ -1604,12 +1612,13 @@ impl<'a> HirToMirLowering<'a> {
             );
             return Ok(());
         };
-        if !Self::metadata_record_values_supported_field(&input_meta, &field) {
+        if !Self::metadata_record_values_direct_projection_supported_field(&field) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "values supports only integer-like, bool, or null scalar record fields in eBPF; field '{}' has type {:?}",
+                "values direct projection supports only integer-like, bool, null, or tracked string record fields in eBPF; field '{}' has type {:?}",
                 field.name, field.ty
             )));
         }
+        self.reject_context_pointer_payload(field.source_reg, "values direct projection")?;
 
         let field_constant = input_meta
             .constant_value
@@ -1627,6 +1636,96 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
+        if let Some(AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        }) = &field.semantics
+        {
+            let field_runtime_ty = self
+                .vreg_type_hints
+                .get(&field.value_vreg)
+                .cloned()
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "values direct projection requires tracked string storage for field '{}'",
+                        field.name
+                    ))
+                })?;
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } = field_runtime_ty
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "values direct projection requires stack or map backed string storage for field '{}'",
+                    field.name
+                )));
+            };
+            let expected_stored_len = 8usize.checked_add(*slot_len).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "values direct projection string field '{}' storage layout is too large",
+                    field.name
+                ))
+            })?;
+            let storage_matches = matches!(
+                &field.ty,
+                MirType::Array { elem, len }
+                    if elem.as_ref() == &MirType::U8 && *len == expected_stored_len
+            );
+            if pointee.as_ref() != &field.ty || !storage_matches {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "values direct projection string field '{}' has incompatible storage layout",
+                    field.name
+                )));
+            }
+
+            let payload_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: *slot_len,
+            };
+            let slot = self
+                .func
+                .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(slot, payload_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                result_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(payload_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            let len_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: field.value_vreg,
+                offset: 0,
+                ty: MirType::U64,
+            });
+            self.emit_ptr_to_slot_copy(slot, 0, field.value_vreg, 8, *slot_len)?;
+
+            let mut out_meta = field_source_meta.unwrap_or_default();
+            out_meta.is_context = field.is_context;
+            out_meta.field_type = Some(payload_ty);
+            out_meta.string_slot = Some(slot);
+            out_meta.string_len_vreg = Some(len_vreg);
+            out_meta.string_len_bound = Some(*content_cap);
+            out_meta.root_ctx_field = field.root_ctx_field;
+            out_meta.trusted_btf = false;
+            out_meta.annotated_semantics = field.semantics;
+            out_meta.source_var = None;
+            out_meta.constant_value = field_constant;
+            if let Some(marker) = pass_through_marker {
+                out_meta.direct_projected_list_consumer = Some(marker);
+            }
+            self.reg_metadata.insert(src_dst.get(), out_meta);
+            return Ok(());
+        }
+
         let scalar_constant = field_constant
             .as_ref()
             .and_then(Self::constant_scalar_i64)
