@@ -2007,6 +2007,18 @@ impl<'a> HirToMirLowering<'a> {
             self.lower_compile_time_only_constant_value(src_dst, &shape_value);
             return Ok(());
         }
+        if as_record && !input_meta.record_fields.is_empty() && input_meta.constant_value.is_none()
+        {
+            return self.lower_metadata_record_transpose_as_record_runtime(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_meta,
+                ignore_titles,
+                &output_names,
+            );
+        }
 
         let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref()
         else {
@@ -2220,6 +2232,109 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(ty) = self
             .vreg_type_hints
             .get(&row_vreg)
+            .cloned()
+            .or_else(|| materialized_meta.field_type.clone())
+        {
+            self.vreg_type_hints.insert(result_vreg, ty);
+        }
+        self.reg_metadata.insert(src_dst.get(), materialized_meta);
+
+        Ok(())
+    }
+
+    fn lower_metadata_record_transpose_as_record_runtime(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: Option<RegId>,
+        input_meta: RegMetadata,
+        ignore_titles: bool,
+        output_names: &[String; 2],
+    ) -> Result<(), CompileError> {
+        self.reject_context_pointer_payload(input_reg, "transpose --as-record")?;
+        for field in &input_meta.record_fields {
+            if field.name.len().saturating_add(1) > MAX_STRING_SIZE {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "transpose field name '{}' exceeds the eBPF string capacity of {} bytes",
+                    field.name,
+                    MAX_STRING_SIZE - 1
+                )));
+            }
+            if !Self::metadata_record_values_supported_field(&input_meta, field) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "transpose --as-record supports runtime record value lists only for integer-like, bool, or null scalar fields in eBPF; field '{}' has type {:?}",
+                    field.name, field.ty
+                )));
+            }
+        }
+
+        let mut out_fields = Vec::new();
+        if !ignore_titles {
+            let key_list_reg = self.alloc_synthetic_reg("transpose --as-record keys")?;
+            let key_values = input_meta
+                .record_fields
+                .iter()
+                .map(|field| nu_protocol::Value::string(field.name.clone(), Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_constant_value(
+                key_list_reg,
+                &nu_protocol::Value::list(key_values, Span::unknown()),
+            )?;
+            out_fields.push(self.record_field_from_value(output_names[0].clone(), key_list_reg)?);
+        }
+
+        let value_list_reg = self.alloc_synthetic_reg("transpose --as-record values")?;
+        let value_list_vreg = self.get_vreg(value_list_reg);
+        let max_len = input_meta.record_fields.len();
+        let (value_slot, value_ty) =
+            self.create_stack_numeric_list_result(value_list_vreg, max_len);
+        for field in &input_meta.record_fields {
+            self.emit(MirInst::ListPush {
+                list: value_list_vreg,
+                item: field.value_vreg,
+            });
+        }
+        self.install_stack_numeric_list_result_metadata(
+            value_list_reg,
+            value_slot,
+            value_ty,
+            max_len,
+            Some(max_len),
+        );
+        let value_field_name = if ignore_titles {
+            output_names[0].clone()
+        } else {
+            output_names[1].clone()
+        };
+        out_fields.push(self.record_field_from_value(value_field_name, value_list_reg)?);
+
+        let mut out_meta = RegMetadata {
+            record_fields: out_fields,
+            ..Default::default()
+        };
+        out_meta.field_type = Self::metadata_record_layout(&out_meta);
+        out_meta.annotated_semantics = Self::metadata_record_semantics(&out_meta);
+
+        let (record_vreg, materialized_meta) = self
+            .materialize_metadata_record_value(&out_meta)?
+            .ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "transpose --as-record could not materialize runtime output record in eBPF".into(),
+            )
+        })?;
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(record_vreg),
+        });
+        if let Some(ty) = self
+            .vreg_type_hints
+            .get(&record_vreg)
             .cloned()
             .or_else(|| materialized_meta.field_type.clone())
         {

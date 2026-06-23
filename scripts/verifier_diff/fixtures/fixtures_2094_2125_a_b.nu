@@ -126,6 +126,22 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-transpose-runtime-as-record-field-projection"
+        category: "language-core"
+        tags: [aggregate record transpose as-record get accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let value = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record key value | get value | get 1)'
+            '  let key_ok = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record key value | get key | get 0 | str starts-with "pid")'
+            '  let ignored = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record --ignore-titles val | get val | get 1)'
+            '  ($value == 7) and ($key_ok and ($ignored == 7))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-transpose-runtime-direct-row-projection"
         category: "language-core"
         tags: [aggregate record transpose get accept runtime]

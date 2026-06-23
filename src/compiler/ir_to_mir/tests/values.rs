@@ -53775,6 +53775,85 @@ fn make_runtime_record_transpose_direct_get_program(
     hir
 }
 
+fn make_runtime_record_transpose_as_record_field_item_program(
+    random_decl: DeclId,
+    transpose_decl: DeclId,
+    get_decl: DeclId,
+    field_name: &str,
+    item_index: i64,
+    flags: Vec<Vec<u8>>,
+    output_names: Vec<&str>,
+) -> HirProgram {
+    let mut hir = make_runtime_record_transpose_shape_consumer_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        flags,
+    );
+    let block = &mut hir.main.blocks[0];
+    block.stmts.pop();
+    let mut next_reg = 8u32;
+    let mut positional = Vec::new();
+    let mut output_name_loads = Vec::new();
+    for name in output_names {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        positional.push(reg);
+        output_name_loads.push(HirStmt::LoadValue {
+            dst: reg,
+            val: Box::new(Value::string(name, Span::test_data())),
+        });
+    }
+    let transpose_index = block
+        .stmts
+        .iter()
+        .position(|stmt| matches!(stmt, HirStmt::Call { src_dst, .. } if *src_dst == RegId::new(7)))
+        .expect("test helper builds a transpose call into r7");
+    block
+        .stmts
+        .splice(transpose_index..transpose_index, output_name_loads);
+    if let HirStmt::Call { args, .. } = &mut block.stmts[transpose_index + positional.len()] {
+        args.positional = positional;
+    }
+    let field_reg = RegId::new(next_reg);
+    next_reg += 1;
+    block.stmts.push(HirStmt::LoadValue {
+        dst: field_reg,
+        val: Box::new(Value::string(field_name, Span::test_data())),
+    });
+    let field_get_reg = RegId::new(next_reg);
+    next_reg += 1;
+    block.stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: field_get_reg,
+        args: HirCallArgs {
+            positional: vec![field_reg],
+            pipeline_input: Some(RegId::new(7)),
+            ..HirCallArgs::default()
+        },
+    });
+    let index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: index_reg,
+        lit: HirLiteral::Int(item_index),
+    });
+    let item_get_reg = RegId::new(next_reg);
+    next_reg += 1;
+    block.stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: item_get_reg,
+        args: HirCallArgs {
+            positional: vec![index_reg],
+            pipeline_input: Some(field_get_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: item_get_reg };
+    hir.main.register_count = next_reg;
+    hir
+}
+
 #[test]
 fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
     for (offset, consumer_name, expected, context) in [
@@ -53905,6 +53984,101 @@ fn test_lower_transpose_on_runtime_record_direct_projects_row_key() {
     assert_no_runtime_list_operations(&result.program, "runtime record transpose direct key");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime record transpose direct key should compile");
+}
+
+#[test]
+fn test_lower_transpose_as_record_on_runtime_record_projects_value_list_item() {
+    let random_decl = DeclId::new(81930);
+    let transpose_decl = DeclId::new(81931);
+    let get_decl = DeclId::new(81932);
+    let hir = make_runtime_record_transpose_as_record_field_item_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        "value",
+        1,
+        vec![b"as-record".to_vec()],
+        vec!["key", "value"],
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime metadata-record transpose --as-record should expose value lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime record transpose --as-record value list item should compile");
+}
+
+#[test]
+fn test_lower_transpose_as_record_on_runtime_record_projects_key_list_item() {
+    let random_decl = DeclId::new(81933);
+    let transpose_decl = DeclId::new(81934);
+    let get_decl = DeclId::new(81935);
+    let starts_with_decl = DeclId::new(81936);
+    let mut hir = make_runtime_record_transpose_as_record_field_item_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        "key",
+        0,
+        vec![b"as-record".to_vec()],
+        vec!["key", "value"],
+    );
+    let block = &mut hir.main.blocks[0];
+    let prefix_reg = RegId::new(hir.main.register_count);
+    hir.main.register_count += 1;
+    let starts_with_reg = RegId::new(hir.main.register_count);
+    hir.main.register_count += 1;
+    let item_reg = match block.terminator {
+        HirTerminator::Return { src } => src,
+        _ => unreachable!("test helper builds a return terminator"),
+    };
+    block.stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string("pid", Span::test_data())),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(item_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: starts_with_reg,
+    };
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime metadata-record transpose --as-record should expose key lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime record transpose --as-record key list item should compile");
 }
 
 #[test]
