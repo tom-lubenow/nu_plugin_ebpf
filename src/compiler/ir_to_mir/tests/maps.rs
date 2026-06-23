@@ -3561,7 +3561,8 @@ fn test_lower_map_get_rejects_sockmap_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map-get is not supported for socket map kind"));
             assert!(msg.contains("sockmap"));
-            assert!(msg.contains("use specialized socket-map helpers instead"));
+            assert!(msg.contains("map-put from sock_ops"));
+            assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

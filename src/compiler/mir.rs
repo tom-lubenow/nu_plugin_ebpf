@@ -455,6 +455,12 @@ impl MapKind {
                 self, map_name
             );
         }
+        if op == MapOpKind::Lookup && self.is_socket_map() {
+            return format!(
+                "map lookup is not supported for socket map kind {} ('{}'); use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
+                self, map_name
+            );
+        }
 
         if !self.supports_any_generic_map_op() {
             return format!(

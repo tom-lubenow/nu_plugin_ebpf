@@ -152,6 +152,15 @@ fn test_bloom_filter_update_error_names_supported_surfaces() {
 }
 
 #[test]
+fn test_socket_map_lookup_error_names_supported_surfaces() {
+    let msg = MapKind::SockMap.generic_map_op_error(MapOpKind::Lookup, "active");
+
+    assert!(msg.contains("map lookup is not supported for socket map kind sockmap ('active')"));
+    assert!(msg.contains("map-put from sock_ops"));
+    assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
+}
+
+#[test]
 fn test_map_kind_kernel_compatibility_metadata() {
     let expected = [
         (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),
