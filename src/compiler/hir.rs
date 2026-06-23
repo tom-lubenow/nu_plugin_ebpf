@@ -865,7 +865,9 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && match decl_name {
                     Some("bytes at") => {
-                        args.positional.len() == 1 && args.named.is_empty() && args.flags.is_empty()
+                        !args.positional.is_empty()
+                            && args.named.is_empty()
+                            && args.flags.is_empty()
                     }
                     Some("bytes add") => {
                         args.positional.len() == 1

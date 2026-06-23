@@ -14,9 +14,9 @@ const VERIFIER_DIFF_FIXTURES_2957_2966 = [
         error_contains: "bytes length cell-path arguments require compile-time known record or table input in eBPF; input has type binary"
     }
     {
-        name: "core-bytes-at-rejects-extra-cell-path-argument"
+        name: "core-bytes-at-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [binary bytes at diagnostics reject arguments]
+        tags: [binary bytes at diagnostics reject arguments cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -25,7 +25,7 @@ const VERIFIER_DIFF_FIXTURES_2957_2966 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bytes at accepts exactly one range argument in eBPF"
+        error_contains: "bytes at cell-path arguments require compile-time known record or table input in eBPF; input has type binary"
     }
     {
         name: "core-bytes-at-rejects-dynamic-range"
