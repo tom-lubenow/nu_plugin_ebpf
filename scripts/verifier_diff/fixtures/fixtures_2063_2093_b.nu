@@ -159,6 +159,32 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-runtime-string-drop-first"
+        category: "language-core"
+        tags: [aggregate record values drop first string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid comm: $ctx.comm } | values | drop 1 | first | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-runtime-string-drop-get"
+        category: "language-core"
+        tags: [aggregate record values drop get string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid comm: $ctx.comm } | values | drop 1 | get 0 | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-first-last"
         category: "language-core"
         tags: [aggregate record values list mixed first last reverse string]

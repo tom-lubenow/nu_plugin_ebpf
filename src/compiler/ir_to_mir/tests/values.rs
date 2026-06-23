@@ -9807,6 +9807,7 @@ enum RuntimeRecordValuesStringPreConsumer {
     Reverse(DeclId),
     FirstCount { decl_id: DeclId, count: i64 },
     LastCount { decl_id: DeclId, count: i64 },
+    DropCount { decl_id: DeclId, count: i64 },
 }
 
 fn make_runtime_record_values_string_direct_consumer_starts_with_program(
@@ -9899,6 +9900,25 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
             ]);
             (RegId::new(7), RegId::new(8), 9)
         } else if let Some(RuntimeRecordValuesStringPreConsumer::LastCount { decl_id, count }) =
+            pre_consumer
+        {
+            stmts.extend([
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(count),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ]);
+            (RegId::new(7), RegId::new(8), 9)
+        } else if let Some(RuntimeRecordValuesStringPreConsumer::DropCount { decl_id, count }) =
             pre_consumer
         {
             stmts.extend([
@@ -52809,6 +52829,92 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_get_di
     );
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("runtime record values last count string get should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_drop_first_directly() {
+    let values_decl = DeclId::new(81_770);
+    let drop_decl = DeclId::new(81_771);
+    let first_decl = DeclId::new(81_772);
+    let starts_with_decl = DeclId::new(81_773);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        first_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::DropCount {
+            decl_id: drop_decl,
+            count: 1,
+        }),
+        None,
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (drop_decl, "drop".to_string()),
+        (first_decl, "first".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values drop first should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string drop first",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values drop first string should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_drop_get_directly() {
+    let values_decl = DeclId::new(81_780);
+    let drop_decl = DeclId::new(81_781);
+    let get_decl = DeclId::new(81_782);
+    let starts_with_decl = DeclId::new(81_783);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        get_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::DropCount {
+            decl_id: drop_decl,
+            count: 1,
+        }),
+        Some(0),
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (drop_decl, "drop".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values drop get should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string drop get",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values drop get string should compile through codegen");
 }
 
 #[test]

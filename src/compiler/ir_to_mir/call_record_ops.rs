@@ -1556,7 +1556,7 @@ impl<'a> HirToMirLowering<'a> {
                 if out_len == 0 {
                     (len, true, Some(DirectListProjection::First))
                 } else {
-                    (0, true, Some(DirectListProjection::First))
+                    (drop_count, true, Some(DirectListProjection::First))
                 }
             }
             DirectListProjection::DropLast(count) => {
@@ -1575,7 +1575,11 @@ impl<'a> HirToMirLowering<'a> {
                 if index_usize >= out_len {
                     (len, true, Some(DirectListProjection::Index(index)))
                 } else {
-                    (index_usize, true, Some(DirectListProjection::Index(index)))
+                    (
+                        drop_count + index_usize,
+                        true,
+                        Some(DirectListProjection::Index(index)),
+                    )
                 }
             }
             DirectListProjection::ReverseFirst => (
