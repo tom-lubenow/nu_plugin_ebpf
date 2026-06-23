@@ -1980,6 +1980,20 @@ impl<'a> HirToMirLowering<'a> {
                     "transpose requires compile-time known record input in eBPF".into(),
                 )
             })?;
+        if !as_record
+            && self.current_call_result_list_shape_metadata_only
+            && let Some(field_count) = Self::record_transpose_shape_only_field_count(&input_meta)
+        {
+            let vals = (0..field_count)
+                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            );
+            return Ok(());
+        }
+
         let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref()
         else {
             return Err(CompileError::UnsupportedInstruction(
@@ -2066,6 +2080,13 @@ impl<'a> HirToMirLowering<'a> {
             "transpose output requires homogeneous row value layouts unless consumed by metadata-only fixed-list operations in eBPF"
                 .into(),
         ))
+    }
+
+    fn record_transpose_shape_only_field_count(meta: &RegMetadata) -> Option<usize> {
+        if !meta.record_fields.is_empty() {
+            return Some(meta.record_fields.len());
+        }
+        Self::typed_record_visible_fields(meta).map(|fields| fields.len())
     }
 
     pub(super) fn lower_metadata_record_get(

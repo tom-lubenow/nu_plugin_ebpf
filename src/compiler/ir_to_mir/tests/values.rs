@@ -53640,6 +53640,125 @@ fn test_lower_transpose_on_constant_record_feeds_metadata_describe() {
         .expect("record transpose describe should compile");
 }
 
+fn make_runtime_record_transpose_shape_consumer_program(
+    random_decl: DeclId,
+    transpose_decl: DeclId,
+    consumer_decl: DeclId,
+) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 2 },
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(1),
+                        val: Box::new(Value::string("pid", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs::default(),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(3),
+                        val: Box::new(Value::string("cpu", Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(7),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(3),
+                        val: RegId::new(4),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(5),
+                        val: Box::new(Value::string("key", Span::test_data())),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(6),
+                        val: Box::new(Value::string("value", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: transpose_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(5), RegId::new(6)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: consumer_decl,
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(7)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(8) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 9,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+#[test]
+fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
+    for (offset, consumer_name, expected, context) in [
+        (0, "length", 2, "runtime record transpose length"),
+        (10, "is-empty", 0, "runtime record transpose is-empty"),
+    ] {
+        let random_decl = DeclId::new(81853 + offset);
+        let transpose_decl = DeclId::new(81854 + offset);
+        let consumer_decl = DeclId::new(81855 + offset);
+        let hir = make_runtime_record_transpose_shape_consumer_program(
+            random_decl,
+            transpose_decl,
+            consumer_decl,
+        );
+        let decl_names = HashMap::from([
+            (random_decl, "random int".to_string()),
+            (transpose_decl, "transpose".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("runtime metadata-record transpose should feed shape-only consumers");
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("runtime record transpose shape consumer should compile");
+    }
+}
+
 #[test]
 fn test_lower_transpose_ignore_titles_on_constant_record_feeds_metadata_describe() {
     let transpose_decl = DeclId::new(81860);

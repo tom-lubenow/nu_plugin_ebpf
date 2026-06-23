@@ -55,4 +55,30 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         kernel: "skip"
         error_contains: "transpose requires compile-time known record values"
     }
+    {
+        name: "core-record-transpose-runtime-length"
+        category: "language-core"
+        tags: [aggregate record transpose length accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: $ctx.pid cpu: 7 } | transpose key value | length) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-runtime-is-empty"
+        category: "language-core"
+        tags: [aggregate record transpose is-empty accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: $ctx.pid cpu: 7 } | transpose key value | is-empty) == false'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
