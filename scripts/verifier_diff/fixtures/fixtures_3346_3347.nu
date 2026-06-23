@@ -14,18 +14,17 @@ export const VERIFIER_DIFF_FIXTURES_3346_3347 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-str-ends-with-ignore-case-rejects-runtime"
+        name: "global-define-type-array-string-str-ends-with-ignore-case-zero-fill"
         category: "globals"
-        tags: [globals arrays string str ends-with ignore-case diagnostics reject]
+        tags: [globals arrays string str ends-with ignore-case math sum global-define zero-fill accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
             '  global-define --type "array{string:8:2}" names'
-            '  (global-get names) | str ends-with --ignore-case "a"'
+            '  (((global-get names) | str ends-with --ignore-case "a" | math sum) == 0)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str ends-with --ignore-case requires compile-time known string input"
+        local: "accept"
+        kernel: "accept"
     }
 ]

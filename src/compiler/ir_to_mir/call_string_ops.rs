@@ -972,6 +972,16 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if ignore_case {
+            let output = "".starts_with(&prefix.to_lowercase());
+            if self.lower_zero_initialized_typed_fixed_string_array_bool_list(
+                src_dst,
+                "str starts-with",
+                &input_meta,
+                *len,
+                output,
+            )? {
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(
                 "str starts-with --ignore-case requires compile-time known string input in eBPF"
                     .into(),
@@ -1594,6 +1604,16 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if ignore_case {
+            let output = "".ends_with(&suffix.to_lowercase());
+            if self.lower_zero_initialized_typed_fixed_string_array_bool_list(
+                src_dst,
+                "str ends-with",
+                &input_meta,
+                *len,
+                output,
+            )? {
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(
                 "str ends-with --ignore-case requires compile-time known string input in eBPF"
                     .into(),
@@ -2181,6 +2201,16 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if ignore_case {
+            let output = "".contains(&needle.to_lowercase());
+            if self.lower_zero_initialized_typed_fixed_string_array_bool_list(
+                src_dst,
+                "str contains",
+                &input_meta,
+                *len,
+                output,
+            )? {
+                return Ok(true);
+            }
             return Err(CompileError::UnsupportedInstruction(
                 "str contains --ignore-case requires compile-time known string input in eBPF"
                     .into(),
@@ -6296,6 +6326,26 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
+    fn lower_zero_initialized_typed_fixed_string_array_bool_list(
+        &mut self,
+        src_dst: RegId,
+        command: &str,
+        input_meta: &RegMetadata,
+        len: usize,
+        output: bool,
+    ) -> Result<bool, CompileError> {
+        if !input_meta.zero_initialized_global {
+            return Ok(false);
+        }
+        if len > MAX_STACK_NUMERIC_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{command} output exceeds stack-backed numeric list capacity {MAX_STACK_NUMERIC_LIST_CAPACITY} in eBPF"
+            )));
+        }
+        self.lower_known_bool_list_result(src_dst, vec![output; len])?;
+        Ok(true)
+    }
+
     fn lower_known_i64_list_result(
         &mut self,
         src_dst: RegId,
@@ -9755,6 +9805,41 @@ mod tests {
             .flat_map(|block| &block.instructions)
             .filter(|inst| matches!(inst, MirInst::Load { ty: load_ty, .. } if *load_ty == ty))
             .count()
+    }
+
+    #[test]
+    fn zero_initialized_string_array_bool_list_lowers_constant_output() {
+        with_test_lowering(|lowering| {
+            let src_dst = RegId::new(1);
+            let meta = RegMetadata {
+                zero_initialized_global: true,
+                ..Default::default()
+            };
+
+            assert!(
+                lowering
+                    .lower_zero_initialized_typed_fixed_string_array_bool_list(
+                        src_dst,
+                        "str contains",
+                        &meta,
+                        2,
+                        false,
+                    )
+                    .expect("zero-filled string array bool list should lower")
+            );
+            let Some(nu_protocol::Value::List { vals, .. }) = lowering
+                .reg_metadata
+                .get(&src_dst.get())
+                .and_then(|meta| meta.constant_value.as_ref())
+            else {
+                panic!("expected constant bool list metadata");
+            };
+            assert_eq!(vals.len(), 2);
+            assert!(
+                vals.iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Bool { val: false, .. }))
+            );
+        });
     }
 
     #[test]
