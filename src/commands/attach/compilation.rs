@@ -1714,27 +1714,7 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_list_sort(input, options, span)
         }
         "find" => {
-            let [needle_arg] = args else {
-                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
-                    .with_label(
-                        "`find` requires exactly one search argument in compile-time global initializers",
-                        span,
-                    ));
-            };
-            let ExternalArgument::Regular(needle_expr) = needle_arg else {
-                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
-                    .with_label(
-                        "`find` search argument cannot use spread syntax in compile-time global initializers",
-                        needle_arg.expr().span,
-                    ));
-            };
-            eval_supported_constant_list_find(
-                working_set,
-                input,
-                needle_expr,
-                env,
-                span,
-            )
+            eval_supported_constant_list_find_external_call(working_set, input, args, env, span)
         }
         "length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -15272,6 +15252,7 @@ fn eval_supported_constant_list_find_call(
     span: Span,
 ) -> Result<Value, LabeledError> {
     let mut needle_expr = None;
+    let mut invert = false;
     for arg in args {
         match arg {
             nu_protocol::ast::Argument::Positional(expr)
@@ -15286,16 +15267,29 @@ fn eval_supported_constant_list_find_call(
                     );
                 }
             }
-            nu_protocol::ast::Argument::Named(named) => {
-                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "invert" | "v" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`find --invert` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    invert = true;
+                }
+                _ => {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
                     .with_label(
-                        format!(
-                            "`find` does not accept named argument --{} in compile-time global initializers",
-                            named.0.item
-                        ),
+                        "`find` supports only --invert in compile-time global initializers",
                         arg.span(),
                     ));
-            }
+                }
+            },
             nu_protocol::ast::Argument::Spread(expr) => {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
                     .with_label(
@@ -15314,7 +15308,67 @@ fn eval_supported_constant_list_find_call(
         );
     };
 
-    eval_supported_constant_list_find(working_set, input, needle_expr, env, span)
+    eval_supported_constant_list_find(working_set, input, needle_expr, env, span, invert)
+}
+
+fn eval_supported_constant_list_find_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut needle_expr = None;
+    let mut invert = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`find` search argument cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--invert" || val == "-v" =>
+            {
+                invert = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`find` supports only --invert in compile-time global initializers",
+                            expr.span,
+                        ),
+                );
+            }
+            _ => {
+                if needle_expr.replace(expr).is_some() {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`find` requires exactly one search argument in compile-time global initializers",
+                                expr.span,
+                            ),
+                    );
+                }
+            }
+        }
+    }
+
+    let Some(needle_expr) = needle_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`find` requires exactly one search argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    eval_supported_constant_list_find(working_set, input, needle_expr, env, span, invert)
 }
 
 fn eval_supported_constant_list_find(
@@ -15323,13 +15377,14 @@ fn eval_supported_constant_list_find(
     needle_expr: &nu_protocol::ast::Expression,
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
+    invert: bool,
 ) -> Result<Value, LabeledError> {
     let (vals, value_span) =
         eval_supported_constant_list_or_bounded_range_input("find", input, span)?;
     let needle = eval_supported_constant_value_with_env(working_set, needle_expr, env)?;
     let vals = vals
         .into_iter()
-        .filter(|value| value == &needle)
+        .filter(|value| (value == &needle) != invert)
         .collect::<Vec<_>>();
     Ok(Value::list(vals, value_span))
 }

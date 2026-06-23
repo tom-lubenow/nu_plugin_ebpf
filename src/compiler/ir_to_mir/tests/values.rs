@@ -43299,6 +43299,71 @@ fn test_lower_find_on_numeric_list_filters_equal_values() {
 }
 
 #[test]
+fn test_lower_find_invert_on_numeric_list_filters_unequal_values() {
+    let find_decl = DeclId::new(1131);
+    let get_decl = DeclId::new(1132);
+    let mut hir = make_numeric_list_item_call_then_get_program(find_decl, get_decl, 20, 0);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[2] else {
+        panic!("expected find call");
+    };
+    args.flags.push(b"invert".to_vec());
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find --invert should lower on stack-backed numeric lists");
+
+    let block_has_push = |target| {
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .find(|block| block.id == target)
+            .is_some_and(|block| {
+                block
+                    .instructions
+                    .iter()
+                    .any(|inst| matches!(inst, MirInst::ListPush { .. }))
+            })
+    };
+    let has_inverted_find_branch = result.program.main.blocks.iter().any(|block| {
+        let Some(MirInst::BinOp {
+            dst,
+            op: BinOpKind::Eq,
+            ..
+        }) = block.instructions.last()
+        else {
+            return false;
+        };
+        let MirInst::Branch {
+            cond,
+            if_true,
+            if_false,
+        } = block.terminator
+        else {
+            return false;
+        };
+        cond == *dst && !block_has_push(if_true) && block_has_push(if_false)
+    });
+    assert!(
+        has_inverted_find_branch,
+        "expected find --invert equality branches to push only on non-matches"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find --invert followed by get should compile through codegen");
+}
+
+#[test]
 fn test_lower_find_missing_on_numeric_list_returns_empty_list() {
     let find_decl = DeclId::new(133);
     let length_decl = DeclId::new(134);

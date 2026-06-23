@@ -11,7 +11,20 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "find does not accept flags or named arguments for stack-backed numeric lists in eBPF"
+        error_contains: "find supports only --invert flag and no named arguments in eBPF"
+    }
+    {
+        name: "core-list-find-invert"
+        category: "language-core"
+        tags: [list find invert accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 2 3 2] | find --invert 2 | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-find-rejects-missing-search-argument"

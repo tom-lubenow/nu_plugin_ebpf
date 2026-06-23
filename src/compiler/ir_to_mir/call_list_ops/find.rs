@@ -11,6 +11,7 @@ struct TypedFixedArrayFind<'a> {
     input_meta: &'a RegMetadata,
     needle_vreg: VReg,
     needle_reg: RegId,
+    invert: bool,
 }
 
 struct MaterializedStackListFind {
@@ -21,6 +22,7 @@ struct MaterializedStackListFind {
     input_meta: RegMetadata,
     needle_vreg: VReg,
     needle_reg: RegId,
+    invert: bool,
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -30,10 +32,10 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        let invert = self.find_invert_flag()?;
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "find does not accept flags or named arguments for stack-backed numeric lists in eBPF"
-                    .into(),
+                "find supports only --invert flag and no named arguments in eBPF".into(),
             ));
         }
         if self.positional_args.len() != 1 {
@@ -70,6 +72,7 @@ impl<'a> HirToMirLowering<'a> {
                         src_dst_had_value,
                         &strings,
                         needle_reg,
+                        invert,
                     );
                 }
                 if values
@@ -105,11 +108,12 @@ impl<'a> HirToMirLowering<'a> {
                     input_meta,
                     needle_vreg,
                     needle_reg,
+                    invert,
                 });
             };
             let vals = values
                 .into_iter()
-                .filter(|value| value == &needle)
+                .filter(|value| (value == &needle) != invert)
                 .collect::<Vec<_>>();
             self.lower_compile_time_list_transform_result(
                 src_dst,
@@ -135,6 +139,7 @@ impl<'a> HirToMirLowering<'a> {
                 input_meta: &input_meta,
                 needle_vreg,
                 needle_reg,
+                invert,
             })?
         {
             return Ok(());
@@ -147,7 +152,23 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             needle_vreg,
             needle_reg,
+            invert,
         })
+    }
+
+    fn find_invert_flag(&self) -> Result<bool, CompileError> {
+        let mut invert = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "invert" | "v" => invert = true,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "find supports only --invert flag and no named arguments in eBPF".into(),
+                    ));
+                }
+            }
+        }
+        Ok(invert)
     }
 
     fn lower_typed_fixed_array_find(
@@ -163,6 +184,7 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             needle_vreg,
             needle_reg,
+            invert,
         } = find;
 
         if matches!(
@@ -254,14 +276,17 @@ impl<'a> HirToMirLowering<'a> {
         let needle_value = needle_const
             .map(|needle| self.large_const_operand(&MirType::I64, needle))
             .unwrap_or(MirValue::VReg(needle_vreg));
-        let constant_value = Self::typed_fixed_array_find_constant_value(input_meta, needle_const)
-            .or_else(|| {
-                Self::zero_initialized_typed_fixed_array_find_constant_value(
-                    input_meta,
-                    needle_const,
-                    array_len,
-                )
-            });
+        let constant_value =
+            Self::typed_fixed_array_find_constant_value(input_meta, needle_const, invert).or_else(
+                || {
+                    Self::zero_initialized_typed_fixed_array_find_constant_value(
+                        input_meta,
+                        needle_const,
+                        array_len,
+                        invert,
+                    )
+                },
+            );
 
         if u64_shape_only_find && !self.current_call_result_list_shape_metadata_only {
             if self.current_call_result_direct_list_projection.is_some()
@@ -318,8 +343,8 @@ impl<'a> HirToMirLowering<'a> {
             let push_block = self.func.alloc_block();
             self.terminate(MirInst::Branch {
                 cond: found_vreg,
-                if_true: push_block,
-                if_false: next_block,
+                if_true: if invert { next_block } else { push_block },
+                if_false: if invert { push_block } else { next_block },
             });
 
             self.current_block = push_block;
@@ -357,6 +382,7 @@ impl<'a> HirToMirLowering<'a> {
         src_dst_had_value: bool,
         values: &[String],
         needle_reg: RegId,
+        invert: bool,
     ) -> Result<(), CompileError> {
         if values.len() > MAX_FIND_SHAPE_LIST_CAPACITY {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -402,8 +428,8 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 self.terminate(MirInst::Branch {
                     cond: found_vreg,
-                    if_true: push_block,
-                    if_false: next_block,
+                    if_true: if invert { next_block } else { push_block },
+                    if_false: if invert { push_block } else { next_block },
                 });
 
                 self.current_block = push_block;
@@ -436,12 +462,16 @@ impl<'a> HirToMirLowering<'a> {
     fn typed_fixed_array_find_constant_value(
         input_meta: &RegMetadata,
         needle_const: Option<i64>,
+        invert: bool,
     ) -> Option<nu_protocol::Value> {
         match (&input_meta.constant_value, needle_const) {
             (Some(nu_protocol::Value::List { vals, .. }), Some(needle)) => {
                 let vals = vals
                     .iter()
-                    .filter(|value| Self::numeric_value_from_value(value) == Some(needle))
+                    .filter(|value| {
+                        Self::numeric_value_from_value(value)
+                            .is_some_and(|value| (value == needle) != invert)
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 Some(nu_protocol::Value::list(vals, Span::unknown()))
@@ -454,13 +484,19 @@ impl<'a> HirToMirLowering<'a> {
         input_meta: &RegMetadata,
         needle_const: Option<i64>,
         array_len: usize,
+        invert: bool,
     ) -> Option<nu_protocol::Value> {
-        if !input_meta.zero_initialized_global || needle_const != Some(0) {
+        let needle = needle_const?;
+        if !input_meta.zero_initialized_global {
             return None;
         }
-        let vals = (0..array_len)
-            .map(|_| nu_protocol::Value::int(0, Span::unknown()))
-            .collect::<Vec<_>>();
+        let vals = if (needle == 0) != invert {
+            (0..array_len)
+                .map(|_| nu_protocol::Value::int(0, Span::unknown()))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         Some(nu_protocol::Value::list(vals, Span::unknown()))
     }
 
@@ -476,6 +512,7 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             needle_vreg,
             needle_reg,
+            invert,
         } = find;
 
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
@@ -581,8 +618,8 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(found_vreg, MirType::Bool);
                 self.terminate(MirInst::Branch {
                     cond: found_vreg,
-                    if_true: push_block,
-                    if_false: next_block,
+                    if_true: if invert { next_block } else { push_block },
+                    if_false: if invert { push_block } else { next_block },
                 });
 
                 self.current_block = push_block;
@@ -601,7 +638,10 @@ impl<'a> HirToMirLowering<'a> {
             (Some(nu_protocol::Value::List { vals, .. }), Some(needle)) => {
                 let vals = vals
                     .into_iter()
-                    .filter(|value| Self::numeric_value_from_value(value) == Some(needle))
+                    .filter(|value| {
+                        Self::numeric_value_from_value(value)
+                            .is_some_and(|value| (value == needle) != invert)
+                    })
                     .collect::<Vec<_>>();
                 Some(nu_protocol::Value::list(vals, Span::unknown()))
             }
@@ -743,6 +783,7 @@ mod tests {
                     input_meta: &input_meta,
                     needle_vreg,
                     needle_reg,
+                    invert: false,
                 })
                 .expect("trusted kernel fixed-array find should lower")
         );

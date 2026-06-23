@@ -2837,6 +2837,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_find_initialize
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_find_invert_initializer() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 7, 4] | find --invert 7); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list find --invert initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("find --invert should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![2, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_range_input_list_find_initializer() {
     let source = "{|| mut vals: list<int> = (1..4 | find 3); $vals }";
     let ir_block = single_annotated_global_return_ir_block();
