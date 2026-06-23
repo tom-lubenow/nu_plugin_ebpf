@@ -2549,14 +2549,16 @@ impl<'a> HirToMirLowering<'a> {
             .or(src_dst_had_value.then_some(src_dst));
 
         let optional = self.validate_optional_record_flag("get")?;
-        if self.positional_args.len() != 1 {
+        if self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "get requires exactly one record field name argument in eBPF".into(),
+                "get requires at least one record field name argument in eBPF".into(),
             ));
         }
 
-        let (_, field_reg) = self.positional_args[0];
-        let field_name = self.top_level_field_name_arg(field_reg, "get")?;
+        let mut field_names = Vec::with_capacity(self.positional_args.len());
+        for (_, field_reg) in &self.positional_args {
+            field_names.push(self.top_level_field_name_arg(*field_reg, "get")?);
+        }
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -2570,6 +2572,22 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if field_names.len() > 1 {
+            return self.lower_metadata_record_get_fields(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_meta,
+                &field_names,
+                optional,
+            );
+        }
+
+        let field_name = field_names.into_iter().next().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "get requires at least one record field name argument in eBPF".into(),
+            )
+        })?;
         let Some(field) = input_meta
             .record_fields
             .iter()
@@ -2729,6 +2747,85 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.source_var = None;
         out_meta.constant_value = field_constant;
         self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
+    fn lower_metadata_record_get_fields(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_meta: RegMetadata,
+        field_names: &[String],
+        optional: bool,
+    ) -> Result<(), CompileError> {
+        if let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref() {
+            let mut vals = Vec::with_capacity(field_names.len());
+            for field_name in field_names {
+                if let Some(value) = val.get(field_name) {
+                    vals.push(value.clone());
+                } else if optional {
+                    vals.push(nu_protocol::Value::nothing(Span::unknown()));
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get field '{field_name}' was not found in metadata-backed record in eBPF"
+                    )));
+                }
+            }
+            let value_list = nu_protocol::Value::list(vals, Span::unknown());
+            self.lower_compile_time_list_transform_result(src_dst, &value_list)?;
+            return Ok(());
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let max_len = field_names.len();
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        for field_name in field_names {
+            let field = input_meta
+                .record_fields
+                .iter()
+                .find(|field| field.name == *field_name);
+            let item_vreg = if let Some(field) = field {
+                if !Self::metadata_record_values_supported_field(&input_meta, field) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get multi-field record output supports only integer-like, bool, or null scalar fields in eBPF; field '{}' has type {:?}",
+                        field.name, field.ty
+                    )));
+                }
+                field.value_vreg
+            } else if optional {
+                let null_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: null_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.vreg_type_hints.insert(null_vreg, MirType::I64);
+                null_vreg
+            } else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get field '{field_name}' was not found in metadata-backed record in eBPF"
+                )));
+            };
+
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            max_len,
+            Some(max_len),
+        );
 
         Ok(())
     }

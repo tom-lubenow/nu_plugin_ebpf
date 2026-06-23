@@ -8623,6 +8623,68 @@ fn make_record_get_field_program(get_decl: DeclId, field: &str) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_get_fields_then_sum_program(
+    get_decl: DeclId,
+    sum_decl: DeclId,
+    fields: &[&str],
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::record(record, Span::test_data())),
+    }];
+    let mut positional = Vec::with_capacity(fields.len());
+    for (idx, field) in fields.iter().enumerate() {
+        let reg = RegId::new((idx + 1) as u32);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(field)],
+            })),
+        });
+        positional.push(reg);
+    }
+
+    let get_result = RegId::new((fields.len() + 1) as u32);
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: get_result,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let sum_result = RegId::new((fields.len() + 2) as u32);
+    stmts.push(HirStmt::Call {
+        decl_id: sum_decl,
+        src_dst: sum_result,
+        args: HirCallArgs {
+            pipeline_input: Some(get_result),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: sum_result },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: fields.len() as u32 + 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_get_nested_list_item_program(get_decl: DeclId) -> HirProgram {
     let stmts = vec![
         HirStmt::LoadLiteral {
@@ -54118,6 +54180,31 @@ fn test_lower_get_metadata_record_field_projects_value() {
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("metadata-backed record get should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_metadata_record_multiple_fields_feeds_numeric_list_consumer() {
+    let get_decl = DeclId::new(82_090);
+    let sum_decl = DeclId::new(82_091);
+    let hir = make_record_get_fields_then_sum_program(get_decl, sum_decl, &["pid", "cpu"]);
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get should project multiple metadata-backed record fields as a value list");
+
+    assert_returned_scalar_i64_or_const(&result, 9);
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("metadata-backed record multi-get sum should compile through codegen");
 }
 
 #[test]

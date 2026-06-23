@@ -56,18 +56,17 @@ const VERIFIER_DIFF_FIXTURES_2787_2796 = [
         error_contains: "reject supports only top-level record field names in eBPF"
     }
     {
-        name: "core-record-get-rejects-extra-field-args"
+        name: "core-record-get-multiple-fields"
         category: "records"
-        tags: [records get diagnostics reject args]
+        tags: [records get multi accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  {pid: 1} | get pid uid'
+            '  ({pid: 1 uid: 2} | get pid uid | math sum) == 3'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "get accepts exactly one positional argument in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-record-get-rejects-runtime-field-name"

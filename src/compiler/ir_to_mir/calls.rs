@@ -8673,19 +8673,15 @@ impl<'a> HirToMirLowering<'a> {
 
             "get" => {
                 let optional = self.validate_optional_record_flag("get")?;
-                if self.positional_args.len() != 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get accepts exactly one positional argument in eBPF".into(),
-                    ));
-                }
 
                 let input_reg = self
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                let direct_projected_list_index_get = input_meta
-                    .as_ref()
-                    .is_some_and(|meta| meta.direct_projected_list_consumer.is_some())
+                let direct_projected_list_index_get = self.positional_args.len() == 1
+                    && input_meta
+                        .as_ref()
+                        .is_some_and(|meta| meta.direct_projected_list_consumer.is_some())
                     && self.positional_args.first().is_some_and(|(_, arg_reg)| {
                         self.get_metadata(*arg_reg).is_some_and(|meta| {
                             meta.literal_int.is_some()
@@ -8701,6 +8697,12 @@ impl<'a> HirToMirLowering<'a> {
                 {
                     self.lower_metadata_record_get(src_dst, dst_vreg, src_dst_had_value)?;
                 } else {
+                    if self.positional_args.len() != 1 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "get accepts exactly one positional argument in eBPF".into(),
+                        ));
+                    }
+
                     let (_, arg_reg) = self.positional_args[0];
                     if let Some(path) = self.field_path_arg(arg_reg, "get")? {
                         if let Some(meta) = input_meta.as_ref()
