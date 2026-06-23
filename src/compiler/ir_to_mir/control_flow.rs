@@ -1813,7 +1813,7 @@ impl<'a> HirToMirLowering<'a> {
                     next_dst == dst || skip_consumer_dst == dst,
                 )
             }
-            Some("take") if args.positional.len() == 1 => {
+            Some("take" | "first") if args.positional.len() == 1 => {
                 let take_count = self.direct_list_projection_count_arg(
                     stmts,
                     search_start,

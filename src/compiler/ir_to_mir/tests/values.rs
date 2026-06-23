@@ -9802,10 +9802,16 @@ fn make_runtime_record_values_string_get_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+#[derive(Clone, Copy)]
+enum RuntimeRecordValuesStringPreConsumer {
+    Reverse(DeclId),
+    FirstCount { decl_id: DeclId, count: i64 },
+}
+
 fn make_runtime_record_values_string_direct_consumer_starts_with_program(
     values_decl: DeclId,
     consumer_decl: DeclId,
-    reverse_decl: Option<DeclId>,
+    pre_consumer: Option<RuntimeRecordValuesStringPreConsumer>,
     starts_with_decl: DeclId,
     comm_first: bool,
 ) -> HirProgram {
@@ -9861,7 +9867,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
     });
 
     let (consumer_input, consumer_dst, prefix_reg, starts_with_dst, register_count) =
-        if let Some(reverse_decl) = reverse_decl {
+        if let Some(RuntimeRecordValuesStringPreConsumer::Reverse(reverse_decl)) = pre_consumer {
             stmts.push(HirStmt::Call {
                 decl_id: reverse_decl,
                 src_dst: RegId::new(6),
@@ -9876,6 +9882,31 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
                 RegId::new(8),
                 RegId::new(9),
                 10,
+            )
+        } else if let Some(RuntimeRecordValuesStringPreConsumer::FirstCount { decl_id, count }) =
+            pre_consumer
+        {
+            stmts.extend([
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(count),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ]);
+            (
+                RegId::new(7),
+                RegId::new(8),
+                RegId::new(9),
+                RegId::new(10),
+                11,
             )
         } else {
             (
@@ -52511,7 +52542,7 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_first_last_directly
         let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
             values_decl,
             consumer_decl,
-            reverse_decl,
+            reverse_decl.map(RuntimeRecordValuesStringPreConsumer::Reverse),
             starts_with_decl,
             comm_first,
         );
@@ -52539,6 +52570,48 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_first_last_directly
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{label} should compile through codegen: {err}"));
     }
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_counted_first_last_directly() {
+    let values_decl = DeclId::new(81_720);
+    let first_decl = DeclId::new(81_721);
+    let last_decl = DeclId::new(81_722);
+    let starts_with_decl = DeclId::new(81_723);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        last_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::FirstCount {
+            decl_id: first_decl,
+            count: 2,
+        }),
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (first_decl, "first".to_string()),
+        (last_decl, "last".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values first count should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string first count last",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values first count string last should compile through codegen");
 }
 
 #[test]

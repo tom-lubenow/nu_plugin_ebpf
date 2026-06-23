@@ -1477,7 +1477,7 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
         let static_count = self.stack_list_static_count_arg(cmd_name, raw_count)?;
-        if matches!(cmd_name, "take" | "skip" | "drop")
+        if matches!(cmd_name, "take" | "first" | "skip" | "drop")
             && input_meta.direct_projected_list_consumer.is_some()
             && let (Some(input_reg), Some(count)) = (input_reg, static_count)
         {
