@@ -180,6 +180,15 @@ fn test_socket_map_delete_error_names_supported_surfaces() {
 }
 
 #[test]
+fn test_redirect_map_update_error_names_redirect_surface() {
+    let msg = MapKind::DevMap.generic_map_op_error(MapOpKind::Update, "devices");
+
+    assert!(msg.contains("map update is not supported for redirect map kind devmap ('devices')"));
+    assert!(msg.contains("use redirect-map for map-backed redirects"));
+    assert!(msg.contains("instead of generic map commands"));
+}
+
+#[test]
 fn test_map_kind_kernel_compatibility_metadata() {
     let expected = [
         (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),

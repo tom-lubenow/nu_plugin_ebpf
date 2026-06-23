@@ -142,6 +142,17 @@ pub enum MapOpKind {
     Push,
 }
 
+impl MapOpKind {
+    fn error_subject(self) -> &'static str {
+        match self {
+            MapOpKind::Lookup => "map lookup",
+            MapOpKind::Update => "map update",
+            MapOpKind::Delete => "map delete",
+            MapOpKind::Push => "map-push",
+        }
+    }
+}
+
 impl MapKind {
     pub fn all() -> &'static [Self] {
         ALL_MAP_KINDS
@@ -465,6 +476,14 @@ impl MapKind {
             return format!(
                 "map update is not supported for socket map kind {} ('{}') through generic map-update helpers; use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
                 self, map_name
+            );
+        }
+        if self.is_redirect_map() {
+            return format!(
+                "{} is not supported for redirect map kind {} ('{}'); use redirect-map for map-backed redirects instead of generic map commands",
+                op.error_subject(),
+                self,
+                map_name
             );
         }
 

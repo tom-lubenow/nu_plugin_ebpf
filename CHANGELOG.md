@@ -43,6 +43,9 @@ documentation changes that matter to external alpha consumers.
 - Improved unsupported `map-put` redirect-map and unknown-kind diagnostics so
   redirect maps point to `redirect-map` and socket-map guidance names the
   supported `sock_ops` / `redirect-socket` surfaces.
+- Improved shared MIR redirect-map operation diagnostics so lower compiler
+  validation paths point to `redirect-map` instead of generic unsupported map
+  kind wording.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an
