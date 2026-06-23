@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2356_2356 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete is not supported for socket map kind"
+        error_contains: "use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb"
     }
 ]

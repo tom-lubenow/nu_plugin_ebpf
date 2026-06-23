@@ -1759,7 +1759,7 @@ impl<'a> HirToMirLowering<'a> {
         }
         if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-delete is not supported for socket map kind {} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
+                "map-delete is not supported for socket map kind {} ('{}'); use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
                 map_kind, map_name
             )));
         }

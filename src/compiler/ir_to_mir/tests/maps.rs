@@ -3813,11 +3813,8 @@ fn test_lower_map_delete_rejects_sockmap_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map-delete is not supported for socket map kind"));
             assert!(msg.contains("sockmap"));
-            assert!(
-                msg.contains(
-                    "socket maps require specialized redirect/update helpers instead of generic map-delete"
-                )
-            );
+            assert!(msg.contains("map-put from sock_ops"));
+            assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

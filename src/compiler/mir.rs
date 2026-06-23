@@ -451,7 +451,7 @@ impl MapKind {
         }
         if op == MapOpKind::Delete && self.is_socket_map() {
             return format!(
-                "map-delete is not supported for socket map kind {} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
+                "map-delete is not supported for socket map kind {} ('{}'); use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
                 self, map_name
             );
         }
