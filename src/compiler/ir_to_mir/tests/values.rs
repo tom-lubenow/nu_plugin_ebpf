@@ -43299,6 +43299,58 @@ fn test_lower_find_on_numeric_list_filters_equal_values() {
 }
 
 #[test]
+fn test_lower_find_multiple_needles_on_numeric_list_or_combines_matches() {
+    let find_decl = DeclId::new(1133);
+    let length_decl = DeclId::new(1134);
+    let mut hir = make_numeric_list_call_then_length_program(find_decl, length_decl, Some(10));
+    hir.main.blocks[0].stmts.insert(
+        2,
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(30),
+        },
+    );
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[3] else {
+        panic!("expected find call");
+    };
+    args.positional.push(RegId::new(4));
+    hir.main.register_count = 5;
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find with multiple needles should lower on stack-backed numeric lists");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Or,
+                    ..
+                }
+            )),
+        "expected find with multiple needles to OR equality checks"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find with multiple needles followed by length should compile through codegen");
+}
+
+#[test]
 fn test_lower_find_invert_on_numeric_list_filters_unequal_values() {
     let find_decl = DeclId::new(1131);
     let get_decl = DeclId::new(1132);

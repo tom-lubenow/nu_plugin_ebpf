@@ -2837,6 +2837,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_find_initialize
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_find_multiple_initializer() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 7, 4] | find 7 4); $vals }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list find with multiple needles should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("find should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![7, 7, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_find_invert_initializer() {
     let source = "{|| mut vals: list<int> = ([7, 2, 7, 4] | find --invert 7); $vals }";
     let ir_block = single_annotated_global_return_ir_block();
@@ -2950,7 +2971,7 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_list_find_missing_nee
     assert!(
         err.labels
             .iter()
-            .any(|label| label.text.contains("requires exactly one search argument")),
+            .any(|label| label.text.contains("requires at least one search argument")),
         "unexpected labels: {:?}",
         err.labels
     );

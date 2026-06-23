@@ -27,6 +27,19 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         kernel: "accept"
     }
     {
+        name: "core-list-find-multiple-search-terms"
+        category: "language-core"
+        tags: [list find multi accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 2 3 2] | find 2 3 | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-find-rejects-missing-search-argument"
         category: "language-core"
         tags: [list find diagnostics reject]
@@ -38,7 +51,7 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "find requires exactly one numeric search argument in eBPF"
+        error_contains: "find requires at least one numeric search argument in eBPF"
     }
     {
         name: "core-list-find-rejects-dynamic-fixed-list-search"
