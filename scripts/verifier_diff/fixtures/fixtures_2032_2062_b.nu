@@ -143,6 +143,19 @@ const VERIFIER_DIFF_FIXTURES_2032_2062_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-runtime-string-field-get"
+        category: "language-core"
+        tags: [aggregate record get string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { comm: $ctx.comm pid: $ctx.pid } | get comm | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-get-list-field"
         category: "language-core"
         tags: [aggregate record get list]

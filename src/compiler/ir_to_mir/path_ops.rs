@@ -885,6 +885,78 @@ impl<'a> HirToMirLowering<'a> {
                 .is_some_and(|meta| meta.mutable_global_runtime);
 
         if remaining_members.is_empty() {
+            let can_materialize_string_projection = constant_value.is_none()
+                && source_meta.as_ref().is_none_or(|meta| {
+                    meta.constant_value.is_none() && meta.literal_string.is_none()
+                });
+            if let Some(AnnotatedValueSemantics::String {
+                slot_len,
+                content_cap,
+            }) = &record_field.semantics
+                && can_materialize_string_projection
+                && let MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context,
+                } = &base_runtime_ty
+            {
+                let expected_stored_len = 8usize.checked_add(*slot_len).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' string storage layout is too large",
+                        path_desc
+                    ))
+                })?;
+                let storage_matches = matches!(
+                    &record_field.ty,
+                    MirType::Array { elem, len }
+                        if elem.as_ref() == &MirType::U8 && *len == expected_stored_len
+                );
+
+                if pointee.as_ref() == &record_field.ty && storage_matches {
+                    let payload_ty = MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: *slot_len,
+                    };
+                    let slot =
+                        self.func
+                            .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+                    self.record_stack_slot_type(slot, payload_ty.clone());
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(payload_ty.clone()),
+                            address_space: AddressSpace::Stack,
+                        },
+                    );
+
+                    let len_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                    self.emit(MirInst::Load {
+                        dst: len_vreg,
+                        ptr: source_vreg,
+                        offset: 0,
+                        ty: MirType::U64,
+                    });
+                    self.emit_ptr_to_slot_copy(slot, 0, source_vreg, 8, *slot_len)?;
+
+                    let meta = self.get_or_create_metadata(src_dst);
+                    *meta = RegMetadata::default();
+                    meta.field_type = Some(payload_ty);
+                    meta.root_ctx_field = record_field.root_ctx_field;
+                    meta.string_slot = Some(slot);
+                    meta.string_len_vreg = Some(len_vreg);
+                    meta.string_len_bound = Some(*content_cap);
+                    meta.annotated_semantics = record_field.semantics;
+                    meta.mutable_global_runtime = mutable_global_runtime;
+                    meta.source_var = None;
+                    self.set_reg_constant_value(src_dst, constant_value);
+                    return Ok(());
+                }
+            }
+
             let src = constant_value
                 .as_ref()
                 .and_then(Self::constant_scalar_i64)

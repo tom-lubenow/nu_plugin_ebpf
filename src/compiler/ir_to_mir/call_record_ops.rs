@@ -2542,6 +2542,98 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
+        let can_materialize_string_projection = field_constant.is_none()
+            && field_source_meta
+                .as_ref()
+                .is_none_or(|meta| meta.constant_value.is_none() && meta.literal_string.is_none());
+        if let Some(AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        }) = &field.semantics
+            && can_materialize_string_projection
+        {
+            let field_runtime_ty = self
+                .vreg_type_hints
+                .get(&field.value_vreg)
+                .cloned()
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "get requires tracked string storage for field '{}'",
+                        field.name
+                    ))
+                })?;
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } = field_runtime_ty
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get requires stack or map backed string storage for field '{}'",
+                    field.name
+                )));
+            };
+            let expected_stored_len = 8usize.checked_add(*slot_len).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "get string field '{}' storage layout is too large",
+                    field.name
+                ))
+            })?;
+            let storage_matches = matches!(
+                &field.ty,
+                MirType::Array { elem, len }
+                    if elem.as_ref() == &MirType::U8 && *len == expected_stored_len
+            );
+            if pointee.as_ref() != &field.ty || !storage_matches {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get string field '{}' has incompatible storage layout",
+                    field.name
+                )));
+            }
+
+            let payload_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: *slot_len,
+            };
+            let slot = self
+                .func
+                .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(slot, payload_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                result_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(payload_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            let len_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: field.value_vreg,
+                offset: 0,
+                ty: MirType::U64,
+            });
+            self.emit_ptr_to_slot_copy(slot, 0, field.value_vreg, 8, *slot_len)?;
+
+            let mut out_meta = field_source_meta.unwrap_or_default();
+            out_meta.is_context = field.is_context;
+            out_meta.field_type = Some(payload_ty);
+            out_meta.string_slot = Some(slot);
+            out_meta.string_len_vreg = Some(len_vreg);
+            out_meta.string_len_bound = Some(*content_cap);
+            out_meta.root_ctx_field = field.root_ctx_field;
+            out_meta.trusted_btf = false;
+            out_meta.annotated_semantics = field.semantics;
+            out_meta.source_var = None;
+            out_meta.constant_value = field_constant;
+            self.reg_metadata.insert(src_dst.get(), out_meta);
+            return Ok(());
+        }
+
         let scalar_constant = field_constant
             .as_ref()
             .and_then(Self::constant_scalar_i64)
