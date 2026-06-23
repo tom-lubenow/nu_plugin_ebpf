@@ -2531,6 +2531,22 @@ fn make_describe_then_starts_with_program(
     value: Value,
     prefix: &str,
 ) -> HirProgram {
+    make_describe_with_flags_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        value,
+        prefix,
+        Vec::new(),
+    )
+}
+
+fn make_describe_with_flags_then_starts_with_program(
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: Value,
+    prefix: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -2544,6 +2560,7 @@ fn make_describe_then_starts_with_program(
                     src_dst: RegId::new(1),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -19942,6 +19959,53 @@ fn test_lower_describe_on_known_record_materializes_type_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "describe record output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_describe_no_collect_on_known_int_materializes_type_string() {
+    let describe_decl = DeclId::new(208);
+    let starts_with_decl = DeclId::new(209);
+    let hir = make_describe_with_flags_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        Value::int(7, Span::test_data()),
+        "int",
+        vec![b"no-collect".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe --no-collect should lower compile-time known int input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"int\0")
+            )),
+        "expected describe --no-collect to materialize the Nushell int type string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe --no-collect output consumed by str starts-with should compile through codegen",
     );
 }
 

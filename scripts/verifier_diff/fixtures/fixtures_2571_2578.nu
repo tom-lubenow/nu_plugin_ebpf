@@ -98,6 +98,19 @@ const VERIFIER_DIFF_FIXTURES_2571_2578 = [
         error_contains: "describe does not accept arguments in eBPF"
     }
     {
+        name: "core-describe-no-collect"
+        category: "language-core"
+        tags: [describe no-collect accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | describe --no-collect | str starts-with "string"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-rejects-untracked-context-root"
         category: "language-core"
         tags: [describe diagnostics reject]

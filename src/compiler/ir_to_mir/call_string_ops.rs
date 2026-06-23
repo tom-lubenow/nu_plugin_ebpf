@@ -9751,7 +9751,10 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty()
+        if self
+            .named_flags
+            .iter()
+            .any(|flag| flag != "no-collect" && flag != "n")
             || !self.named_args.is_empty()
             || !self.positional_args.is_empty()
         {

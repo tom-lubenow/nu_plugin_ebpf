@@ -1200,7 +1200,7 @@ fn eval_supported_constant_call(
             eval_supported_constant_length(input, span)
         }
         "describe" => {
-            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_describe_call_args(&call.arguments)?;
             eval_supported_constant_describe(input, span)
         }
         "is-empty" | "is-not-empty" => {
@@ -1741,7 +1741,7 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_length(input, span)
         }
         "describe" => {
-            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_describe_external_args(working_set, args, env, span)?;
             eval_supported_constant_describe(input, span)
         }
         "is-empty" | "is-not-empty" => {
@@ -3853,6 +3853,87 @@ fn eval_supported_constant_no_external_args(
                 span,
             ),
         );
+    }
+
+    Ok(())
+}
+
+fn unsupported_annotated_mutable_global_initializer(
+    label: impl Into<String>,
+    span: Span,
+) -> LabeledError {
+    LabeledError::new("Unsupported annotated mutable global initializer").with_label(label, span)
+}
+
+fn eval_supported_constant_describe_call_args(
+    args: &[nu_protocol::ast::Argument],
+) -> Result<(), LabeledError> {
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if !matches!(named.0.item.as_str(), "no-collect" | "n") {
+                    return Err(unsupported_annotated_mutable_global_initializer(
+                        "`describe` supports only --no-collect in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+
+                if named.2.is_some() {
+                    return Err(unsupported_annotated_mutable_global_initializer(
+                        "`describe --no-collect` cannot receive a value in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(unsupported_annotated_mutable_global_initializer(
+                    "`describe` arguments cannot use spread syntax in compile-time global initializers",
+                    expr.span,
+                ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(unsupported_annotated_mutable_global_initializer(
+                    "`describe` does not accept arguments in compile-time global initializers",
+                    arg.span(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn eval_supported_constant_describe_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<(), LabeledError> {
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(unsupported_annotated_mutable_global_initializer(
+                "`describe` arguments cannot use spread syntax in compile-time global initializers",
+                arg.expr().span,
+            ));
+        };
+
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--no-collect" || val == "-n" => {}
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
+                return Err(unsupported_annotated_mutable_global_initializer(
+                    "`describe` supports only --no-collect in compile-time global initializers",
+                    expr.span,
+                ));
+            }
+            _ => {
+                return Err(unsupported_annotated_mutable_global_initializer(
+                    "`describe` does not accept arguments in compile-time global initializers",
+                    span,
+                ));
+            }
+        }
     }
 
     Ok(())
