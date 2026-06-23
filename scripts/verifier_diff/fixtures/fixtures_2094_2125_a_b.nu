@@ -25,7 +25,7 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "values supports only numeric scalar record fields"
+        error_contains: "values supports only integer-like, bool, or null scalar record fields"
     }
     {
         name: "core-record-values-mixed-math-mode-reject"
