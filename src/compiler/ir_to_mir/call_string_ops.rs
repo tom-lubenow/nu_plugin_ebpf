@@ -486,13 +486,6 @@ impl<'a> HirToMirLowering<'a> {
         mut input_vreg: VReg,
         length_mode: StringLengthMode,
     ) -> Result<bool, CompileError> {
-        if matches!(
-            length_mode,
-            StringLengthMode::GraphemeClusters | StringLengthMode::UnicodeWidth
-        ) {
-            return Ok(false);
-        }
-
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -504,6 +497,22 @@ impl<'a> HirToMirLowering<'a> {
         let AnnotatedValueSemantics::String { slot_len, .. } = elem.as_ref() else {
             return Ok(false);
         };
+
+        if matches!(
+            length_mode,
+            StringLengthMode::GraphemeClusters | StringLengthMode::UnicodeWidth
+        ) {
+            if input_meta.zero_initialized_global {
+                if *len > MAX_STACK_NUMERIC_LIST_CAPACITY {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "str length output exceeds stack-backed numeric list capacity {MAX_STACK_NUMERIC_LIST_CAPACITY} in eBPF"
+                    )));
+                }
+                self.lower_known_i64_list_result(src_dst, vec![0; *len])?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
 
         let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
             Some(ty) => ty,

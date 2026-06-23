@@ -12968,14 +12968,16 @@ fn test_lower_global_define_type_string_array_str_length_chars_materializes_nume
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_length_grapheme_rejects_runtime_array() {
+fn test_string_array_str_length_grapheme_zero_fill_materializes_numeric_list() {
     let define_decl = DeclId::new(10_701);
     let global_get_decl = DeclId::new(10_702);
     let length_decl = DeclId::new(10_703);
+    let sum_decl = DeclId::new(10_704);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
     ]);
 
     let func = HirFunction {
@@ -13016,19 +13018,27 @@ fn test_lower_global_define_type_string_array_str_length_grapheme_rejects_runtim
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(4) },
+            terminator: HirTerminator::Return { src: RegId::new(5) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 5,
+        register_count: 6,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -13036,12 +13046,22 @@ fn test_lower_global_define_type_string_array_str_length_grapheme_rejects_runtim
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str length --grapheme-clusters should remain compile-time-only for typed arrays");
+    .expect("str length --grapheme-clusters should fold zero-filled typed arrays");
 
-    assert!(
-        err.to_string()
-            .contains("str length requires compile-time known string input"),
-        "expected compile-time-only grapheme diagnostic, got: {err}"
+    assert_eq!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count(),
+        0,
+        "expected zero-filled grapheme lengths to materialize as a constant numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "zero-filled typed string array grapheme lengths consumed by math sum should compile",
     );
 }
 
@@ -13254,14 +13274,16 @@ fn test_lower_global_define_type_string_array_str_starts_with_supports_nul_prefi
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_starts_with_ignore_case_rejects_runtime_array() {
+fn test_string_array_starts_with_ignore_case_zero_fill_materializes_bool_list() {
     let define_decl = DeclId::new(10_565);
     let global_get_decl = DeclId::new(10_566);
     let starts_with_decl = DeclId::new(10_567);
+    let sum_decl = DeclId::new(10_965);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (starts_with_decl, "str starts-with".to_string()),
+        (sum_decl, "math sum".to_string()),
     ]);
 
     let func = HirFunction {
@@ -13307,19 +13329,27 @@ fn test_lower_global_define_type_string_array_str_starts_with_ignore_case_reject
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(5) },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 6,
+        register_count: 7,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -13327,12 +13357,20 @@ fn test_lower_global_define_type_string_array_str_starts_with_ignore_case_reject
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str starts-with --ignore-case should remain compile-time-only for typed arrays");
+    .expect("str starts-with --ignore-case should fold zero-filled typed arrays");
 
     assert!(
-        err.to_string()
-            .contains("str starts-with --ignore-case requires compile-time known string input"),
-        "expected compile-time-only ignore-case diagnostic, got: {err}"
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected zero-filled ignore-case starts-with to avoid runtime string compares"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "zero-filled typed string array starts-with ignore-case consumed by math sum should compile",
     );
 }
 
@@ -13543,14 +13581,16 @@ fn test_lower_global_define_type_string_array_str_ends_with_supports_nul_suffix(
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_ends_with_ignore_case_rejects_runtime_array() {
+fn test_string_array_ends_with_ignore_case_zero_fill_materializes_bool_list() {
     let define_decl = DeclId::new(10_575);
     let global_get_decl = DeclId::new(10_576);
     let ends_with_decl = DeclId::new(10_577);
+    let sum_decl = DeclId::new(10_966);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (ends_with_decl, "str ends-with".to_string()),
+        (sum_decl, "math sum".to_string()),
     ]);
 
     let func = HirFunction {
@@ -13596,19 +13636,27 @@ fn test_lower_global_define_type_string_array_str_ends_with_ignore_case_rejects_
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(5) },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 6,
+        register_count: 7,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -13616,12 +13664,20 @@ fn test_lower_global_define_type_string_array_str_ends_with_ignore_case_rejects_
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str ends-with --ignore-case should remain compile-time-only for typed arrays");
+    .expect("str ends-with --ignore-case should fold zero-filled typed arrays");
 
     assert!(
-        err.to_string()
-            .contains("str ends-with --ignore-case requires compile-time known string input"),
-        "expected compile-time-only ignore-case diagnostic, got: {err}"
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected zero-filled ignore-case ends-with to avoid runtime string compares"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "zero-filled typed string array ends-with ignore-case consumed by math sum should compile",
     );
 }
 
@@ -13832,14 +13888,16 @@ fn test_lower_global_define_type_string_array_str_contains_supports_nul_substrin
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_contains_ignore_case_rejects_runtime_array() {
+fn test_string_array_contains_ignore_case_zero_fill_materializes_bool_list() {
     let define_decl = DeclId::new(10_585);
     let global_get_decl = DeclId::new(10_586);
     let contains_decl = DeclId::new(10_587);
+    let sum_decl = DeclId::new(10_967);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (contains_decl, "str contains".to_string()),
+        (sum_decl, "math sum".to_string()),
     ]);
 
     let func = HirFunction {
@@ -13885,19 +13943,27 @@ fn test_lower_global_define_type_string_array_str_contains_ignore_case_rejects_r
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(5) },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 6,
+        register_count: 7,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -13905,12 +13971,20 @@ fn test_lower_global_define_type_string_array_str_contains_ignore_case_rejects_r
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str contains --ignore-case should remain compile-time-only for typed arrays");
+    .expect("str contains --ignore-case should fold zero-filled typed arrays");
 
     assert!(
-        err.to_string()
-            .contains("str contains --ignore-case requires compile-time known string input"),
-        "expected compile-time-only ignore-case diagnostic, got: {err}"
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected zero-filled ignore-case contains to avoid runtime string compares"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "zero-filled typed string array contains ignore-case consumed by math sum should compile",
     );
 }
 
