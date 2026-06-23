@@ -53727,6 +53727,12 @@ fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
     for (offset, consumer_name, expected, context) in [
         (0, "length", 2, "runtime record transpose length"),
         (10, "is-empty", 0, "runtime record transpose is-empty"),
+        (
+            20,
+            "is-not-empty",
+            1,
+            "runtime record transpose is-not-empty",
+        ),
     ] {
         let random_decl = DeclId::new(81853 + offset);
         let transpose_decl = DeclId::new(81854 + offset);

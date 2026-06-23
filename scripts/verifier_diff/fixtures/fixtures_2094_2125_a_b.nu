@@ -81,4 +81,17 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-record-transpose-runtime-is-not-empty"
+        category: "language-core"
+        tags: [aggregate record transpose is-not-empty accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: $ctx.pid cpu: 7 } | transpose key value | is-not-empty) == true'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
