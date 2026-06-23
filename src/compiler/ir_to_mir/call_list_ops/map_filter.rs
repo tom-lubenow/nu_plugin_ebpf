@@ -51,10 +51,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(None);
         }
         if let Some(value @ nu_protocol::Value::List { .. }) = input_meta.constant_value.as_ref()
-            && !matches!(
-                input_meta.annotated_semantics,
-                Some(AnnotatedValueSemantics::FixedArray { .. })
-            )
+            && !Self::metadata_declares_fixed_array_layout(input_meta)
             && (crate::compiler::hir::supports_numeric_constant_list(value)
                 || !crate::compiler::hir::supports_fixed_array_constant_list(value))
         {
@@ -176,16 +173,16 @@ impl<'a> HirToMirLowering<'a> {
 
         let scalar_where_item = Self::typed_fixed_array_where_scalar_type(&elem_ty);
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
+        if let Some(value) = self.typed_fixed_array_where_constant_value(
+            input_meta,
+            array_len,
+            closure_block_id,
+            closure_ir,
+        ) {
+            self.lower_compile_time_only_constant_value(src_dst, &value);
+            return Ok(true);
+        }
         if !scalar_where_item && !self.current_call_result_list_shape_metadata_only {
-            if let Some(value) = self.typed_fixed_array_where_constant_value(
-                input_meta,
-                array_len,
-                closure_block_id,
-                closure_ir,
-            ) {
-                self.lower_compile_time_only_constant_value(src_dst, &value);
-                return Ok(true);
-            }
             if matches!(elem_ty, MirType::U64)
                 && input_meta.zero_initialized_global
                 && self.current_call_result_direct_list_projection.is_some()
@@ -528,7 +525,9 @@ impl<'a> HirToMirLowering<'a> {
         closure_block_id: NuBlockId,
         closure_ir: &HirFunction,
     ) -> Option<nu_protocol::Value> {
-        if self.current_call_result_direct_list_projection.is_none() {
+        if self.current_call_result_direct_list_projection.is_none()
+            && !self.current_call_result_list_shape_metadata_only
+        {
             return None;
         }
         let nu_protocol::Value::List { vals, .. } = input_meta.constant_value.as_ref()? else {

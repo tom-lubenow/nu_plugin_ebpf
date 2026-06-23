@@ -212,6 +212,20 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    pub(in crate::compiler::ir_to_mir) fn metadata_declares_fixed_array_layout(
+        meta: &RegMetadata,
+    ) -> bool {
+        matches!(
+            meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) || (meta.list_buffer.is_none()
+            && !matches!(
+                meta.annotated_semantics,
+                Some(AnnotatedValueSemantics::NumericList { .. })
+            )
+            && matches!(meta.field_type, Some(MirType::Array { .. })))
+    }
+
     pub(in crate::compiler::ir_to_mir) fn typed_fixed_array_array_type(
         ty: &MirType,
     ) -> Option<(MirType, usize)> {
@@ -269,10 +283,8 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
-        ) && !matches!(
-            input_meta.annotated_semantics,
-            Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) {
+        ) && !Self::metadata_declares_fixed_array_layout(input_meta)
+        {
             return Ok(false);
         }
 
@@ -403,10 +415,8 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
-        ) && !matches!(
-            input_meta.annotated_semantics,
-            Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) {
+        ) && !Self::metadata_declares_fixed_array_layout(input_meta)
+        {
             return Ok(false);
         }
 
@@ -590,10 +600,8 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
-        ) && !matches!(
-            input_meta.annotated_semantics,
-            Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) {
+        ) && !Self::metadata_declares_fixed_array_layout(input_meta)
+        {
             return Ok(false);
         }
 

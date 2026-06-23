@@ -17753,6 +17753,183 @@ fn test_lower_global_define_type_u64_array_where_zero_kept_comparison_first_fold
 }
 
 #[test]
+fn test_lower_global_define_type_u32_array_where_initialized_length_folds_constant() {
+    let define_decl = DeclId::new(11_330);
+    let global_get_decl = DeclId::new(11_331);
+    let where_decl = DeclId::new(11_332);
+    let length_decl = DeclId::new(11_333);
+    let closure_block_id = nu_protocol::BlockId::new(12);
+    let row_param_var = VarId::new(76);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (where_decl, "where".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(3, Span::test_data()),
+                            Value::int(4, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("array{u32:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: where_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: row_param_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(3),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: nu_protocol::ast::Operator::Comparison(
+                        nu_protocol::ast::Comparison::GreaterThan,
+                    ),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(
+        func,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![HirClosureParam {
+                name: "x".to_string(),
+                var_id: Some(row_param_var),
+            }],
+        },
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("initialized u32 fixed-array where feeding length should fold");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. } | MirInst::ListNew { .. })),
+        "initialized fixed-array where length should not materialize a runtime list"
+    );
+    assert!(
+        instructions.iter().all(|inst| !matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                ..
+            }
+        )),
+        "initialized fixed-array where predicate should fold at compile time"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected filtered length to fold to one"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("initialized u32 fixed-array where length should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_define_type_bool_array_compact_is_passthrough() {
     let define_decl = DeclId::new(10_970);
     let global_get_decl = DeclId::new(10_971);

@@ -387,10 +387,8 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })
-        ) && !matches!(
-            input_meta.annotated_semantics,
-            Some(AnnotatedValueSemantics::FixedArray { .. })
-        ) && metadata_array_ty.is_none()
+        ) && !Self::metadata_declares_fixed_array_layout(input_meta)
+            && metadata_array_ty.is_none()
             && runtime_ty
                 .as_ref()
                 .is_none_or(|ty| Self::typed_fixed_array_stack_list_array_type(ty).is_none())
