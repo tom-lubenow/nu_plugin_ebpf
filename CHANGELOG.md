@@ -46,6 +46,8 @@ documentation changes that matter to external alpha consumers.
 - Improved shared MIR redirect-map operation diagnostics so lower compiler
   validation paths point to `redirect-map` instead of generic unsupported map
   kind wording.
+- Improved shared MIR cgroup-array operation diagnostics so lower compiler
+  validation paths point to `map-contains --kind cgroup-array` membership tests.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

@@ -189,6 +189,15 @@ fn test_redirect_map_update_error_names_redirect_surface() {
 }
 
 #[test]
+fn test_cgroup_array_lookup_error_names_membership_surface() {
+    let msg = MapKind::CgroupArray.generic_map_op_error(MapOpKind::Lookup, "tracked");
+
+    assert!(msg.contains("map lookup is not supported for cgroup-array map 'tracked'"));
+    assert!(msg.contains("map-contains --kind cgroup-array"));
+    assert!(msg.contains("cgroup membership tests"));
+}
+
+#[test]
 fn test_map_kind_kernel_compatibility_metadata() {
     let expected = [
         (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),

@@ -486,6 +486,13 @@ impl MapKind {
                 map_name
             );
         }
+        if self == MapKind::CgroupArray {
+            return format!(
+                "{} is not supported for cgroup-array map '{}'; use map-contains --kind cgroup-array for cgroup membership tests",
+                op.error_subject(),
+                map_name
+            );
+        }
 
         if !self.supports_any_generic_map_op() {
             return format!(
