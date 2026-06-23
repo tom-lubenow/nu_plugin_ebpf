@@ -172,12 +172,6 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let u64_shape_only_find = matches!(elem_ty, MirType::U64);
-        if u64_shape_only_find && !self.current_call_result_list_shape_metadata_only {
-            return Err(CompileError::UnsupportedInstruction(
-                "find on typed fixed arrays with u64 elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF"
-                    .into(),
-            ));
-        }
 
         if !u64_shape_only_find && !Self::typed_fixed_array_find_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -249,6 +243,27 @@ impl<'a> HirToMirLowering<'a> {
         let needle_value = needle_const
             .map(|needle| self.large_const_operand(&MirType::I64, needle))
             .unwrap_or(MirValue::VReg(needle_vreg));
+        let constant_value = Self::typed_fixed_array_find_constant_value(input_meta, needle_const)
+            .or_else(|| {
+                Self::zero_initialized_typed_fixed_array_find_constant_value(
+                    input_meta,
+                    needle_const,
+                    array_len,
+                )
+            });
+
+        if u64_shape_only_find && !self.current_call_result_list_shape_metadata_only {
+            if self.current_call_result_direct_list_projection.is_some()
+                && let Some(value) = constant_value.as_ref()
+            {
+                self.lower_compile_time_only_constant_value(src_dst, value);
+                return Ok(true);
+            }
+            return Err(CompileError::UnsupportedInstruction(
+                "find on typed fixed arrays with u64 elements is supported only for metadata-only shape consumers such as length/is-empty in eBPF"
+                    .into(),
+            ));
+        }
 
         let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
@@ -310,17 +325,6 @@ impl<'a> HirToMirLowering<'a> {
             self.current_block = next_block;
         }
 
-        let constant_value = match (&input_meta.constant_value, needle_const) {
-            (Some(nu_protocol::Value::List { vals, .. }), Some(needle)) => {
-                let vals = vals
-                    .iter()
-                    .filter(|value| Self::numeric_value_from_value(value) == Some(needle))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                Some(nu_protocol::Value::list(vals, Span::unknown()))
-            }
-            _ => None,
-        };
         let known_len = constant_value.as_ref().and_then(|value| match value {
             nu_protocol::Value::List { vals, .. } => Some(vals.len()),
             _ => None,
@@ -333,6 +337,37 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(true)
+    }
+
+    fn typed_fixed_array_find_constant_value(
+        input_meta: &RegMetadata,
+        needle_const: Option<i64>,
+    ) -> Option<nu_protocol::Value> {
+        match (&input_meta.constant_value, needle_const) {
+            (Some(nu_protocol::Value::List { vals, .. }), Some(needle)) => {
+                let vals = vals
+                    .iter()
+                    .filter(|value| Self::numeric_value_from_value(value) == Some(needle))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        }
+    }
+
+    fn zero_initialized_typed_fixed_array_find_constant_value(
+        input_meta: &RegMetadata,
+        needle_const: Option<i64>,
+        array_len: usize,
+    ) -> Option<nu_protocol::Value> {
+        if !input_meta.zero_initialized_global || needle_const != Some(0) {
+            return None;
+        }
+        let vals = (0..array_len)
+            .map(|_| nu_protocol::Value::int(0, Span::unknown()))
+            .collect::<Vec<_>>();
+        Some(nu_protocol::Value::list(vals, Span::unknown()))
     }
 
     fn lower_stack_list_find_materialized(

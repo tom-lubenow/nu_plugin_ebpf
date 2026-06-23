@@ -341,6 +341,153 @@ fn collect_named_global_predeclarations(
     merged.into_iter().collect()
 }
 
+fn collect_named_global_set_symbols_for_function(
+    func: &HirFunction,
+    decl_names: &HashMap<DeclId, String>,
+) -> (HashSet<String>, bool) {
+    let mut symbols = HashSet::new();
+    let mut unknown = false;
+    let mut reg_constants = HashMap::<RegId, Value>::new();
+    let mut var_constants = HashMap::<VarId, Value>::new();
+
+    for block in &func.blocks {
+        for stmt in &block.stmts {
+            match stmt {
+                HirStmt::Call {
+                    decl_id,
+                    src_dst,
+                    args,
+                } => {
+                    if decl_names.get(decl_id).map(String::as_str) == Some("global-set") {
+                        match args
+                            .positional
+                            .first()
+                            .and_then(|reg| reg_constants.get(reg))
+                            .and_then(constant_string_value)
+                        {
+                            Some(name) => {
+                                symbols
+                                    .insert(HirToMirLowering::named_program_global_symbol(&name));
+                            }
+                            None => unknown = true,
+                        }
+                    }
+                    reg_constants.remove(src_dst);
+                }
+                stmt @ (HirStmt::LoadLiteral { .. }
+                | HirStmt::LoadValue { .. }
+                | HirStmt::Move { .. }
+                | HirStmt::Clone { .. }
+                | HirStmt::LoadVariable { .. }
+                | HirStmt::StoreVariable { .. }
+                | HirStmt::DropVariable { .. }
+                | HirStmt::BinaryOp { .. }
+                | HirStmt::Not { .. }
+                | HirStmt::FollowCellPath { .. }
+                | HirStmt::UpsertCellPath { .. }
+                | HirStmt::RecordInsert { .. }
+                | HirStmt::RecordSpread { .. }
+                | HirStmt::StringAppend { .. }
+                | HirStmt::GlobFrom { .. }
+                | HirStmt::ListPush { .. }
+                | HirStmt::ListSpread { .. }) => {
+                    if HirToMirLowering::apply_constant_hir_stmt(
+                        stmt,
+                        &mut reg_constants,
+                        &mut var_constants,
+                    )
+                    .is_none()
+                    {
+                        match stmt {
+                            HirStmt::LoadLiteral { dst, .. }
+                            | HirStmt::LoadValue { dst, .. }
+                            | HirStmt::Move { dst, .. }
+                            | HirStmt::Clone { dst, .. }
+                            | HirStmt::LoadVariable { dst, .. } => {
+                                reg_constants.remove(dst);
+                            }
+                            HirStmt::StoreVariable { var_id, .. }
+                            | HirStmt::DropVariable { var_id } => {
+                                var_constants.remove(var_id);
+                            }
+                            HirStmt::BinaryOp { lhs_dst, .. }
+                            | HirStmt::Not { src_dst: lhs_dst }
+                            | HirStmt::FollowCellPath {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::UpsertCellPath {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::RecordInsert {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::RecordSpread {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::StringAppend {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::GlobFrom {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::ListPush {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::ListSpread {
+                                src_dst: lhs_dst, ..
+                            } => {
+                                reg_constants.remove(lhs_dst);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                HirStmt::Collect { src_dst } | HirStmt::Span { src_dst } => {
+                    reg_constants.remove(src_dst);
+                }
+                HirStmt::CloneCellPath { dst, .. }
+                | HirStmt::LoadEnv { dst, .. }
+                | HirStmt::LoadEnvOpt { dst, .. }
+                | HirStmt::OnErrorInto { dst, .. } => {
+                    reg_constants.remove(dst);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    (symbols, unknown)
+}
+
+fn collect_named_global_set_symbols(
+    hir: &HirProgram,
+    decl_names: &HashMap<DeclId, String>,
+    user_functions: &HashMap<DeclId, HirFunction>,
+) -> (HashSet<String>, bool) {
+    let mut symbols = HashSet::new();
+    let mut unknown = false;
+
+    let (main_symbols, main_unknown) =
+        collect_named_global_set_symbols_for_function(&hir.main, decl_names);
+    symbols.extend(main_symbols);
+    unknown |= main_unknown;
+
+    for closure in hir.closures.values() {
+        let (closure_symbols, closure_unknown) =
+            collect_named_global_set_symbols_for_function(closure, decl_names);
+        symbols.extend(closure_symbols);
+        unknown |= closure_unknown;
+    }
+    for func in user_functions.values() {
+        let (func_symbols, func_unknown) =
+            collect_named_global_set_symbols_for_function(func, decl_names);
+        symbols.extend(func_symbols);
+        unknown |= func_unknown;
+    }
+
+    (symbols, unknown)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     hir: &HirProgram,
@@ -389,6 +536,8 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
     let mutated_capture_vars = collect_mutated_capture_vars(hir, user_functions);
     let forward_named_globals =
         collect_named_global_predeclarations(hir, decl_names, user_functions);
+    let (named_global_set_symbols, unknown_named_program_global_set) =
+        collect_named_global_set_symbols(hir, decl_names, user_functions);
     let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
         probe_ctx,
         decl_names,
@@ -406,6 +555,8 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
         user_functions,
         decl_signatures,
     });
+    lowering.named_program_global_set_symbols = named_global_set_symbols;
+    lowering.unknown_named_program_global_set = unknown_named_program_global_set;
     lowering.init_mutable_capture_globals(&mutated_capture_vars)?;
     lowering.init_annotated_mut_globals(&hir.annotated_mut_globals)?;
     for (name, predecl) in forward_named_globals {

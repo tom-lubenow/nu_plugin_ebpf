@@ -19,9 +19,9 @@ export const VERIFIER_DIFF_FIXTURES_3757_3758 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-u64-find-first-rejects"
+        name: "global-define-type-array-u64-find-first-accepts-zero-fill"
         category: "globals"
-        tags: [globals arrays u64 find first diagnostics reject global-define]
+        tags: [globals arrays u64 find first zero-fill accept global-define]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -29,8 +29,8 @@ export const VERIFIER_DIFF_FIXTURES_3757_3758 = [
             '  (((global-get ports) | find 0 | first) == 0)'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "find on typed fixed arrays with u64 elements is supported only for metadata-only shape consumers"
+        default_test_lane: "dry-run"
     }
 ]

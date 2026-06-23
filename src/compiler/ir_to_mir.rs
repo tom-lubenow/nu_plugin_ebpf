@@ -266,6 +266,8 @@ struct RegMetadata {
     annotated_semantics: Option<AnnotatedValueSemantics>,
     /// Value was loaded from mutable global storage; initializer lengths are not runtime bounds.
     mutable_global_runtime: bool,
+    /// Value came from a type-only zero-initialized global with no writes in this program.
+    zero_initialized_global: bool,
     /// Provenance for pointers that still refer to a concrete map value allocation.
     map_value_origin: Option<MapValueOrigin>,
     /// Inner map template carried by a map-in-map outer lookup result.
@@ -367,14 +369,27 @@ struct SubfunctionSpecializationKey {
     arg_types: Vec<Option<MirType>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct MutableCaptureGlobal {
     symbol: String,
     ty: MirType,
     list_max_len: Option<usize>,
     string_slot_len: Option<usize>,
     string_content_cap: Option<usize>,
+    zero_initialized_type_spec: bool,
 }
+
+impl PartialEq for MutableCaptureGlobal {
+    fn eq(&self, other: &Self) -> bool {
+        self.symbol == other.symbol
+            && self.ty == other.ty
+            && self.list_max_len == other.list_max_len
+            && self.string_slot_len == other.string_slot_len
+            && self.string_content_cap == other.string_content_cap
+    }
+}
+
+impl Eq for MutableCaptureGlobal {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DirectListProjection {
@@ -551,6 +566,10 @@ pub struct HirToMirLowering<'a> {
     pending_annotated_mut_global_init_stores: HashSet<VarId>,
     /// Explicit named globals created by `global-set`
     named_program_globals: HashMap<String, MutableCaptureGlobal>,
+    /// Named global symbols that can be written by `global-set` anywhere in the program.
+    named_program_global_set_symbols: HashSet<String>,
+    /// A `global-set` with non-constant name can write any named global.
+    unknown_named_program_global_set: bool,
     /// Logical semantics for named program globals with richer runtime layouts.
     named_program_global_semantics: HashMap<String, AnnotatedValueSemantics>,
     /// Monotonic counter for unique readonly-global symbol names
@@ -708,6 +727,8 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_global_aliases: HashMap::new(),
             pending_annotated_mut_global_init_stores: HashSet::new(),
             named_program_globals: HashMap::new(),
+            named_program_global_set_symbols: HashSet::new(),
+            unknown_named_program_global_set: false,
             named_program_global_semantics: HashMap::new(),
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),

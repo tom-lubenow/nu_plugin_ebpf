@@ -1148,6 +1148,7 @@ impl ParsedNamedGlobalType {
                 list_max_len: self.list_max_len,
                 string_slot_len: self.string_slot_len,
                 string_content_cap: self.string_content_cap,
+                zero_initialized_type_spec: false,
             },
             self.semantics.clone(),
         )
@@ -1772,6 +1773,7 @@ impl<'a> HirToMirLowering<'a> {
                     list_max_len: Some(max_len),
                     string_slot_len: None,
                     string_content_cap: None,
+                    zero_initialized_type_spec: false,
                 });
             }
 
@@ -1792,6 +1794,7 @@ impl<'a> HirToMirLowering<'a> {
                     string_content_cap: Some(
                         meta.string_len_bound.unwrap_or(slot_len.saturating_sub(1)),
                     ),
+                    zero_initialized_type_spec: false,
                 });
             }
 
@@ -1817,6 +1820,7 @@ impl<'a> HirToMirLowering<'a> {
                         list_max_len: None,
                         string_slot_len: None,
                         string_content_cap: None,
+                        zero_initialized_type_spec: false,
                     });
                 }
             }
@@ -1828,6 +1832,7 @@ impl<'a> HirToMirLowering<'a> {
                     list_max_len: None,
                     string_slot_len: None,
                     string_content_cap: None,
+                    zero_initialized_type_spec: false,
                 });
             }
         }
@@ -1864,6 +1869,7 @@ impl<'a> HirToMirLowering<'a> {
                 list_max_len: None,
                 string_slot_len: None,
                 string_content_cap: None,
+                zero_initialized_type_spec: false,
             }),
             _ => Err(CompileError::UnsupportedInstruction(
                 "global-set requires a scalar, string, fixed binary, numeric list, or representable aggregate value".into(),
@@ -1901,6 +1907,7 @@ impl<'a> HirToMirLowering<'a> {
                     list_max_len: *list_max_len,
                     string_slot_len: *string_slot_len,
                     string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
+                    zero_initialized_type_spec: false,
                 }
             } else {
                 self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?
@@ -1913,10 +1920,17 @@ impl<'a> HirToMirLowering<'a> {
                     name
                 )));
             }
+            if let Some(existing) = self.named_program_globals.get_mut(name) {
+                existing.zero_initialized_type_spec = false;
+            }
             if let Some(semantics) = value_semantics {
                 self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing);
+            return Ok(self
+                .named_program_globals
+                .get(name)
+                .cloned()
+                .expect("existing named global should remain present"));
         }
 
         let size = inferred.ty.size();
@@ -1984,6 +1998,7 @@ impl<'a> HirToMirLowering<'a> {
             list_max_len,
             string_slot_len,
             string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
+            zero_initialized_type_spec: false,
         };
 
         if let Some(existing) = self.named_program_globals.get(name).cloned() {
@@ -1993,10 +2008,17 @@ impl<'a> HirToMirLowering<'a> {
                     name
                 )));
             }
+            if let Some(existing) = self.named_program_globals.get_mut(name) {
+                existing.zero_initialized_type_spec = false;
+            }
             if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
                 self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing);
+            return Ok(self
+                .named_program_globals
+                .get(name)
+                .cloned()
+                .expect("existing named global should remain present"));
         }
 
         let size = inferred.ty.size();
@@ -2030,7 +2052,8 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
         let parsed = ParsedNamedGlobalType::parse(spec)?;
-        let (inferred, semantics) = parsed.layout(symbol.clone());
+        let (mut inferred, semantics) = parsed.layout(symbol.clone());
+        inferred.zero_initialized_type_spec = true;
         let semantics = parsed.initializer_semantics(None)?.or(semantics);
 
         if let Some(existing) = self.named_program_globals.get(name).cloned() {
@@ -2082,10 +2105,17 @@ impl<'a> HirToMirLowering<'a> {
                     name
                 )));
             }
+            if let Some(existing) = self.named_program_globals.get_mut(name) {
+                existing.zero_initialized_type_spec = false;
+            }
             if let Some(semantics) = semantics {
                 self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing);
+            return Ok(self
+                .named_program_globals
+                .get(name)
+                .cloned()
+                .expect("existing named global should remain present"));
         }
 
         let size = inferred.ty.size();
@@ -2129,7 +2159,14 @@ impl<'a> HirToMirLowering<'a> {
             .insert(global_ptr, global_ptr_ty.clone());
 
         self.reg_metadata.insert(dst.get(), RegMetadata::default());
-        self.get_or_create_metadata(dst).mutable_global_runtime = true;
+        let zero_initialized_global = !self.unknown_named_program_global_set
+            && global.zero_initialized_type_spec
+            && !self
+                .named_program_global_set_symbols
+                .contains(&global.symbol);
+        let meta = self.get_or_create_metadata(dst);
+        meta.mutable_global_runtime = true;
+        meta.zero_initialized_global = zero_initialized_global;
 
         if let Some(max_len) = global.list_max_len {
             let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
