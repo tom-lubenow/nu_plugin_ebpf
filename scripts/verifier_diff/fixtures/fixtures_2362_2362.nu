@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2362_2362 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "reserved for struct_ops objects"
+        error_contains: "use struct_ops attach syntax"
     }
 ]

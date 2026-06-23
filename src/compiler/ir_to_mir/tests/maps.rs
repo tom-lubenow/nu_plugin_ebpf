@@ -3483,8 +3483,8 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
             "hash-of-maps",
             "map-put is not supported for map-in-map outer map",
         ),
-        ("struct-ops", "reserved for struct_ops objects"),
-        ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
+        ("struct-ops", "use struct_ops attach syntax"),
+        ("user-ringbuf", "use helper-call user_ringbuf_drain"),
         (
             "arena",
             "generic arena operations and live mmap setup are not modeled yet",

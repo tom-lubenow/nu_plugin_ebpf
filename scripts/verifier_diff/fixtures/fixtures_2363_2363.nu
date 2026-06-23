@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2363_2363 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "reserved for user-ringbuf helper surfaces"
+        error_contains: "use helper-call user_ringbuf_drain"
     }
 ]
