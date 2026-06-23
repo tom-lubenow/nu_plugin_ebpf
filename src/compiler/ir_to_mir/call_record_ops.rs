@@ -1418,7 +1418,7 @@ impl<'a> HirToMirLowering<'a> {
         for field in &input_meta.record_fields {
             if !Self::metadata_record_values_supported_field(&input_meta, field) {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
+                    "values supports only integer-like, bool, or null scalar record fields in eBPF; field '{}' has type {:?}",
                     field.name, field.ty
                 )));
             }
@@ -1606,7 +1606,7 @@ impl<'a> HirToMirLowering<'a> {
         };
         if !Self::metadata_record_values_supported_field(&input_meta, &field) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
+                "values supports only integer-like, bool, or null scalar record fields in eBPF; field '{}' has type {:?}",
                 field.name, field.ty
             )));
         }
@@ -1765,7 +1765,7 @@ impl<'a> HirToMirLowering<'a> {
             )?;
             if !Self::metadata_record_values_supported_field(&input_meta, &value_field) {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
+                    "values supports only integer-like, bool, or null scalar record fields in eBPF; field '{}' has type {:?}",
                     value_field.name, value_field.ty
                 )));
             }

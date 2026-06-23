@@ -16,4 +16,21 @@ const VERIFIER_DIFF_FIXTURES_2298_2298 = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "global-typed-record-values-bool-get"
+        category: "globals"
+        tags: [globals records typed values get bool list accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "record{pid:int,active:bool,cpu:u32}" seen_state'
+            '  let vals = (global-get seen_state | values)'
+            '  let len_ok = (($vals | length) == 3)'
+            '  let active_ok = (($vals | get 1) == 0)'
+            '  if $len_ok and $active_ok { 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]

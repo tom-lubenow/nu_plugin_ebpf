@@ -51801,7 +51801,7 @@ fn test_lower_values_rejects_heterogeneous_metadata_record_field() {
 
     assert!(
         err.to_string()
-            .contains("values supports only numeric scalar record fields"),
+            .contains("values supports only integer-like, bool, or null scalar record fields"),
         "unexpected error: {err}"
     );
 }
