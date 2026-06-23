@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2364_2364 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-put --kind arena names an arena map"
+        error_contains: "generic arena operations and live mmap setup are not modeled yet"
     }
 ]
