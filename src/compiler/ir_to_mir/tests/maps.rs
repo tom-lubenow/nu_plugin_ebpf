@@ -3448,6 +3448,48 @@ fn test_lower_map_get_rejects_queue_kind() {
 }
 
 #[test]
+fn test_lower_map_get_rejects_bloom_filter_kind() {
+    let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    for stmt in &mut hir.main.blocks[0].stmts {
+        if let HirStmt::LoadLiteral {
+            dst,
+            lit: HirLiteral::String(kind),
+        } = stmt
+            && *dst == RegId::new(3)
+        {
+            *kind = b"bloom-filter".to_vec();
+        }
+    }
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bloom-filter map-get should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-get --kind bloom-filter is not a lookup map"));
+            assert!(
+                msg.contains("use map-push to insert values and map-contains --kind bloom-filter"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_get_rejects_sockmap_kind() {
     let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");

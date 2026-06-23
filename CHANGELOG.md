@@ -19,8 +19,8 @@ documentation changes that matter to external alpha consumers.
   bloom-filter map kinds so rejects point to the supported map surfaces.
 - Improved unsupported queue/stack `map-get` and `map-put` diagnostics so they
   point to `map-peek` / `map-pop` and `map-push` respectively.
-- Improved unsupported bloom-filter `map-put` diagnostics so they point to
-  `map-push` insertion and `map-contains` membership tests.
+- Improved unsupported bloom-filter `map-get` / `map-put` diagnostics so they
+  point to `map-push` insertion and `map-contains` membership tests.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

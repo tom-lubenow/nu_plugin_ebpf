@@ -1056,7 +1056,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
             ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is not a lookup map; use map-contains --kind bloom-filter"
+                "{context} --kind {kind} is not a lookup map; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
             ))),
             Some(map_kind) => Err(
                 Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {

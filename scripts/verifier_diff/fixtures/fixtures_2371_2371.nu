@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2371_2371 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-get --kind bloom-filter is not a lookup map"
+        error_contains: "use map-push to insert values and map-contains --kind bloom-filter"
     }
 ]
