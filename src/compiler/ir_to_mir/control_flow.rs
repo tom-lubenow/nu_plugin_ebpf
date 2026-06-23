@@ -1496,14 +1496,14 @@ impl<'a> HirToMirLowering<'a> {
                 args,
             } = stmt
             else {
-                if Self::append_prepend_item_stmt_touches_reg(stmt, dst) {
+                if Self::stmt_touches_reg(stmt, dst) {
                     return false;
                 }
                 continue;
             };
             let decl_name = self.decl_names.get(decl_id).map(String::as_str);
             let Some("append" | "prepend") = decl_name else {
-                if Self::append_prepend_item_call_args_touch_reg(args, dst) || *src_dst == dst {
+                if Self::call_args_touch_reg(args, dst) || *src_dst == dst {
                     return false;
                 }
                 continue;
@@ -1539,14 +1539,14 @@ impl<'a> HirToMirLowering<'a> {
         false
     }
 
-    fn append_prepend_item_call_args_touch_reg(args: &HirCallArgs, reg: RegId) -> bool {
+    fn call_args_touch_reg(args: &HirCallArgs, reg: RegId) -> bool {
         args.pipeline_input == Some(reg)
             || args.positional.contains(&reg)
             || args.rest.contains(&reg)
             || args.named.iter().any(|(_, arg)| *arg == reg)
     }
 
-    fn append_prepend_item_stmt_touches_reg(stmt: &HirStmt, reg: RegId) -> bool {
+    fn stmt_touches_reg(stmt: &HirStmt, reg: RegId) -> bool {
         match stmt {
             HirStmt::LoadLiteral { dst, .. } | HirStmt::LoadValue { dst, .. } => *dst == reg,
             HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => *dst == reg || *src == reg,
@@ -1589,7 +1589,7 @@ impl<'a> HirToMirLowering<'a> {
             HirStmt::CloneCellPath { dst, src, path } => *dst == reg || *src == reg || *path == reg,
             HirStmt::OpenFile { path, .. } => *path == reg,
             HirStmt::Call { src_dst, args, .. } => {
-                *src_dst == reg || Self::append_prepend_item_call_args_touch_reg(args, reg)
+                *src_dst == reg || Self::call_args_touch_reg(args, reg)
             }
             HirStmt::CloseFile { .. }
             | HirStmt::RedirectOut { .. }
@@ -1741,8 +1741,9 @@ impl<'a> HirToMirLowering<'a> {
         stmt_index: usize,
         dst: RegId,
     ) -> Option<DirectListProjection> {
+        let search_start = stmt_index.saturating_add(1);
         let (consumer_index, decl_id, next_dst, args) =
-            Self::next_direct_list_projection_call(stmts, stmt_index.saturating_add(1), dst)?;
+            Self::next_direct_list_projection_call(stmts, search_start, dst)?;
 
         let (projection, final_consumer_index, original_overwritten) = match self
             .decl_names
@@ -1756,18 +1757,12 @@ impl<'a> HirToMirLowering<'a> {
                 (DirectListProjection::Last, consumer_index, next_dst == dst)
             }
             Some("get") if args.positional.len() == 1 => {
-                let index = args.positional.first().and_then(|arg| {
-                    self.get_metadata(*arg).and_then(|meta| {
-                        meta.literal_int.or_else(|| {
-                            meta.cell_path
-                                .as_ref()
-                                .and_then(|path| match path.members.as_slice() {
-                                    [PathMember::Int { val, .. }] => Some(*val as i64),
-                                    _ => None,
-                                })
-                        })
-                    })
-                })?;
+                let index = self.direct_list_projection_index_arg(
+                    stmts,
+                    search_start,
+                    consumer_index,
+                    *args.positional.first()?,
+                )?;
                 (
                     DirectListProjection::Index(index),
                     consumer_index,
@@ -1789,18 +1784,12 @@ impl<'a> HirToMirLowering<'a> {
                         DirectListProjection::ReverseLast
                     }
                     Some("get") if consumer_args.positional.len() == 1 => {
-                        let index = consumer_args.positional.first().and_then(|arg| {
-                            self.get_metadata(*arg).and_then(|meta| {
-                                meta.literal_int.or_else(|| {
-                                    meta.cell_path.as_ref().and_then(|path| {
-                                        match path.members.as_slice() {
-                                            [PathMember::Int { val, .. }] => Some(*val as i64),
-                                            _ => None,
-                                        }
-                                    })
-                                })
-                            })
-                        })?;
+                        let index = self.direct_list_projection_index_arg(
+                            stmts,
+                            search_start,
+                            reverse_consumer_index,
+                            *consumer_args.positional.first()?,
+                        )?;
                         DirectListProjection::ReverseIndex(index)
                     }
                     _ => return None,
@@ -1823,8 +1812,56 @@ impl<'a> HirToMirLowering<'a> {
             .get(reuse_start..)
             .into_iter()
             .flatten()
-            .any(|stmt| Self::append_prepend_item_stmt_touches_reg(stmt, dst));
+            .any(|stmt| Self::stmt_touches_reg(stmt, dst));
         (!old_value_reused).then_some(projection)
+    }
+
+    fn direct_list_projection_index_arg(
+        &self,
+        stmts: &[HirStmt],
+        search_start: usize,
+        consumer_index: usize,
+        arg: RegId,
+    ) -> Option<i64> {
+        if let Some(index) = self.get_metadata(arg).and_then(|meta| {
+            meta.literal_int.or_else(|| {
+                meta.cell_path
+                    .as_ref()
+                    .and_then(Self::direct_list_projection_cell_path_index)
+            })
+        }) {
+            return Some(index);
+        }
+
+        for stmt in stmts.get(search_start..consumer_index)?.iter().rev() {
+            match stmt {
+                HirStmt::LoadLiteral { dst, lit } if *dst == arg => {
+                    return Self::direct_list_projection_literal_index(lit);
+                }
+                HirStmt::LoadValue { dst, val } if *dst == arg => match val.as_ref() {
+                    Value::Int { val, .. } => return Some(*val),
+                    _ => return None,
+                },
+                stmt if Self::stmt_touches_reg(stmt, arg) => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn direct_list_projection_literal_index(lit: &HirLiteral) -> Option<i64> {
+        match lit {
+            HirLiteral::Int(index) => Some(*index),
+            HirLiteral::CellPath(path) => Self::direct_list_projection_cell_path_index(path),
+            _ => None,
+        }
+    }
+
+    fn direct_list_projection_cell_path_index(path: &CellPath) -> Option<i64> {
+        match path.members.as_slice() {
+            [PathMember::Int { val, .. }] => Some(*val as i64),
+            _ => None,
+        }
     }
 
     fn next_direct_list_projection_call(
@@ -1841,6 +1878,11 @@ impl<'a> HirToMirLowering<'a> {
                     index = index.saturating_add(1);
                 }
                 HirStmt::RedirectOut { .. } | HirStmt::RedirectErr { .. } => {
+                    index = index.saturating_add(1);
+                }
+                stmt @ (HirStmt::LoadLiteral { .. } | HirStmt::LoadValue { .. })
+                    if !Self::stmt_touches_reg(stmt, input) =>
+                {
                     index = index.saturating_add(1);
                 }
                 HirStmt::Call {
