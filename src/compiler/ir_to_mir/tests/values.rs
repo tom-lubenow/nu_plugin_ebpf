@@ -52643,6 +52643,49 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_first_last_
 }
 
 #[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_counted_first_get_directly() {
+    let values_decl = DeclId::new(81_750);
+    let first_decl = DeclId::new(81_751);
+    let get_decl = DeclId::new(81_752);
+    let starts_with_decl = DeclId::new(81_753);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        get_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::FirstCount {
+            decl_id: first_decl,
+            count: 2,
+        }),
+        Some(1),
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (first_decl, "first".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values first count get should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string first count get",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values first count string get should compile through codegen");
+}
+
+#[test]
 fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_first_directly() {
     let values_decl = DeclId::new(81_730);
     let last_decl = DeclId::new(81_731);
@@ -52683,6 +52726,46 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_first_
     );
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("runtime record values last count string first should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_reverse_last_directly() {
+    let values_decl = DeclId::new(81_760);
+    let reverse_decl = DeclId::new(81_761);
+    let last_decl = DeclId::new(81_762);
+    let starts_with_decl = DeclId::new(81_763);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        last_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::Reverse(reverse_decl)),
+        None,
+        starts_with_decl,
+        true,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (reverse_decl, "reverse".to_string()),
+        (last_decl, "last".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values reverse last should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string reverse last",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values reverse string last should compile through codegen");
 }
 
 #[test]
