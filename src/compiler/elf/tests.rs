@@ -8236,6 +8236,7 @@ fn test_probe_context_arg_count_field_surface_follows_program_model() {
         EbpfProgramType::Fexit,
         EbpfProgramType::TpBtf,
         EbpfProgramType::Lsm,
+        EbpfProgramType::LsmCgroup,
     ] {
         let ctx = ProbeContext::new(program_type, "do_sys_openat2");
         assert!(
@@ -8243,12 +8244,6 @@ fn test_probe_context_arg_count_field_surface_follows_program_model() {
             "ctx.arg_count should be allowed on {program_type:?}"
         );
     }
-
-    let lsm_cgroup = ProbeContext::new(EbpfProgramType::LsmCgroup, "socket_bind");
-    let err = lsm_cgroup
-        .ctx_field_access_error(&CtxField::ArgCount)
-        .expect("expected arg_count rejection on lsm_cgroup");
-    assert!(err.contains("ctx.arg_count is only available on BTF-backed tracing contexts"));
 
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let err = xdp

@@ -58,7 +58,7 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_A = [
     {
         name: "core-record-rename-column-missing-reject"
         category: "language-core"
-        tags: [aggregate record rename column]
+        tags: [aggregate record rename column diagnostics reject]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'

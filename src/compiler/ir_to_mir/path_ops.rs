@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 use crate::compiler::ctx_field_schema::ContextFieldTypeSpec;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
@@ -284,6 +285,50 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(message));
         }
         Ok(())
+    }
+
+    fn lower_static_lsm_cgroup_arg_count_ctx_field(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        ctx_field: &CtxField,
+    ) -> Result<bool, CompileError> {
+        if !matches!(ctx_field, CtxField::ArgCount) {
+            return Ok(false);
+        }
+        let Some(ctx) = self
+            .probe_ctx
+            .filter(|ctx| ctx.program_type() == EbpfProgramType::LsmCgroup)
+        else {
+            return Ok(false);
+        };
+
+        let arg_count = ctx
+            .btf_arg_infos()
+            .map_err(CompileError::UnsupportedInstruction)?
+            .len();
+        let arg_count = i64::try_from(arg_count).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "ctx.arg_count for lsm_cgroup is too large for eBPF".into(),
+            )
+        })?;
+
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(arg_count),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::U64);
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = false;
+        meta.field_type = Some(MirType::U64);
+        meta.root_ctx_field = None;
+        meta.direct_ctx_field = None;
+        meta.trusted_btf = false;
+        meta.kernel_btf_field_addr = None;
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, Some(Value::int(arg_count, Span::unknown())));
+        Ok(true)
     }
 
     pub(super) fn lower_dynamic_typed_numeric_get(
@@ -1374,6 +1419,9 @@ impl<'a> HirToMirLowering<'a> {
         let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
         let remaining_members = &path.members[root_members_consumed..];
         self.validate_ctx_field_access_with_source_name(&ctx_field, &source_ctx_field_name)?;
+        if self.lower_static_lsm_cgroup_arg_count_ctx_field(src_dst, dst_vreg, &ctx_field)? {
+            return Ok(());
+        }
         self.implied_ctx_fields.insert(ctx_field.clone());
         if matches!(ctx_field, CtxField::Cgroup) {
             self.lower_current_cgroup_context_field(

@@ -9560,6 +9560,86 @@ fn test_lower_fentry_arg_count_ctx_field() {
 }
 
 #[test]
+fn test_lower_lsm_cgroup_arg_count_ctx_field_materializes_static_count() {
+    let Ok(arg_infos) = KernelBtf::get().lsm_hook_arg_infos("socket_bind") else {
+        return;
+    };
+    let expected_arg_count =
+        i64::try_from(arg_infos.len()).expect("socket_bind arg count should fit in i64");
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg_count")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LsmCgroup, "socket_bind");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lsm_cgroup ctx.arg_count should lower to a static BTF arg count");
+
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(value),
+                ..
+            } if *value == expected_arg_count
+        )),
+        "lsm_cgroup ctx.arg_count should materialize the static BTF arg count"
+    );
+    assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::ArgCount,
+                ..
+            }
+        )),
+        "lsm_cgroup ctx.arg_count should not lower to bpf_get_func_arg_cnt-backed LoadCtxField"
+    );
+    assert!(
+        !result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::ArgCount),
+        "static lsm_cgroup ctx.arg_count should not report helper-backed context-field metadata"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("static lsm_cgroup ctx.arg_count should compile");
+    assert!(
+        !compiled.used_ctx_fields.contains(&CtxField::ArgCount),
+        "static lsm_cgroup ctx.arg_count should not reach codegen as a context load"
+    );
+    let program = compiled.into_program(
+        EbpfProgramType::LsmCgroup,
+        "socket_bind",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        !program
+            .helper_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::GetFuncArgCnt),
+        "static lsm_cgroup ctx.arg_count should not report bpf_get_func_arg_cnt compatibility"
+    );
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_lower_perf_event_direct_context_fields_compile() {
     for (field_name, expected_field, expected_floor) in [

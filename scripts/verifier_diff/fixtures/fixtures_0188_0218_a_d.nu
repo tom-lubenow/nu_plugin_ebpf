@@ -2,7 +2,7 @@ const VERIFIER_DIFF_FIXTURES_0188_0218_A_D = [
     {
         name: "lsm-cgroup-context"
         category: "tracing"
-        tags: [lsm-cgroup context]
+        tags: [lsm-cgroup context arg-count]
         requires: [kernel-btf]
         target: "lsm_cgroup:socket_bind"
         program: [
@@ -11,9 +11,8 @@ const VERIFIER_DIFF_FIXTURES_0188_0218_A_D = [
             '  1'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "ctx.arg_count is only available on BTF-backed tracing contexts with bpf_get_func_arg_cnt support"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "lsm-cgroup-named-arg-context"
