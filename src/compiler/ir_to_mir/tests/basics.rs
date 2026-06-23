@@ -6240,6 +6240,126 @@ fn test_lower_generic_numeric_get_after_binding_stack_backed_array() {
 }
 
 #[test]
+fn test_lower_dynamic_typed_numeric_get_materializes_stack_slot_index() {
+    let decl_names = HashMap::new();
+    let closure_irs = HashMap::new();
+    let closure_param_sources = HashMap::new();
+    let captures: Vec<(VarId, Value)> = Vec::new();
+    let user_functions = HashMap::new();
+    let decl_signatures = HashMap::new();
+    let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+        probe_ctx: None,
+        decl_names: &decl_names,
+        closure_irs: &closure_irs,
+        closure_param_sources: &closure_param_sources,
+        captures: &captures,
+        ctx_param: None,
+        type_hints: None,
+        external_map_key_types: None,
+        external_map_key_semantics: None,
+        external_map_max_entries: None,
+        external_map_inner_templates: None,
+        external_map_value_types: None,
+        external_map_value_semantics: None,
+        user_functions: &user_functions,
+        decl_signatures: &decl_signatures,
+    });
+    let entry = lowering.func.alloc_block();
+    lowering.func.entry = entry;
+    lowering.current_block = entry;
+
+    let element_ty = MirType::U64;
+    let array_ty = MirType::Array {
+        elem: Box::new(element_ty.clone()),
+        len: 4,
+    };
+    let array_slot =
+        lowering
+            .func
+            .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+    lowering.record_stack_slot_type(array_slot, array_ty.clone());
+    let base_vreg = lowering.func.alloc_vreg();
+    lowering.emit(MirInst::Copy {
+        dst: base_vreg,
+        src: MirValue::StackSlot(array_slot),
+    });
+    let base_ty = MirType::Ptr {
+        pointee: Box::new(array_ty),
+        address_space: AddressSpace::Stack,
+    };
+    lowering.vreg_type_hints.insert(base_vreg, base_ty.clone());
+
+    let idx_slot = lowering.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    lowering.record_stack_slot_type(idx_slot, MirType::I64);
+    lowering.emit(MirInst::StoreSlot {
+        slot: idx_slot,
+        offset: 0,
+        val: MirValue::Const(2),
+        ty: MirType::I64,
+    });
+
+    let dst_reg = RegId::new(10);
+    let lowered_ty = lowering
+        .lower_dynamic_typed_numeric_get(
+            dst_reg,
+            base_vreg,
+            &base_ty,
+            MirValue::StackSlot(idx_slot),
+            None,
+            None,
+        )
+        .expect("stack-slot numeric get index should lower");
+    assert_eq!(lowered_ty, element_ty);
+
+    let instructions = &lowering.func.block(entry).instructions;
+    let loaded_idx = instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadSlot {
+                dst,
+                slot,
+                offset: 0,
+                ty: MirType::I64,
+            } if *slot == idx_slot => Some(*dst),
+            _ => None,
+        })
+        .expect("expected stack-slot index to be loaded before pointer arithmetic");
+    let scaled_idx = instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::BinOp {
+                dst,
+                op: BinOpKind::Mul,
+                lhs: MirValue::VReg(vreg),
+                rhs: MirValue::Const(8),
+            } if *vreg == loaded_idx => Some(*dst),
+            _ => None,
+        })
+        .expect("expected loaded stack-slot index to be scaled by element size");
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Add,
+                rhs: MirValue::VReg(vreg),
+                ..
+            } if *vreg == scaled_idx
+        )),
+        "expected pointer add to use the materialized scaled index"
+    );
+    assert!(
+        instructions.iter().all(|inst| !matches!(
+            inst,
+            MirInst::BinOp {
+                rhs: MirValue::StackSlot(slot),
+                ..
+            } if *slot == idx_slot
+        )),
+        "stack-slot indices must not reach MIR binop operands"
+    );
+}
+
+#[test]
 fn test_lower_generic_field_projection_after_runtime_get_stack_backed_bitfield_struct() {
     let hir = make_bound_ctx_runtime_get_path_program(
         CellPath {

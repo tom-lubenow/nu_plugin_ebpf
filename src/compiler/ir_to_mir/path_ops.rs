@@ -391,8 +391,46 @@ impl<'a> HirToMirLowering<'a> {
         self.vreg_type_hints
             .insert(base_copy, base_runtime_ty.clone());
 
+        let idx = match idx {
+            MirValue::StackSlot(slot) => {
+                let idx_ty = self
+                    .stack_slot_type_hints
+                    .get(&slot)
+                    .cloned()
+                    .unwrap_or(MirType::I64);
+                if !matches!(
+                    idx_ty,
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                        | MirType::Unknown
+                ) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "numeric get stack-slot index must be a scalar integer, got {:?}",
+                        idx_ty
+                    )));
+                }
+                let idx_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::LoadSlot {
+                    dst: idx_vreg,
+                    slot,
+                    offset: 0,
+                    ty: idx_ty.clone(),
+                });
+                self.vreg_type_hints.insert(idx_vreg, idx_ty);
+                MirValue::VReg(idx_vreg)
+            }
+            other => other,
+        };
+
         let scaled_idx = if element_size == 1 {
-            idx.clone()
+            idx
         } else {
             match idx {
                 MirValue::Const(value) => {
@@ -425,11 +463,7 @@ impl<'a> HirToMirLowering<'a> {
                     });
                     MirValue::VReg(scaled_vreg)
                 }
-                MirValue::StackSlot(_) => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "numeric get does not support stack-slot indices".into(),
-                    ));
-                }
+                MirValue::StackSlot(_) => unreachable!("stack-slot indices are materialized above"),
             }
         };
 
