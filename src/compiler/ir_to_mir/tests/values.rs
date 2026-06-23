@@ -53644,6 +53644,7 @@ fn make_runtime_record_transpose_shape_consumer_program(
     random_decl: DeclId,
     transpose_decl: DeclId,
     consumer_decl: DeclId,
+    flags: Vec<Vec<u8>>,
 ) -> HirProgram {
     HirProgram::new(
         HirFunction {
@@ -53695,6 +53696,7 @@ fn make_runtime_record_transpose_shape_consumer_program(
                         args: HirCallArgs {
                             positional: vec![RegId::new(5), RegId::new(6)],
                             pipeline_input: Some(RegId::new(0)),
+                            flags,
                             ..HirCallArgs::default()
                         },
                     },
@@ -53741,6 +53743,7 @@ fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
             random_decl,
             transpose_decl,
             consumer_decl,
+            Vec::new(),
         );
         let decl_names = HashMap::from([
             (random_decl, "random int".to_string()),
@@ -53762,6 +53765,70 @@ fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
         assert_no_runtime_list_operations(&result.program, context);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("runtime record transpose shape consumer should compile");
+    }
+}
+
+#[test]
+fn test_lower_transpose_as_record_on_runtime_record_feeds_shape_only_consumers() {
+    for (offset, flags, consumer_name, expected, context) in [
+        (
+            0,
+            vec![b"as-record".to_vec()],
+            "length",
+            2,
+            "runtime record transpose as-record length",
+        ),
+        (
+            10,
+            vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+            "length",
+            1,
+            "runtime record transpose as-record ignore-titles length",
+        ),
+        (
+            20,
+            vec![b"as-record".to_vec()],
+            "is-empty",
+            0,
+            "runtime record transpose as-record is-empty",
+        ),
+        (
+            30,
+            vec![b"as-record".to_vec(), b"ignore-titles".to_vec()],
+            "is-not-empty",
+            1,
+            "runtime record transpose as-record ignore-titles is-not-empty",
+        ),
+    ] {
+        let random_decl = DeclId::new(81883 + offset);
+        let transpose_decl = DeclId::new(81884 + offset);
+        let consumer_decl = DeclId::new(81885 + offset);
+        let hir = make_runtime_record_transpose_shape_consumer_program(
+            random_decl,
+            transpose_decl,
+            consumer_decl,
+            flags,
+        );
+        let decl_names = HashMap::from([
+            (random_decl, "random int".to_string()),
+            (transpose_decl, "transpose".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("runtime metadata-record transpose --as-record should feed shape-only consumers");
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("runtime record transpose --as-record shape consumer should compile");
     }
 }
 

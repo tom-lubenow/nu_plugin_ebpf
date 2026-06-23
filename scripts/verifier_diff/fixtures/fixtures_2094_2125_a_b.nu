@@ -94,4 +94,35 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-record-transpose-runtime-as-record-length-variants"
+        category: "language-core"
+        tags: [aggregate record transpose as-record ignore-titles length accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let default_len = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record | length)'
+            '  let custom_len = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record key value | length)'
+            '  let ignored_len = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record --ignore-titles val | length)'
+            '  ($default_len == 2) and (($custom_len == 2) and ($ignored_len == 1))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-runtime-as-record-empty-predicates"
+        category: "language-core"
+        tags: [aggregate record transpose as-record is-empty is-not-empty accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let default_empty = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record | is-empty)'
+            '  let ignored_not_empty = ({ pid: $ctx.pid cpu: 7 } | transpose --as-record --ignore-titles val | is-not-empty)'
+            '  ($default_empty == false) and ($ignored_not_empty == true)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]

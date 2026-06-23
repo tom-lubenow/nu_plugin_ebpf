@@ -1980,17 +1980,15 @@ impl<'a> HirToMirLowering<'a> {
                     "transpose requires compile-time known record input in eBPF".into(),
                 )
             })?;
-        if !as_record
-            && self.current_call_result_list_shape_metadata_only
-            && let Some(field_count) = Self::record_transpose_shape_only_field_count(&input_meta)
+        if self.current_call_result_list_shape_metadata_only
+            && let Some(shape_value) = Self::record_transpose_shape_only_value(
+                &input_meta,
+                as_record,
+                ignore_titles,
+                &output_names,
+            )
         {
-            let vals = (0..field_count)
-                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
-                .collect::<Vec<_>>();
-            self.lower_compile_time_only_constant_value(
-                src_dst,
-                &nu_protocol::Value::list(vals, Span::unknown()),
-            );
+            self.lower_compile_time_only_constant_value(src_dst, &shape_value);
             return Ok(());
         }
 
@@ -2082,11 +2080,37 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn record_transpose_shape_only_field_count(meta: &RegMetadata) -> Option<usize> {
-        if !meta.record_fields.is_empty() {
-            return Some(meta.record_fields.len());
+    fn record_transpose_shape_only_value(
+        meta: &RegMetadata,
+        as_record: bool,
+        ignore_titles: bool,
+        output_names: &[String; 2],
+    ) -> Option<nu_protocol::Value> {
+        let field_count = if !meta.record_fields.is_empty() {
+            meta.record_fields.len()
+        } else {
+            Self::typed_record_visible_fields(meta).map(|fields| fields.len())?
+        };
+
+        if !as_record || field_count == 0 {
+            let vals = (0..field_count)
+                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
+                .collect::<Vec<_>>();
+            return Some(nu_protocol::Value::list(vals, Span::unknown()));
         }
-        Self::typed_record_visible_fields(meta).map(|fields| fields.len())
+
+        let mut out = nu_protocol::Record::new();
+        out.push(
+            output_names[0].clone(),
+            nu_protocol::Value::nothing(Span::unknown()),
+        );
+        if !ignore_titles {
+            out.push(
+                output_names[1].clone(),
+                nu_protocol::Value::nothing(Span::unknown()),
+            );
+        }
+        Some(nu_protocol::Value::record(out, Span::unknown()))
     }
 
     pub(super) fn lower_metadata_record_get(
