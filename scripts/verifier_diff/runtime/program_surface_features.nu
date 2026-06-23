@@ -139,61 +139,85 @@ def program-surface-kernel-features [source: string target] {
             ($target_text | str starts-with "sock_ops:")
             and (line-assigns-record-context-field? $trimmed $record_context_aliases ["cb_flags"] [""])
         )
-        let inferred_map_kind = (source-line-effective-map-kind $trimmed $map_kind_bindings)
-        let map_kind = if $inferred_map_kind == null { "hash" } else { $inferred_map_kind }
-        if (line-invokes-command? $trimmed "map-get") and (generic-map-lookup-kind? $map_kind) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
-        }
-        if (line-invokes-command? $trimmed "map-put") and (generic-map-update-kind? $map_kind) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM])
-        }
-        if ($target_text | str starts-with "sock_ops:") and (line-invokes-command? $trimmed "map-put") {
-            if $map_kind == "sockmap" {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE])
-            } else if $map_kind == "sockhash" {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE])
-            }
-        }
-        if (line-invokes-command? $trimmed "map-delete") and (generic-map-delete-kind? $map_kind) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
-        }
-        if ((line-invokes-command? $trimmed "map-get") or (line-invokes-command? $trimmed "map-contains")) {
-            let local_storage_feature = (local-storage-get-helper-kernel-feature $map_kind)
-            if $local_storage_feature != null {
-                $features = (append-missing-kernel-features $features [$local_storage_feature])
-            }
-        }
-        if (line-invokes-command? $trimmed "map-delete") {
-            let local_storage_feature = (local-storage-delete-helper-kernel-feature $map_kind)
-            if $local_storage_feature != null {
-                $features = (append-missing-kernel-features $features [$local_storage_feature])
-            }
-        }
-        if (line-invokes-command? $trimmed "map-push") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PUSH_ELEM])
-        }
-        if (line-invokes-command? $trimmed "map-peek") and ($map_kind in ["queue" "stack"]) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
-        }
-        if (line-invokes-command? $trimmed "map-pop") and ($map_kind in ["queue" "stack"]) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_POP_ELEM])
-        }
-        if (line-invokes-command? $trimmed "map-contains") {
-            if $map_kind == "bloom-filter" {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
-            } else if (generic-map-lookup-kind? $map_kind) {
+        mut line_map_kind_bindings = $map_kind_bindings
+        for surface in (source-line-map-kind-surfaces $trimmed) {
+            let inferred_map_kind = (source-line-effective-map-kind-for-surface $surface $line_map_kind_bindings)
+            let map_kind = if $inferred_map_kind == null { "hash" } else { $inferred_map_kind }
+            let command = $surface.command
+
+            if ($command == "map-get") and (generic-map-lookup-kind? $map_kind) {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
             }
-        }
-        if (line-invokes-command? $trimmed "redirect-map") {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
-        }
-        if (line-invokes-command? $trimmed "map-contains") and ($map_kind == "cgroup-array") {
-            if $target_uses_skb_cgroup_helper {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
-            } else {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP])
+            if ($command == "map-put") and (generic-map-update-kind? $map_kind) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM])
             }
+            if ($target_text | str starts-with "sock_ops:") and ($command == "map-put") {
+                if $map_kind == "sockmap" {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE])
+                } else if $map_kind == "sockhash" {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE])
+                }
+            }
+            if ($command == "map-delete") and (generic-map-delete-kind? $map_kind) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
+            }
+            if $command in ["map-get" "map-contains"] {
+                let local_storage_feature = (local-storage-get-helper-kernel-feature $map_kind)
+                if $local_storage_feature != null {
+                    $features = (append-missing-kernel-features $features [$local_storage_feature])
+                }
+            }
+            if $command == "map-delete" {
+                let local_storage_feature = (local-storage-delete-helper-kernel-feature $map_kind)
+                if $local_storage_feature != null {
+                    $features = (append-missing-kernel-features $features [$local_storage_feature])
+                }
+            }
+            if ($command == "map-push") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PUSH_ELEM])
+            }
+            if ($command == "map-peek") and ($map_kind in ["queue" "stack"]) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
+            }
+            if ($command == "map-pop") and ($map_kind in ["queue" "stack"]) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_POP_ELEM])
+            }
+            if $command == "map-contains" {
+                if $map_kind == "bloom-filter" {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
+                } else if (generic-map-lookup-kind? $map_kind) {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
+                }
+            }
+            if $command == "redirect-map" {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
+            }
+            if ($command == "map-contains") and ($map_kind == "cgroup-array") {
+                if $target_uses_skb_cgroup_helper {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
+                } else {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP])
+                }
+            }
+            if $command == "redirect-socket" {
+                if ($target_text | str starts-with "sk_msg:") {
+                    if $map_kind == "sockhash" {
+                        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH])
+                    } else {
+                        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
+                    }
+                } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
+                    if $map_kind == "sockhash" {
+                        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_HASH])
+                    } else {
+                        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
+                    }
+                } else if ($target_text | str starts-with "sk_reuseport:") {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
+                }
+            }
+
+            $line_map_kind_bindings = (bind-map-kind $line_map_kind_bindings $surface.name $inferred_map_kind)
         }
         if (line-invokes-command? $trimmed "assign-socket") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
@@ -225,23 +249,6 @@ def program-surface-kernel-features [source: string target] {
         }
         if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--pull") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_PULL_DATA])
-        }
-        if (line-invokes-command? $trimmed "redirect-socket") {
-            if ($target_text | str starts-with "sk_msg:") {
-                if $map_kind == "sockhash" {
-                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH])
-                } else {
-                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
-                }
-            } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
-                if $map_kind == "sockhash" {
-                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_HASH])
-                } else {
-                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
-                }
-            } else if ($target_text | str starts-with "sk_reuseport:") {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
-            }
         }
         if ($target_text | str starts-with "sock_ops:") and (
             ($source_uses_context and (line-assigns-context-field? $trimmed $context_names ["cb_flags"]))
@@ -287,7 +294,7 @@ def program-surface-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT])
             }
         }
-        $map_kind_bindings = (update-map-kind-bindings-for-line $map_kind_bindings $trimmed)
+        $map_kind_bindings = $line_map_kind_bindings
     }
 
     $features
