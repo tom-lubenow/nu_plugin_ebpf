@@ -5213,7 +5213,7 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
         let use_grapheme_clusters = self.string_grapheme_cluster_indexing_flag("str substring")?;
-        if self.positional_args.len() != 1 {
+        if self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
                 "str substring requires exactly one explicit range argument in eBPF".into(),
             ));
@@ -5228,6 +5228,26 @@ impl<'a> HirToMirLowering<'a> {
                     "str substring requires a compile-time known range argument in eBPF".into(),
                 )
             })?;
+        if self.positional_args.len() > 1 {
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_cell_paths(
+                "str substring",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| Self::substring_known_string(item, range, use_grapheme_clusters),
+            );
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring requires exactly one explicit range argument in eBPF".into(),
+            ));
+        }
         if let Some(input) = self.exact_string_list_input(input_reg, "str substring")? {
             let output = input
                 .into_iter()

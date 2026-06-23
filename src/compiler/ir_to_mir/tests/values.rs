@@ -25944,6 +25944,133 @@ fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
 }
 
 #[test]
+fn test_lower_str_substring_record_cell_path_materializes_sliced_fields() {
+    let cases = [
+        ("foobar", 1, 3, Vec::new(), "oob"),
+        ("🇯🇵ほげ", 1, 1, vec![b"grapheme-clusters".to_vec()], "ほ"),
+    ];
+
+    for (index, (input, start, end, flags, expected)) in cases.into_iter().enumerate() {
+        let substring_decl = DeclId::new(80880 + index * 2);
+        let starts_with_decl = DeclId::new(substring_decl.get() + 1);
+        let mut record = Record::new();
+        record.push("name", Value::string(input, Span::test_data()));
+        let hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::record(record, Span::test_data())),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::Int(start),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::Int(1),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(3),
+                            lit: HirLiteral::Int(end),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::Range {
+                                start: RegId::new(1),
+                                step: RegId::new(2),
+                                end: RegId::new(3),
+                                inclusion: RangeInclusion::Inclusive,
+                            },
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(5),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::Call {
+                            decl_id: substring_decl,
+                            src_dst: RegId::new(6),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(4), RegId::new(5)],
+                                pipeline_input: Some(RegId::new(0)),
+                                flags,
+                                ..HirCallArgs::default()
+                            },
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(7),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(6),
+                            path: RegId::new(7),
+                        },
+                        HirStmt::LoadValue {
+                            dst: RegId::new(8),
+                            val: Box::new(Value::string(expected, Span::test_data())),
+                        },
+                        HirStmt::Call {
+                            decl_id: starts_with_decl,
+                            src_dst: RegId::new(9),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(8)],
+                                pipeline_input: Some(RegId::new(6)),
+                                ..HirCallArgs::default()
+                            },
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(9) },
+                }],
+                entry: HirBlockId(0),
+                spans: Vec::new(),
+                ast: Vec::new(),
+                comments: Vec::new(),
+                register_count: 10,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        let decl_names = HashMap::from([
+            (substring_decl, "str substring".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("str substring should lower record cell-path case {index}: {err}")
+        });
+
+        let mut transformed = (expected.len() as u64).to_le_bytes().to_vec();
+        transformed.extend_from_slice(expected.as_bytes());
+        assert!(
+            result.readonly_globals.iter().any(|global| global
+                .data
+                .windows(transformed.len())
+                .any(|window| window == transformed.as_slice())),
+            "expected materialized record field to contain substring {expected:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+            "str substring record cell-path result consumed by field projection should compile",
+        );
+    }
+}
+
+#[test]
 fn test_lower_str_substring_ignores_explicit_step_like_nushell() {
     let substring_decl = DeclId::new(80501);
     let starts_with_decl = DeclId::new(80502);
