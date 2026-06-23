@@ -870,7 +870,7 @@ fn compile_time_value_consumer_matches(
                             && args.flags.is_empty()
                     }
                     Some("bytes add") => {
-                        args.positional.len() == 1
+                        !args.positional.is_empty()
                             && args
                                 .named
                                 .iter()

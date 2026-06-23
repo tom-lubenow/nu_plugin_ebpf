@@ -7839,9 +7839,10 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                 }
-                if self.positional_args.len() != 1 {
+                if self.positional_args.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
-                        "bytes add accepts exactly one binary data argument in eBPF".into(),
+                        "bytes add accepts a binary data argument and optional cell-path arguments in eBPF"
+                            .into(),
                     ));
                 }
 
@@ -7895,6 +7896,33 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     BytesAddIndex::Static(0)
                 };
+
+                if self.positional_args.len() > 1 {
+                    let BytesAddIndex::Static(index) = index else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes add --index requires a compile-time known integer for cell-path arguments in eBPF"
+                                .into(),
+                        ));
+                    };
+                    let path_regs = self
+                        .positional_args
+                        .iter()
+                        .skip(1)
+                        .map(|(_, reg)| *reg)
+                        .collect::<Vec<_>>();
+                    return self.lower_known_binary_value_cell_paths(
+                        "bytes add",
+                        src_dst,
+                        input_reg,
+                        &path_regs,
+                        |val| {
+                            Ok(nu_protocol::Value::binary(
+                                Self::bytes_add_output(&val, &data, index as i64, from_end),
+                                nu_protocol::Span::unknown(),
+                            ))
+                        },
+                    );
+                }
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))

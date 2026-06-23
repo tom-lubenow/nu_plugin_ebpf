@@ -112,9 +112,9 @@ const VERIFIER_DIFF_FIXTURES_2957_2966 = [
         error_contains: "bytes ends-with requires a compile-time known binary pattern in eBPF"
     }
     {
-        name: "core-bytes-add-rejects-extra-cell-path-argument"
+        name: "core-bytes-add-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [binary bytes add diagnostics reject arguments]
+        tags: [binary bytes add diagnostics reject arguments cell-path scalar]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -123,7 +123,7 @@ const VERIFIER_DIFF_FIXTURES_2957_2966 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bytes add accepts exactly one binary data argument in eBPF"
+        error_contains: "bytes add cell-path arguments require compile-time known record or table input in eBPF; input has type binary"
     }
     {
         name: "core-bits-not-rejects-duplicate-signed-flag"

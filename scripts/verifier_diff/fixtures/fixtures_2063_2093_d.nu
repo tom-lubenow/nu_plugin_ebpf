@@ -117,6 +117,19 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_D = [
         kernel: "accept"
     }
     {
+        name: "core-record-list-binary-field-bytes-add-cell-path"
+        category: "language-core"
+        tags: [aggregate record list binary bytes add cell-path get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([{ payload: 0x[01 02] } { payload: 0x[03 04 05] }] | bytes add 0x[ff] payload | get 1 | get payload | bytes starts-with 0x[ff 03 04 05])'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-list-each-nested-record-field-get"
         category: "language-core"
         tags: [aggregate record list nested each get]
