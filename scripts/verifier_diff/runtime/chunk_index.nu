@@ -217,7 +217,7 @@ def fixture-chunk-index-rows [
     } else {
         $rows
     }
-    if (($filtered | length) == 0) {
+    if (($filtered | length) == 0) and not $gap_only {
         fail "no verifier fixtures matched the selected filters"
     }
 
