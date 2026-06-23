@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2757_2766 = [
     {
-        name: "core-string-capitalize-rejects-argument"
+        name: "core-string-capitalize-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str capitalize diagnostics reject argument]
+        tags: [string str capitalize diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str capitalize currently supports only the default no-argument form in eBPF"
+        error_contains: "str capitalize cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-capitalize-rejects-dynamic-input"
@@ -56,9 +56,9 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         error_contains: "str camel-case requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-kebab-case-rejects-argument"
+        name: "core-string-kebab-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str kebab-case diagnostics reject argument]
+        tags: [string str kebab-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -67,7 +67,7 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str kebab-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str kebab-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-pascal-case-rejects-list-item-type"
@@ -84,9 +84,9 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         error_contains: "str pascal-case requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-screaming-snake-case-rejects-argument"
+        name: "core-string-screaming-snake-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str screaming-snake-case diagnostics reject argument]
+        tags: [string str screaming-snake-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -95,7 +95,7 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str screaming-snake-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str screaming-snake-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-snake-case-rejects-dynamic-input"
@@ -126,9 +126,9 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         error_contains: "str snake-case requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-title-case-rejects-argument"
+        name: "core-string-title-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str title-case diagnostics reject argument]
+        tags: [string str title-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -137,6 +137,6 @@ const VERIFIER_DIFF_FIXTURES_2757_2766 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str title-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str title-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
 ]

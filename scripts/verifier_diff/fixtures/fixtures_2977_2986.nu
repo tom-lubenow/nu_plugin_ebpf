@@ -1,8 +1,8 @@
 const VERIFIER_DIFF_FIXTURES_2977_2986 = [
     {
-        name: "core-string-reverse-rejects-argument"
+        name: "core-string-reverse-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str reverse diagnostics reject argument]
+        tags: [string str reverse diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -11,12 +11,12 @@ const VERIFIER_DIFF_FIXTURES_2977_2986 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str reverse currently supports only the default no-argument form in eBPF"
+        error_contains: "str reverse cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
-        name: "core-string-camel-case-rejects-argument"
+        name: "core-string-camel-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str camel-case diagnostics reject argument]
+        tags: [string str camel-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -25,12 +25,12 @@ const VERIFIER_DIFF_FIXTURES_2977_2986 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str camel-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str camel-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
-        name: "core-string-pascal-case-rejects-argument"
+        name: "core-string-pascal-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str pascal-case diagnostics reject argument]
+        tags: [string str pascal-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -39,12 +39,12 @@ const VERIFIER_DIFF_FIXTURES_2977_2986 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str pascal-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str pascal-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
-        name: "core-string-snake-case-rejects-argument"
+        name: "core-string-snake-case-rejects-cell-path-on-scalar-input"
         category: "language-core"
-        tags: [string str snake-case diagnostics reject argument]
+        tags: [string str snake-case diagnostics reject cell-path]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_2977_2986 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str snake-case currently supports only the default no-argument form in eBPF"
+        error_contains: "str snake-case cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-upcase-rejects-dynamic-input"

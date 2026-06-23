@@ -1,6 +1,6 @@
 const VERIFIER_DIFF_FIXTURES_2571_2578 = [
     {
-        name: "core-string-str-downcase-rejects-cell-path-argument"
+        name: "core-string-str-downcase-rejects-cell-path-on-scalar-input"
         category: "language-core"
         tags: [string str downcase diagnostics reject]
         target: "kprobe:ksys_read"
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2571_2578 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str downcase currently supports only the default no-argument form in eBPF"
+        error_contains: "str downcase cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-downcase-rejects-dynamic-input"
@@ -42,7 +42,7 @@ const VERIFIER_DIFF_FIXTURES_2571_2578 = [
         error_contains: "str downcase requires string list items in eBPF; item 1 has type int"
     }
     {
-        name: "core-string-str-upcase-rejects-cell-path-argument"
+        name: "core-string-str-upcase-rejects-cell-path-on-scalar-input"
         category: "language-core"
         tags: [string str upcase diagnostics reject]
         target: "kprobe:ksys_read"
@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_2571_2578 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str upcase currently supports only the default no-argument form in eBPF"
+        error_contains: "str upcase cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-reverse-rejects-dynamic-input"

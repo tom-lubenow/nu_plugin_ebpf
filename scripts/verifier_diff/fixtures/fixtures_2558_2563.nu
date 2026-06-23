@@ -1,6 +1,6 @@
 const VERIFIER_DIFF_FIXTURES_2558_2563 = [
     {
-        name: "core-string-str-trim-rejects-cell-path-argument"
+        name: "core-string-str-trim-rejects-cell-path-on-scalar-input"
         category: "language-core"
         tags: [string str trim diagnostics reject]
         target: "kprobe:ksys_read"
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2558_2563 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str trim does not support cell-path arguments in eBPF"
+        error_contains: "str trim cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-trim-rejects-dynamic-char"

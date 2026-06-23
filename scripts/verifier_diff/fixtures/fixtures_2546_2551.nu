@@ -1,6 +1,6 @@
 const VERIFIER_DIFF_FIXTURES_2546_2551 = [
     {
-        name: "core-string-str-substring-rejects-extra-rest-argument"
+        name: "core-string-str-substring-rejects-cell-path-on-scalar-input"
         category: "language-core"
         tags: [string str substring diagnostics reject]
         target: "kprobe:ksys_read"
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2546_2551 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str substring requires exactly one explicit range argument in eBPF"
+        error_contains: "str substring cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-str-substring-rejects-dynamic-range"
