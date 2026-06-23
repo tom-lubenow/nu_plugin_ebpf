@@ -5,6 +5,7 @@ def normalize-map-kind-token [token: string] {
     | str replace --all "," ""
     | str replace --all "\"" ""
     | str replace --all "'" ""
+    | str replace --all ";" ""
 }
 
 def normalize-map-name-token [token: string] {

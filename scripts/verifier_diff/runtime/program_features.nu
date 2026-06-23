@@ -43,8 +43,7 @@ def program-map-kernel-features [source: string] {
         }
 
         if (line-invokes-command? $trimmed "helper-call") {
-            let feature = (helper-call-map-kind-kernel-feature $trimmed $map_kind_bindings)
-            if $feature != null {
+            for feature in (helper-call-map-kind-kernel-features $trimmed $map_kind_bindings) {
                 $features = (append-missing-kernel-features $features [$feature])
             }
             $map_kind_bindings = (update-helper-call-map-kind-bindings-for-line $map_kind_bindings $trimmed)

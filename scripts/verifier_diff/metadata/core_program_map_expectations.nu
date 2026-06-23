@@ -17,6 +17,30 @@ let PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = (
     {
         program: [
             '{|ctx|'
+            '  helper-call "bpf_ringbuf_query" custom_ringbuf 0; helper-call "bpf_get_stackid" $ctx custom_stacks 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_RINGBUF"
+            "map:BPF_MAP_TYPE_STACK_TRACE"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_push_elem" raw_queue value 0 --kind queue; helper-call "bpf_map_peek_elem" raw_stack value --kind stack'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_QUEUE"
+            "map:BPF_MAP_TYPE_STACK"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  let entry = ($ctx.pid | map-get default_counts)'
             '  if $entry { $entry | count }'
             '  0'

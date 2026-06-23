@@ -1,15 +1,18 @@
+def helper-call-tail-name [tail: string] {
+    let raw_helper = ($tail | str trim | split row " " | first)
+    normalize-helper-name-token $raw_helper
+}
+
 def source-line-helper-call-name [line: string] {
     let tails = (command-invocation-tails $line "helper-call")
     if ($tails | is-empty) {
         return null
     }
 
-    let raw_helper = (($tails | first) | str trim | split row " " | first)
-    normalize-helper-name-token $raw_helper
+    helper-call-tail-name ($tails | first)
 }
 
-def helper-call-map-kind-entry [line: string] {
-    let helper_name = (source-line-helper-call-name $line)
+def helper-call-map-kind-entry-for-helper [helper_name] {
     if $helper_name == null {
         return null
     }
@@ -27,14 +30,17 @@ def helper-call-map-kind-entry [line: string] {
     null
 }
 
-def source-line-helper-call-map-name [line: string entry] {
-    let tails = (command-invocation-tails $line "helper-call")
-    if ($tails | is-empty) {
-        return null
-    }
+def helper-call-map-kind-entry-for-tail [tail: string] {
+    helper-call-map-kind-entry-for-helper (helper-call-tail-name $tail)
+}
 
+def helper-call-map-kind-entry [line: string] {
+    helper-call-map-kind-entry-for-helper (source-line-helper-call-name $line)
+}
+
+def helper-call-tail-map-name [tail: string entry] {
     let tokens = (
-        ($tails | first)
+        $tail
         | str trim
         | split row " "
         | each {|token| $token | str trim }
@@ -53,8 +59,17 @@ def source-line-helper-call-map-name [line: string entry] {
     }
 }
 
-def helper-call-effective-map-kind [line: string bindings] {
-    let entry = (helper-call-map-kind-entry $line)
+def source-line-helper-call-map-name [line: string entry] {
+    let tails = (command-invocation-tails $line "helper-call")
+    if ($tails | is-empty) {
+        return null
+    }
+
+    helper-call-tail-map-name ($tails | first) $entry
+}
+
+def helper-call-effective-map-kind-for-tail [tail: string bindings] {
+    let entry = (helper-call-map-kind-entry-for-tail $tail)
     if $entry == null {
         return null
     }
@@ -65,7 +80,7 @@ def helper-call-effective-map-kind [line: string bindings] {
     }
 
     let supported_kinds = ($entry | get -o kinds | default [])
-    let explicit_kind = (source-line-map-kind $line "")
+    let explicit_kind = (source-line-map-kind $tail "")
     if $explicit_kind != "" {
         if $explicit_kind in $supported_kinds {
             return $explicit_kind
@@ -73,13 +88,22 @@ def helper-call-effective-map-kind [line: string bindings] {
         return null
     }
 
-    let map_name = (source-line-helper-call-map-name $line $entry)
+    let map_name = (helper-call-tail-map-name $tail $entry)
     let inferred_kind = (map-kind-binding $bindings $map_name)
     if $inferred_kind != null and ($inferred_kind in $supported_kinds) {
         return $inferred_kind
     }
 
     null
+}
+
+def helper-call-effective-map-kind [line: string bindings] {
+    let tails = (command-invocation-tails $line "helper-call")
+    if ($tails | is-empty) {
+        return null
+    }
+
+    helper-call-effective-map-kind-for-tail ($tails | first) $bindings
 }
 
 def helper-call-map-kind-kernel-feature [line: string bindings] {
@@ -89,6 +113,24 @@ def helper-call-map-kind-kernel-feature [line: string bindings] {
     }
 
     map-kind-kernel-feature $kind
+}
+
+def helper-call-map-kind-kernel-features [line: string bindings] {
+    mut features = []
+
+    for tail in (command-invocation-tails $line "helper-call") {
+        let kind = (helper-call-effective-map-kind-for-tail $tail $bindings)
+        if $kind == null or $kind == "" {
+            continue
+        }
+
+        let feature = (map-kind-kernel-feature $kind)
+        if $feature != null {
+            $features = (append-missing-kernel-features $features [$feature])
+        }
+    }
+
+    $features
 }
 
 def source-line-map-kind [line: string default_kind: string] {
@@ -215,14 +257,20 @@ def update-map-kind-bindings-for-line [bindings line: string] {
 }
 
 def update-helper-call-map-kind-bindings-for-line [bindings line: string] {
-    let entry = (helper-call-map-kind-entry $line)
-    if $entry == null {
-        return $bindings
+    mut updated = $bindings
+
+    for tail in (command-invocation-tails $line "helper-call") {
+        let entry = (helper-call-map-kind-entry-for-tail $tail)
+        if $entry == null {
+            continue
+        }
+
+        let name = (helper-call-tail-map-name $tail $entry)
+        let kind = (helper-call-effective-map-kind-for-tail $tail $updated)
+        $updated = (bind-map-kind $updated $name $kind)
     }
 
-    let name = (source-line-helper-call-map-name $line $entry)
-    let kind = (helper-call-effective-map-kind $line $bindings)
-    bind-map-kind $bindings $name $kind
+    $updated
 }
 
 def line-invokes-map-kind-surface? [line: string] {
