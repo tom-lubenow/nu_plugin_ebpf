@@ -1280,7 +1280,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Some(map_kind) if map_kind.is_socket_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
+                    "{context} --kind {kind} is a socket redirection map; use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects"
                 )))
             }
             Some(other) => Err(Self::reserved_special_map_kind_error(context, &kind, other)

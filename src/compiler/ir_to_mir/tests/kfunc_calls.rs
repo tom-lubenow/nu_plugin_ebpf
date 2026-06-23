@@ -9496,3 +9496,35 @@ fn test_map_contains_rejects_non_lookup_map_kind() {
         other => panic!("unexpected lowering error: {other:?}"),
     }
 }
+
+#[test]
+fn test_map_contains_rejects_socket_map_kind_with_guidance() {
+    let hir_program = make_generic_map_contains_hir(b"demo_sockmap", Some(b"sockmap"));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-contains should reject socket map kinds");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-contains --kind sockmap is a socket redirection map"));
+            assert!(
+                msg.contains(
+                    "use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb"
+                ),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
