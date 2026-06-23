@@ -8493,6 +8493,49 @@ fn test_kfunc_scalar_constraints_are_consistent_with_signatures() {
 }
 
 #[test]
+fn test_kfunc_callback_metadata_matches_signature_surface() {
+    for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
+        let signature = KfuncSignature::for_name(name)
+            .unwrap_or_else(|| panic!("expected modeled kfunc signature for {name}"));
+
+        for arg_idx in 0..signature.max_args {
+            let has_callback_arg = signature.arg_kind(arg_idx) == KfuncArgKind::Subprogram;
+            let has_signature_message =
+                KfuncSignature::callback_subprogram_signature_message(name, arg_idx).is_some();
+            let has_return_bounds =
+                KfuncSignature::callback_return_range_requirement(name, arg_idx).is_some();
+
+            assert_eq!(
+                has_signature_message, has_callback_arg,
+                "{name} arg{arg_idx} callback diagnostic drifted from its signature"
+            );
+            assert_eq!(
+                has_return_bounds, has_callback_arg,
+                "{name} arg{arg_idx} callback return bounds drifted from its signature"
+            );
+
+            let malformed_callback = MirType::Subprogram {
+                args: Vec::new(),
+                ret: Box::new(MirType::I64),
+            };
+            let type_error =
+                KfuncSignature::callback_subprogram_type_error(name, arg_idx, &malformed_callback);
+            if has_callback_arg {
+                assert!(
+                    type_error.is_some_and(|err| err.contains("callback must have signature")),
+                    "{name} arg{arg_idx} callback type error should explain the required signature"
+                );
+            } else {
+                assert!(
+                    type_error.is_none(),
+                    "{name} arg{arg_idx} has callback validation without a callback ABI"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_kfunc_semantics_are_consistent_with_signatures() {
     for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
         let signature = KfuncSignature::for_name(name)
@@ -9501,6 +9544,81 @@ fn test_callback_helper_signatures_and_names() {
         BpfHelper::TimerInit.helper_explicit_map_kind_family(1),
         Some(HelperExplicitMapKindFamily::TimerMap)
     );
+}
+
+#[test]
+fn test_callback_helper_metadata_matches_signature_surface() {
+    for helper_id in 1..=211 {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            continue;
+        };
+        let signature = helper.signature();
+        let callback_arg_indices: Vec<_> = (0..signature.max_args)
+            .filter(|idx| signature.arg_kind(*idx) == HelperArgKind::Subprogram)
+            .collect();
+        let has_callback_arg = !callback_arg_indices.is_empty();
+
+        assert_eq!(
+            helper.requires_callback_subprogram(),
+            has_callback_arg,
+            "{} ({}) callback requirement drifted from its signature",
+            helper.name(),
+            helper_id
+        );
+        assert_eq!(
+            helper.supports_modeled_callback_subprogram(),
+            has_callback_arg,
+            "{} ({}) callback lowering support must track callback helper signatures",
+            helper.name(),
+            helper_id
+        );
+
+        for arg_idx in callback_arg_indices {
+            let message = helper
+                .callback_subprogram_signature_message()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{} ({}) callback arg{} lacks a signature diagnostic",
+                        helper.name(),
+                        helper_id,
+                        arg_idx
+                    )
+                });
+            assert!(
+                message.contains(helper.name()),
+                "{} ({}) callback diagnostic should name the helper",
+                helper.name(),
+                helper_id
+            );
+            assert!(
+                helper.callback_return_range_requirement().is_some(),
+                "{} ({}) callback helper should declare verifier return bounds",
+                helper.name(),
+                helper_id
+            );
+
+            let malformed_callback = MirType::Subprogram {
+                args: Vec::new(),
+                ret: Box::new(MirType::I64),
+            };
+            let err = helper
+                .callback_subprogram_type_error(arg_idx, &malformed_callback)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{} ({}) callback arg{} accepts an unmodeled callback signature",
+                        helper.name(),
+                        helper_id,
+                        arg_idx
+                    )
+                });
+            assert!(
+                err.contains("callback must have signature"),
+                "{} ({}) callback type error should explain the required signature",
+                helper.name(),
+                helper_id
+            );
+        }
+    }
 }
 
 #[test]
