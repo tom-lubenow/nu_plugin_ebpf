@@ -887,6 +887,31 @@ impl<'a> HirToMirLowering<'a> {
         Ok(projected_field)
     }
 
+    fn project_typed_record_fields(
+        &mut self,
+        cmd_name: &str,
+        input_reg: Option<RegId>,
+        input_meta: &RegMetadata,
+        typed_fields: &[StructField],
+    ) -> Result<Vec<RecordField>, CompileError> {
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty(cmd_name, input_reg)?;
+
+        let mut projected_fields = Vec::with_capacity(typed_fields.len());
+        for field in typed_fields {
+            let scratch_reg = self.alloc_synthetic_reg(cmd_name)?;
+            projected_fields.push(self.project_typed_record_field(
+                cmd_name,
+                scratch_reg,
+                input_vreg,
+                &input_runtime_ty,
+                input_meta,
+                field,
+            )?);
+        }
+        Ok(projected_fields)
+    }
+
     fn project_typed_record_scalar_fields(
         &mut self,
         cmd_name: &str,
@@ -1221,13 +1246,7 @@ impl<'a> HirToMirLowering<'a> {
         );
         let input_fields = if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
             if let Some(typed_fields) = Self::typed_record_visible_fields(&input_meta) {
-                self.project_typed_record_scalar_fields(
-                    "merge",
-                    src_dst,
-                    input_reg,
-                    &input_meta,
-                    &typed_fields,
-                )?
+                self.project_typed_record_fields("merge", input_reg, &input_meta, &typed_fields)?
             } else {
                 return Err(CompileError::UnsupportedInstruction(
                     "merge requires record input with compiler-known fields in eBPF".into(),
@@ -1243,9 +1262,8 @@ impl<'a> HirToMirLowering<'a> {
         );
         let merge_fields = if merge_meta.record_fields.is_empty() && !merge_is_known_empty_record {
             if let Some(typed_fields) = Self::typed_record_visible_fields(&merge_meta) {
-                self.project_typed_record_scalar_fields(
+                self.project_typed_record_fields(
                     "merge",
-                    merge_reg,
                     Some(merge_reg),
                     &merge_meta,
                     &typed_fields,
