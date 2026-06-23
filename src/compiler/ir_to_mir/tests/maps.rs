@@ -3113,7 +3113,11 @@ fn test_lower_map_peek_rejects_bloom_filter_kind() {
 
     assert!(
         err.to_string()
-            .contains("map-peek requires --kind queue or --kind stack, got bloom-filter")
+            .contains("map-peek does not support --kind bloom-filter")
+    );
+    assert!(
+        err.to_string()
+            .contains("use map-push to insert values and map-contains --kind bloom-filter")
     );
 }
 
@@ -3135,7 +3139,11 @@ fn test_lower_map_pop_rejects_bloom_filter_kind() {
 
     assert!(
         err.to_string()
-            .contains("map-pop requires --kind queue or --kind stack, got bloom-filter")
+            .contains("map-pop does not support --kind bloom-filter")
+    );
+    assert!(
+        err.to_string()
+            .contains("use map-push to insert values and map-contains --kind bloom-filter")
     );
 }
 

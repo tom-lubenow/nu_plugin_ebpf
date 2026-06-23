@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2350_2350 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-pop requires --kind queue or --kind stack, got bloom-filter"
+        error_contains: "use map-push to insert values and map-contains --kind bloom-filter"
     }
 ]

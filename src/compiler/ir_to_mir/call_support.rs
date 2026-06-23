@@ -1179,6 +1179,9 @@ impl<'a> HirToMirLowering<'a> {
         match map_kind {
             MapKind::Queue => Ok(MapKind::Queue),
             MapKind::Stack => Ok(MapKind::Stack),
+            MapKind::BloomFilter => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} does not support --kind bloom-filter; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
+            ))),
             other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind queue or --kind stack, got {}",
                 other
