@@ -142,23 +142,8 @@ def source-line-map-kind [line: string default_kind: string] {
     $default_kind
 }
 
-def source-line-command-map-name [line: string command: string] {
-    let tails = (command-invocation-tails $line $command)
-    if ($tails | is-empty) {
-        return null
-    }
-
-    let raw_name = (($tails | first) | str trim | split row " " | first)
-    let name = (normalize-map-name-token $raw_name)
-    if $name == "" or ($name | str starts-with "$") {
-        null
-    } else {
-        $name
-    }
-}
-
-def source-line-map-kind-surface [line: string] {
-    for command in [
+def map-kind-surface-commands [] {
+    [
         "map-define"
         "map-get"
         "map-put"
@@ -169,16 +154,54 @@ def source-line-map-kind-surface [line: string] {
         "map-pop"
         "redirect-map"
         "redirect-socket"
-    ] {
-        if (line-invokes-command? $line $command) {
-            return {
-                command: $command
-                name: (source-line-command-map-name $line $command)
-            }
+    ]
+}
+
+def source-line-command-map-name-from-tail [tail: string] {
+    let raw_name = ($tail | str trim | split row " " | first)
+    let name = (normalize-map-name-token $raw_name)
+    if $name == "" or ($name | str starts-with "$") {
+        null
+    } else {
+        $name
+    }
+}
+
+def source-line-command-map-name [line: string command: string] {
+    let tails = (command-invocation-tails $line $command)
+    if ($tails | is-empty) {
+        return null
+    }
+
+    source-line-command-map-name-from-tail ($tails | first)
+}
+
+def source-line-map-kind-surfaces [line: string] {
+    mut surfaces = []
+
+    for command in (map-kind-surface-commands) {
+        for tail in (command-invocation-tails $line $command) {
+            $surfaces = (
+                $surfaces
+                | append {
+                    command: $command
+                    name: (source-line-command-map-name-from-tail $tail)
+                    tail: $tail
+                }
+            )
         }
     }
 
-    null
+    $surfaces
+}
+
+def source-line-map-kind-surface [line: string] {
+    let surfaces = (source-line-map-kind-surfaces $line)
+    if ($surfaces | is-empty) {
+        null
+    } else {
+        $surfaces | first
+    }
 }
 
 def map-command-default-kind [command: string] {
@@ -212,13 +235,12 @@ def bind-map-kind [bindings name kind] {
     | append { name: $name kind: $kind }
 }
 
-def source-line-effective-map-kind [line: string bindings] {
-    let surface = (source-line-map-kind-surface $line)
+def source-line-effective-map-kind-for-surface [surface bindings] {
     if $surface == null {
         return null
     }
 
-    let explicit_kind = (source-line-map-kind $line "")
+    let explicit_kind = (source-line-map-kind ($surface | get tail) "")
     if $explicit_kind != "" {
         return $explicit_kind
     }
@@ -241,19 +263,37 @@ def source-line-effective-map-kind [line: string bindings] {
     }
 }
 
+def source-line-effective-map-kind [line: string bindings] {
+    source-line-effective-map-kind-for-surface (source-line-map-kind-surface $line) $bindings
+}
+
+def map-kind-kernel-features-for-line [line: string bindings] {
+    mut features = []
+    mut updated = $bindings
+
+    for surface in (source-line-map-kind-surfaces $line) {
+        let kind = (source-line-effective-map-kind-for-surface $surface $updated)
+        if $kind != null and $kind != "" {
+            let feature = (map-kind-kernel-feature $kind)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
+        }
+        $updated = (bind-map-kind $updated ($surface | get name) $kind)
+    }
+
+    $features
+}
+
 def update-map-kind-bindings-for-line [bindings line: string] {
-    let surface = (source-line-map-kind-surface $line)
-    if $surface == null {
-        return $bindings
+    mut updated = $bindings
+
+    for surface in (source-line-map-kind-surfaces $line) {
+        let kind = (source-line-effective-map-kind-for-surface $surface $updated)
+        $updated = (bind-map-kind $updated ($surface | get name) $kind)
     }
 
-    let name = ($surface | get name)
-    if $name == null {
-        return $bindings
-    }
-
-    let kind = (source-line-effective-map-kind $line $bindings)
-    bind-map-kind $bindings $name $kind
+    $updated
 }
 
 def update-helper-call-map-kind-bindings-for-line [bindings line: string] {
@@ -274,18 +314,7 @@ def update-helper-call-map-kind-bindings-for-line [bindings line: string] {
 }
 
 def line-invokes-map-kind-surface? [line: string] {
-    for command in [
-        "map-define"
-        "map-get"
-        "map-put"
-        "map-delete"
-        "map-contains"
-        "map-push"
-        "map-peek"
-        "map-pop"
-        "redirect-map"
-        "redirect-socket"
-    ] {
+    for command in (map-kind-surface-commands) {
         if (line-invokes-command? $line $command) {
             return true
         }

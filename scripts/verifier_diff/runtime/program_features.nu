@@ -54,12 +54,8 @@ def program-map-kernel-features [source: string] {
             continue
         }
 
-        let kind = (source-line-effective-map-kind $trimmed $map_kind_bindings)
-        if $kind != null and $kind != "" {
-            let feature = (map-kind-kernel-feature $kind)
-            if $feature != null {
-                $features = (append-missing-kernel-features $features [$feature])
-            }
+        for feature in (map-kind-kernel-features-for-line $trimmed $map_kind_bindings) {
+            $features = (append-missing-kernel-features $features [$feature])
         }
         $map_kind_bindings = (update-map-kind-bindings-for-line $map_kind_bindings $trimmed)
     }

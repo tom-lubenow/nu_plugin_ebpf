@@ -41,6 +41,30 @@ let PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = (
     {
         program: [
             '{|ctx|'
+            '  map-define array_counts --kind array --key-type u32 --value-type u64; map-define lru_counts --kind lru-hash --key-type u32 --value-type u64'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_ARRAY"
+            "map:BPF_MAP_TYPE_LRU_HASH"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  redirect-map tx_ports 0 --kind devmap; redirect-socket sockets 0 --kind reuseport-sockarray'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_DEVMAP"
+            "map:BPF_MAP_TYPE_REUSEPORT_SOCKARRAY"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  let entry = ($ctx.pid | map-get default_counts)'
             '  if $entry { $entry | count }'
             '  0'
