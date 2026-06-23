@@ -1980,6 +1980,22 @@ impl<'a> HirToMirLowering<'a> {
                     "transpose requires compile-time known record input in eBPF".into(),
                 )
             })?;
+        if !as_record
+            && let Some(projection) = self.current_call_result_direct_list_projection
+            && !input_meta.record_fields.is_empty()
+            && input_meta.constant_value.is_none()
+        {
+            return self.lower_metadata_record_transpose_direct_projection(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_meta,
+                projection,
+                ignore_titles,
+                &output_names,
+            );
+        }
         if self.current_call_result_list_shape_metadata_only
             && let Some(shape_value) = Self::record_transpose_shape_only_value(
                 &input_meta,
@@ -2078,6 +2094,140 @@ impl<'a> HirToMirLowering<'a> {
             "transpose output requires homogeneous row value layouts unless consumed by metadata-only fixed-list operations in eBPF"
                 .into(),
         ))
+    }
+
+    fn lower_metadata_record_transpose_direct_projection(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: Option<RegId>,
+        input_meta: RegMetadata,
+        projection: DirectListProjection,
+        ignore_titles: bool,
+        output_names: &[String; 2],
+    ) -> Result<(), CompileError> {
+        self.reject_context_pointer_payload(input_reg, "transpose direct projection")?;
+        let (index, strict_bounds, pass_through_marker) =
+            Self::record_values_direct_projection_index(
+                projection,
+                input_meta.record_fields.len(),
+                "metadata record transpose",
+            )?;
+        let Some(selected_field) = input_meta.record_fields.get(index).cloned() else {
+            if strict_bounds {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "get index {index} is out of bounds for metadata record transpose with length {} in eBPF",
+                    input_meta.record_fields.len()
+                )));
+            }
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::nothing(Span::unknown()),
+            );
+            return Ok(());
+        };
+
+        if selected_field.name.len().saturating_add(1) > MAX_STRING_SIZE {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "transpose field name '{}' exceeds the eBPF string capacity of {} bytes",
+                selected_field.name,
+                MAX_STRING_SIZE - 1
+            )));
+        }
+
+        let mut row_fields = Vec::new();
+        let selected_constant = input_meta
+            .constant_value
+            .as_ref()
+            .and_then(|value| match value {
+                nu_protocol::Value::Record { val, .. } => val.get(&selected_field.name).cloned(),
+                _ => None,
+            })
+            .or_else(|| {
+                selected_field.source_reg.and_then(|reg| {
+                    self.get_metadata(reg)
+                        .and_then(|meta| meta.constant_value.clone())
+                })
+            });
+        let row_constant = if let Some(value) = selected_constant.clone() {
+            let mut record = nu_protocol::Record::new();
+            if ignore_titles {
+                record.push(output_names[0].clone(), value);
+            } else {
+                record.push(
+                    output_names[0].clone(),
+                    nu_protocol::Value::string(selected_field.name.clone(), Span::unknown()),
+                );
+                record.push(output_names[1].clone(), value);
+            }
+            Some(nu_protocol::Value::record(record, Span::unknown()))
+        } else {
+            None
+        };
+
+        if ignore_titles {
+            let mut value_field = selected_field;
+            value_field.name = output_names[0].clone();
+            row_fields.push(value_field);
+        } else {
+            let key_reg = self.alloc_synthetic_reg("transpose projected key")?;
+            let key_vreg = self.get_vreg(key_reg);
+            self.lower_string_like_literal(key_reg, key_vreg, selected_field.name.as_bytes())?;
+            self.set_reg_constant_value(
+                key_reg,
+                Some(nu_protocol::Value::string(
+                    selected_field.name.clone(),
+                    Span::unknown(),
+                )),
+            );
+            let key_field = self.record_field_from_value(output_names[0].clone(), key_reg)?;
+            row_fields.push(key_field);
+
+            let mut value_field = selected_field;
+            value_field.name = output_names[1].clone();
+            row_fields.push(value_field);
+        }
+
+        let mut row_meta = RegMetadata {
+            record_fields: row_fields,
+            constant_value: row_constant,
+            ..Default::default()
+        };
+        row_meta.field_type = Self::metadata_record_layout(&row_meta);
+        row_meta.annotated_semantics = Self::metadata_record_semantics(&row_meta);
+
+        let (row_vreg, mut materialized_meta) = self
+            .materialize_metadata_record_value(&row_meta)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "transpose direct projection could not materialize row record in eBPF".into(),
+                )
+            })?;
+        if let Some(marker) = pass_through_marker {
+            materialized_meta.direct_projected_list_consumer = Some(marker);
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(row_vreg),
+        });
+        if let Some(ty) = self
+            .vreg_type_hints
+            .get(&row_vreg)
+            .cloned()
+            .or_else(|| materialized_meta.field_type.clone())
+        {
+            self.vreg_type_hints.insert(result_vreg, ty);
+        }
+        self.reg_metadata.insert(src_dst.get(), materialized_meta);
+
+        Ok(())
     }
 
     fn record_transpose_shape_only_value(

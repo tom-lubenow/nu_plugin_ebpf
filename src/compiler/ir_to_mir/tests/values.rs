@@ -53724,6 +53724,57 @@ fn make_runtime_record_transpose_shape_consumer_program(
     )
 }
 
+fn make_runtime_record_transpose_direct_get_program(
+    random_decl: DeclId,
+    transpose_decl: DeclId,
+    get_decl: DeclId,
+    row_index: i64,
+    field_name: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let mut hir = make_runtime_record_transpose_shape_consumer_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        flags,
+    );
+    let block = &mut hir.main.blocks[0];
+    block.stmts.pop();
+    block.stmts.extend([
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(row_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(9),
+            args: HirCallArgs {
+                positional: vec![RegId::new(8)],
+                pipeline_input: Some(RegId::new(7)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(10),
+            val: Box::new(Value::string(field_name, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(11),
+            args: HirCallArgs {
+                positional: vec![RegId::new(10)],
+                pipeline_input: Some(RegId::new(9)),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(11),
+    };
+    hir.main.register_count = 12;
+    hir
+}
+
 #[test]
 fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
     for (offset, consumer_name, expected, context) in [
@@ -53766,6 +53817,94 @@ fn test_lower_transpose_on_runtime_record_feeds_shape_only_consumers() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("runtime record transpose shape consumer should compile");
     }
+}
+
+#[test]
+fn test_lower_transpose_on_runtime_record_direct_projects_row_value() {
+    let random_decl = DeclId::new(81923);
+    let transpose_decl = DeclId::new(81924);
+    let get_decl = DeclId::new(81925);
+    let hir = make_runtime_record_transpose_direct_get_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        0,
+        "value",
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime metadata-record transpose should direct-project row values");
+
+    assert_no_runtime_list_operations(&result.program, "runtime record transpose direct value");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime record transpose direct value should compile");
+}
+
+#[test]
+fn test_lower_transpose_on_runtime_record_direct_projects_row_key() {
+    let random_decl = DeclId::new(81926);
+    let transpose_decl = DeclId::new(81927);
+    let get_decl = DeclId::new(81928);
+    let starts_with_decl = DeclId::new(81929);
+    let mut hir = make_runtime_record_transpose_direct_get_program(
+        random_decl,
+        transpose_decl,
+        get_decl,
+        0,
+        "key",
+        Vec::new(),
+    );
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadValue {
+        dst: RegId::new(12),
+        val: Box::new(Value::string("pid", Span::test_data())),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(13),
+        args: HirCallArgs {
+            positional: vec![RegId::new(12)],
+            pipeline_input: Some(RegId::new(11)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(13),
+    };
+    hir.main.register_count = 14;
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime metadata-record transpose should direct-project row keys");
+
+    assert_no_runtime_list_operations(&result.program, "runtime record transpose direct key");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime record transpose direct key should compile");
 }
 
 #[test]

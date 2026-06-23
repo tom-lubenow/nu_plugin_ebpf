@@ -8421,9 +8421,21 @@ impl<'a> HirToMirLowering<'a> {
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+                let direct_projected_list_index_get = input_meta
+                    .as_ref()
+                    .is_some_and(|meta| meta.direct_projected_list_consumer.is_some())
+                    && self.positional_args.first().is_some_and(|(_, arg_reg)| {
+                        self.get_metadata(*arg_reg).is_some_and(|meta| {
+                            meta.literal_int.is_some()
+                                || meta.cell_path.as_ref().is_some_and(|path| {
+                                    matches!(path.members.as_slice(), [PathMember::Int { .. }])
+                                })
+                        })
+                    });
                 if input_meta
                     .as_ref()
                     .is_some_and(|meta| !meta.record_fields.is_empty())
+                    && !direct_projected_list_index_get
                 {
                     self.lower_metadata_record_get(src_dst, dst_vreg, src_dst_had_value)?;
                 } else {
