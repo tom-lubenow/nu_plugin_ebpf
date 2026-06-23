@@ -29,18 +29,17 @@ export const VERIFIER_DIFF_FIXTURES_3336_3338 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-bytes-split-rejects-matchable-separator"
+        name: "global-define-type-bytes-split-matchable-separator-collect"
         category: "globals"
-        tags: [globals binary bytes split global-define diagnostics reject]
+        tags: [globals binary bytes split collect global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  0x[01 02] | global-define --type bytes:2 scratch'
-            '  (global-get scratch) | bytes split 0x[01]'
+            '  0x[01 02 03] | global-define --type bytes:3 scratch'
+            '  ((global-get scratch) | bytes split 0x[02] | bytes collect | bytes starts-with 0x[01 03])'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bytes split on typed fixed-size binary input requires a separator longer than the input length"
+        local: "accept"
+        kernel: "accept"
     }
 ]

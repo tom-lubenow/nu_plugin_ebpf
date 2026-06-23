@@ -29,18 +29,17 @@ export const VERIFIER_DIFF_FIXTURES_3333_3335 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-bytes-remove-rejects-matchable-pattern"
+        name: "global-define-type-bytes-remove-matchable-pattern-starts-with"
         category: "globals"
-        tags: [globals binary bytes remove global-define diagnostics reject]
+        tags: [globals binary bytes remove starts-with global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
             '  0x[01 02] | global-define --type bytes:2 scratch'
-            '  (global-get scratch) | bytes remove 0x[01]'
+            '  ((global-get scratch) | bytes remove 0x[01] | bytes starts-with 0x[02])'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bytes remove on typed fixed-size binary input requires a pattern longer than the input length"
+        local: "accept"
+        kernel: "accept"
     }
 ]
