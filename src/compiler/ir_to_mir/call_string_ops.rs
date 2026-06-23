@@ -3485,8 +3485,46 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
+        let use_path = self.named_flags.iter().any(|flag| flag == "path");
+        if let Some(reg) = input_reg
+            && let Some(nu_protocol::Value::List { vals, .. }) = self
+                .get_metadata(reg)
+                .and_then(|meta| meta.constant_value.as_ref())
+        {
+            let mut output = Vec::with_capacity(vals.len());
+            for (index, item) in vals.iter().enumerate() {
+                let (nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. }) =
+                    item
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "str expand requires string list items in eBPF; item {index} has type {}",
+                        item.get_type()
+                    )));
+                };
+                let expansion_input = if use_path {
+                    val.replace('\\', "\\\\")
+                } else {
+                    val.clone()
+                };
+                let expanded = Self::string_expand_pattern(&expansion_input)?
+                    .into_iter()
+                    .map(|item| nu_protocol::Value::string(item, Span::unknown()))
+                    .collect();
+                output.push(nu_protocol::Value::list(expanded, Span::unknown()));
+            }
+            let value = nu_protocol::Value::list(output, Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &value);
+                return Ok(());
+            }
+            return Err(CompileError::UnsupportedInstruction(
+                "str expand on list<string> produces nested lists, which require a metadata-only consumer in eBPF"
+                    .into(),
+            ));
+        }
+
         let input = self.exact_string_input(input_reg, "str expand")?;
-        let expansion_input = if self.named_flags.iter().any(|flag| flag == "path") {
+        let expansion_input = if use_path {
             input.replace('\\', "\\\\")
         } else {
             input

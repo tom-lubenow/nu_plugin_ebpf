@@ -19573,6 +19573,95 @@ fn test_lower_str_expand_path_on_known_string_materializes_string_list() {
 }
 
 #[test]
+fn test_lower_str_expand_on_known_string_list_feeds_metadata_only_length() {
+    let expand_decl = DeclId::new(80893);
+    let length_decl = DeclId::new(80894);
+    let hir = make_split_string_list_consumer_program(
+        expand_decl,
+        length_decl,
+        &["A{b,c}", "D{e,f}"],
+        Vec::new(),
+        None,
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand should lower string-list input when consumed by length");
+
+    assert_program_returns_constant(&result.program, 2, "str expand string-list length");
+    assert_no_runtime_list_operations(&result.program, "str expand string-list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str expand string-list output consumed by length should compile");
+}
+
+#[test]
+fn test_lower_str_expand_on_known_string_list_get_join_materializes_inner_expansion() {
+    let expand_decl = DeclId::new(80895);
+    let get_decl = DeclId::new(80896);
+    let join_decl = DeclId::new(80897);
+    let starts_with_decl = DeclId::new(80898);
+    let hir = make_split_string_list_get_join_then_starts_with_program(
+        expand_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &["A{b,c}", "D{e,f}"],
+        Vec::new(),
+        None,
+        1,
+        "-",
+        "De-Df",
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand should lower string-list input when a known inner list is consumed");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"De-Df\0")
+            )),
+        "expected get 1 from string-list str expand output to materialize De-Df"
+    );
+    assert_no_runtime_list_operations(&result.program, "str expand string-list get join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str expand string-list get output consumed by str join should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_str_expand_empty_range_materializes_empty_string_list() {
     let expand_decl = DeclId::new(202);
     let length_decl = DeclId::new(203);

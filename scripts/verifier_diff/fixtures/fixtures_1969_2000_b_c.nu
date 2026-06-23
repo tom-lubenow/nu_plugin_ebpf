@@ -77,4 +77,18 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_B_C = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-string-expand-list-get-join"
+        category: "language-core"
+        tags: [string list str expand get join metadata-only]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["A{b,c}" "D{e,f}"] | global-define --type "array{string:8:2}" names'
+            '  (((global-get names) | str expand | length) == 2) and (((global-get names) | str expand | get 1 | str join "-" | str starts-with "De-Df"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
