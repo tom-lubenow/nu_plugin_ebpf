@@ -3268,8 +3268,9 @@ fn test_lower_map_put_rejects_queue_kind() {
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("map-put is not supported for map kind"));
+            assert!(msg.contains("map-put is not supported for queue/stack map kind"));
             assert!(msg.contains("queue"));
+            assert!(msg.contains("use map-push instead"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -3373,6 +3374,48 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
             }
             other => panic!("unexpected lowering error for {kind}: {other:?}"),
         }
+    }
+}
+
+#[test]
+fn test_lower_map_get_rejects_queue_kind() {
+    let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    for stmt in &mut hir.main.blocks[0].stmts {
+        if let HirStmt::LoadLiteral {
+            dst,
+            lit: HirLiteral::String(kind),
+        } = stmt
+            && *dst == RegId::new(3)
+        {
+            *kind = b"queue".to_vec();
+        }
+    }
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("queue map-get should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-get is not supported for queue/stack map kind"));
+            assert!(msg.contains("queue"));
+            assert!(
+                msg.contains("use map-peek to read entries or map-pop to read and remove entries")
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
     }
 }
 

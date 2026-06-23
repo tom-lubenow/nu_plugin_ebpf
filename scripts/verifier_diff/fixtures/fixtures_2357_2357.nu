@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2357_2357 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-put is not supported for map kind"
+        error_contains: "use map-push instead"
     }
 ]

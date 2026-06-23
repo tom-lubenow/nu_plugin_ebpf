@@ -17,6 +17,8 @@ documentation changes that matter to external alpha consumers.
   runtime metadata-backed records are unsupported.
 - Improved unsupported `map-delete` diagnostics for array, queue/stack, and
   bloom-filter map kinds so rejects point to the supported map surfaces.
+- Improved unsupported queue/stack `map-get` and `map-put` diagnostics so they
+  point to `map-peek` / `map-pop` and `map-push` respectively.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

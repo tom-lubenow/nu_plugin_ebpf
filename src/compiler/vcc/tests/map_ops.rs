@@ -663,7 +663,10 @@ fn test_verify_mir_map_lookup_rejects_queue_map_kind() {
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
                 && e.message
-                    .contains("map lookup is not supported for map kind queue")),
+                    .contains("map lookup is not supported for queue/stack map kind queue")
+                && e.message.contains(
+                    "use map-peek to read entries or map-pop to read and remove entries"
+                )),
         "unexpected error messages: {:?}",
         err
     );

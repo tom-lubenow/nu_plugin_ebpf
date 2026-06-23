@@ -465,13 +465,25 @@ impl MapKind {
 
         match (op, self) {
             (MapOpKind::Lookup, MapKind::BloomFilter) => {
-                format!("map lookup is not supported for bloom-filter map '{map_name}'")
+                format!(
+                    "map lookup is not supported for bloom-filter map '{map_name}'; use map-contains --kind bloom-filter for membership tests"
+                )
+            }
+            (MapOpKind::Lookup, MapKind::Queue | MapKind::Stack) => {
+                format!(
+                    "map lookup is not supported for queue/stack map kind {} ('{}'); use map-peek to read entries or map-pop to read and remove entries",
+                    self, map_name
+                )
             }
             (MapOpKind::Update, MapKind::BloomFilter) => {
                 format!(
                     "map update is not supported for bloom-filter map '{map_name}'; use map-push"
                 )
             }
+            (MapOpKind::Update, MapKind::Queue | MapKind::Stack) => format!(
+                "map update is not supported for queue/stack map kind {} ('{}'); use map-push instead",
+                self, map_name
+            ),
             (MapOpKind::Delete, MapKind::BloomFilter) => {
                 format!(
                     "map delete is not supported for bloom-filter map '{map_name}'; use map-push to insert values and map-contains --kind bloom-filter for membership tests"

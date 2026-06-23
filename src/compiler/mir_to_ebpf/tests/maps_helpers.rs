@@ -2158,7 +2158,10 @@ fn test_map_lookup_rejects_queue_maps() {
         Err(err) => {
             let msg = err.to_string();
             assert!(
-                msg.contains("map lookup is not supported for map kind queue"),
+                msg.contains("map lookup is not supported for queue/stack map kind queue")
+                    && msg.contains(
+                        "use map-peek to read entries or map-pop to read and remove entries"
+                    ),
                 "unexpected error: {msg}"
             );
         }

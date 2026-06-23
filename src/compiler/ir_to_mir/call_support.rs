@@ -1763,7 +1763,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-get is not supported for map kind {} ('{}'); use map-push and future queue/stack-specific operations instead",
+                "map-get is not supported for queue/stack map kind {} ('{}'); use map-peek to read entries or map-pop to read and remove entries",
                 map_kind, map_name
             )));
         }
@@ -1795,7 +1795,7 @@ impl<'a> HirToMirLowering<'a> {
         }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put is not supported for map kind {} ('{}'); use map-push instead",
+                "map-put is not supported for queue/stack map kind {} ('{}'); use map-push instead",
                 map_kind, map_name
             )));
         }

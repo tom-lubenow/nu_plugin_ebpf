@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_1094_1125_B_C = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-get is not supported for map kind queue"
+        error_contains: "use map-peek to read entries or map-pop to read and remove entries"
     }
     {
         name: "map-define-kptr-slot"
