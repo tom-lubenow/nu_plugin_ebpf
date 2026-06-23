@@ -8149,11 +8149,18 @@ impl<'a> HirToMirLowering<'a> {
         if width <= 1 || fill.is_empty() {
             return true;
         }
-        if fill.len() != 1
-            && !Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits)
-                .is_empty()
-        {
-            return false;
+        let right_len_thresholds =
+            Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits);
+        if !right_len_thresholds.is_empty() {
+            let fill_chars = fill.chars().count();
+            if fill_chars != 1 {
+                return false;
+            }
+            if fill.len() != 1
+                && !Self::runtime_integer_digit_count_supported(width, input_max_digits)
+            {
+                return false;
+            }
         }
         let Some(string_len_bound) =
             Self::runtime_fill_string_len_bound(width, fill.len(), input_max_digits)
@@ -8209,20 +8216,57 @@ impl<'a> HirToMirLowering<'a> {
             src: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
+        let right_len_thresholds =
+            Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits);
+        let fill_chars = fill.chars().count();
+        let track_char_len = !right_len_thresholds.is_empty() && fill.len() != fill_chars;
+        let char_len_vreg = if track_char_len {
+            let char_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: char_len_vreg,
+                src: MirValue::Const(0),
+            });
+            self.vreg_type_hints.insert(char_len_vreg, MirType::I64);
+            Some(char_len_vreg)
+        } else {
+            None
+        };
         if !fill.is_empty() {
             let (guaranteed_left_pad, conditional_left_thresholds) =
                 Self::runtime_fill_left_padding(width, alignment, input_max_digits);
             for _ in 0..guaranteed_left_pad {
-                self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+                if let Some(char_len_vreg) = char_len_vreg {
+                    self.emit_runtime_fill_padding_literal_and_char_len(
+                        slot,
+                        len_vreg,
+                        char_len_vreg,
+                        fill,
+                        fill_chars,
+                    )?;
+                } else {
+                    self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+                }
             }
             for threshold in conditional_left_thresholds {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    threshold,
-                    fill,
-                );
+                if let Some(char_len_vreg) = char_len_vreg {
+                    self.emit_runtime_fill_padding_if_lt_and_char_len(
+                        slot,
+                        len_vreg,
+                        char_len_vreg,
+                        MirValue::VReg(input_vreg),
+                        threshold,
+                        fill,
+                        fill_chars,
+                    )?;
+                } else {
+                    self.emit_runtime_fill_padding_if_lt(
+                        slot,
+                        len_vreg,
+                        MirValue::VReg(input_vreg),
+                        threshold,
+                        fill,
+                    );
+                }
             }
         }
         self.emit(MirInst::StringAppend {
@@ -8232,16 +8276,37 @@ impl<'a> HirToMirLowering<'a> {
             val_type: StringAppendType::Integer,
         });
         if !fill.is_empty() {
-            for threshold in
-                Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits)
-            {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    threshold,
-                    fill,
-                );
+            if let Some(char_len_vreg) = char_len_vreg {
+                let digit_count_vreg = self.lower_runtime_integer_digit_count_capped(
+                    input_vreg,
+                    input_max_digits,
+                    width,
+                )?;
+                self.emit_runtime_fill_char_len_add(
+                    char_len_vreg,
+                    MirValue::VReg(digit_count_vreg),
+                )?;
+                for threshold in right_len_thresholds {
+                    self.emit_runtime_fill_padding_if_lt_and_char_len(
+                        slot,
+                        len_vreg,
+                        char_len_vreg,
+                        MirValue::VReg(char_len_vreg),
+                        threshold,
+                        fill,
+                        fill_chars,
+                    )?;
+                }
+            } else {
+                for threshold in right_len_thresholds {
+                    self.emit_runtime_fill_padding_if_lt(
+                        slot,
+                        len_vreg,
+                        MirValue::VReg(len_vreg),
+                        threshold,
+                        fill,
+                    );
+                }
             }
         }
         self.emit(MirInst::Copy {
@@ -8330,6 +8395,65 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         true
+    }
+
+    fn runtime_integer_digit_count_supported(width: usize, input_max_digits: usize) -> bool {
+        width
+            .saturating_sub(1)
+            .min(input_max_digits.saturating_sub(1))
+            <= MAX_RUNTIME_FILL_DIGIT_THRESHOLD
+    }
+
+    fn lower_runtime_integer_digit_count_capped(
+        &mut self,
+        input_vreg: VReg,
+        input_max_digits: usize,
+        cap: usize,
+    ) -> Result<VReg, CompileError> {
+        let digit_count_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: digit_count_vreg,
+            src: MirValue::Const(1),
+        });
+        self.vreg_type_hints.insert(digit_count_vreg, MirType::I64);
+
+        let max_threshold_digits = cap
+            .saturating_sub(1)
+            .min(input_max_digits.saturating_sub(1));
+        if max_threshold_digits > MAX_RUNTIME_FILL_DIGIT_THRESHOLD {
+            return Err(CompileError::UnsupportedInstruction(
+                "fill runtime integer digit count threshold is too large for eBPF".into(),
+            ));
+        }
+
+        for digits in 1..=max_threshold_digits {
+            let at_least_digits = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: at_least_digits,
+                op: BinOpKind::Ge,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(Self::runtime_fill_digit_threshold(digits)),
+            });
+            self.vreg_type_hints.insert(at_least_digits, MirType::Bool);
+
+            let increment_block = self.func.alloc_block();
+            let continuation_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: at_least_digits,
+                if_true: increment_block,
+                if_false: continuation_block,
+            });
+
+            self.current_block = increment_block;
+            self.emit_runtime_fill_char_len_add(digit_count_vreg, MirValue::Const(1))?;
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = continuation_block;
+        }
+
+        Ok(digit_count_vreg)
     }
 
     fn runtime_integer_decimal_digits(input_ty: &MirType) -> usize {

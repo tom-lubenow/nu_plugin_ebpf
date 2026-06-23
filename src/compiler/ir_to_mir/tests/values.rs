@@ -23408,38 +23408,23 @@ fn test_lower_fill_width_64_left_with_multi_character_rejects_runtime_unsigned_i
 }
 
 #[test]
-fn test_lower_fill_width_four_center_with_multibyte_character_rejects_runtime_unsigned_int() {
-    let fill_decl = DeclId::new(2563);
-    let starts_with_decl = DeclId::new(2564);
-    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
-        fill_decl,
-        starts_with_decl,
+fn test_lower_fill_width_four_center_with_multibyte_character_on_runtime_unsigned_int() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2563),
+        DeclId::new(2564),
         Some(4),
         Some("center"),
         Some("é"),
-        "é",
+        "0",
+        "fill --width 4 --alignment center --character é should lower for runtime unsigned integer input",
     );
-    let decl_names = HashMap::from([
-        (fill_decl, "fill".to_string()),
-        (starts_with_decl, "str starts-with".to_string()),
-    ]);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
-    let err = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect_err("fill --width 4 --alignment center --character é should reject runtime integer trailing padding");
-
-    assert!(
-        err.to_string().contains(
-            "fill requires compile-time known string, int, float, filesize, or bool input"
-        ),
-        "unexpected error: {err}"
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[100, 3, 4],
+        "é".as_bytes(),
+        3,
+        "runtime integer center fill --width 4 --character é",
     );
 }
 

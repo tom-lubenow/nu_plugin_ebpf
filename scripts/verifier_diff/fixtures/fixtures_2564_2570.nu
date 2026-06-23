@@ -82,6 +82,19 @@ const VERIFIER_DIFF_FIXTURES_2564_2570 = [
         kernel: "accept"
     }
     {
+        name: "core-string-fill-accepts-runtime-int-center-multibyte-character"
+        category: "language-core"
+        tags: [string fill accept runtime integer unicode]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (($ctx.pid | fill --alignment center --character "é" --width 4 | str length) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-fill-mixed-list-join"
         category: "language-core"
         tags: [string fill list join mixed accept]
