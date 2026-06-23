@@ -3364,7 +3364,12 @@ fn test_lower_map_put_rejects_redirect_only_devmap_kind() {
                 msg.contains("map-put --kind devmap is reserved for bpf_redirect_map"),
                 "{msg}"
             );
+            assert!(
+                msg.contains("use redirect-map for map-backed redirects"),
+                "{msg}"
+            );
             assert!(msg.contains("generic map commands only support"), "{msg}");
+            assert!(msg.contains("map-put from sock_ops"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

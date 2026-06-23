@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2394_2394 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-put --kind must name a recognized map family"
+        error_contains: "socket map kinds use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb"
     }
 ]

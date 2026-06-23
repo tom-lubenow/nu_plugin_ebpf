@@ -974,7 +974,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind} is not an update map; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
+                "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; use redirect-map for map-backed redirects instead of map-put; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects"
             ))),
             Some(map_kind) if map_kind.is_local_storage() => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for BPF local-storage maps; use map-get/map-delete with --kind {kind} instead of generic map update operations"
@@ -982,12 +982,12 @@ impl<'a> HirToMirLowering<'a> {
             Some(map_kind) => Err(
                 Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
-                        "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
+                        "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects"
                     ))
                 }),
             ),
             None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
+                "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects"
             ))),
         }
     }
