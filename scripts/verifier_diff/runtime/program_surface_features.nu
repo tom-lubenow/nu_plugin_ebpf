@@ -56,16 +56,16 @@ def program-surface-kernel-features [source: string target] {
         ])
     }
     for line in ($source | lines) {
-        if (line-invokes-command? $line "helper-call") {
+        let trimmed = ($line | str trim)
+
+        if (line-invokes-command? $trimmed "helper-call") {
             $map_kind_bindings = (
                 update-helper-call-map-kind-bindings-for-line
                     $map_kind_bindings
-                    ($line | str trim)
+                    $trimmed
             )
-            continue
         }
 
-        let trimmed = ($line | str trim)
         let target_supports_ctx_sk_assign = (
             ($target_text | str starts-with "sk_lookup:")
             or ($target_text | str starts-with "tc_action:")

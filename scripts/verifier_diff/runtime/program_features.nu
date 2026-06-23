@@ -47,7 +47,6 @@ def program-map-kernel-features [source: string] {
                 $features = (append-missing-kernel-features $features [$feature])
             }
             $map_kind_bindings = (update-helper-call-map-kind-bindings-for-line $map_kind_bindings $trimmed)
-            continue
         }
 
         if not (line-invokes-map-kind-surface? $trimmed) {
