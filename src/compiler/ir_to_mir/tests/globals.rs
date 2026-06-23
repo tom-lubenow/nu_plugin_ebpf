@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::hir::{
-    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    HirBlock, HirBlockId, HirClosureParam, HirClosureParamSource, HirFunction, HirLiteral,
+    HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::mir::{BinOpKind, COUNTER_MAP_NAME, StructField, UnaryOpKind};
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
@@ -18697,6 +18698,150 @@ fn test_lower_global_define_type_u32_array_each_materializes_numeric_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("typed u32 array each consumed by first should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_define_type_u64_array_each_identity_feeds_length_metadata_only() {
+    let define_decl = DeclId::new(10_702);
+    let global_get_decl = DeclId::new(10_703);
+    let each_decl = DeclId::new(10_704);
+    let length_decl = DeclId::new(10_705);
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let closure_param_var = VarId::new(74);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (each_decl, "each".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{u64:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: each_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: closure_param_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(
+        func,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![HirClosureParam {
+                name: "x".to_string(),
+                var_id: Some(closure_param_var),
+            }],
+        },
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("u64 fixed-array each identity should feed metadata-only length");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. } | MirInst::ListNew { .. })),
+        "metadata-only u64 each identity length should not materialize a runtime list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(2),
+                ..
+            }
+        )),
+        "expected length to fold to the fixed-array element count"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("u64 fixed-array each identity feeding length should compile through codegen");
 }
 
 #[test]

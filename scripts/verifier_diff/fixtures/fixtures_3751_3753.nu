@@ -33,9 +33,9 @@ export const VERIFIER_DIFF_FIXTURES_3751_3753 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-u64-each-identity-rejects"
+        name: "global-define-type-array-u64-each-identity-accepts-length"
         category: "globals"
-        tags: [globals arrays u64 each closure diagnostics reject global-define]
+        tags: [globals arrays u64 each closure identity length accept global-define]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -43,8 +43,8 @@ export const VERIFIER_DIFF_FIXTURES_3751_3753 = [
             '  (((global-get ports) | each {|x| $x } | length) == 2)'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "each on typed fixed arrays with u64 elements requires the closure to return a bool, signed integer, or <=32-bit unsigned integer value"
+        default_test_lane: "dry-run"
     }
 ]

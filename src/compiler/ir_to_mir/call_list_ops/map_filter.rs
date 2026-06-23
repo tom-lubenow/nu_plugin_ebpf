@@ -310,6 +310,20 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
+        if matches!(elem_ty, MirType::U64)
+            && self.current_call_result_list_shape_metadata_only
+            && self.identity_closure_result(closure_block_id, closure_ir)
+        {
+            let vals = (0..array_len)
+                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            );
+            return Ok(true);
+        }
+
         let (input_vreg, base_runtime_ty) =
             self.preserve_typed_fixed_array_input("each", input_reg, input_vreg, dst_vreg)?;
         let (out_slot, out_ty) = self.create_stack_numeric_list_result(dst_vreg, array_len);
@@ -551,6 +565,36 @@ impl<'a> HirToMirLowering<'a> {
             _ => return None,
         };
         if dst == src { Some(*value) } else { None }
+    }
+
+    fn identity_closure_result(
+        &self,
+        closure_block_id: NuBlockId,
+        closure_ir: &HirFunction,
+    ) -> bool {
+        let [block] = closure_ir.blocks.as_slice() else {
+            return false;
+        };
+        if block.id != closure_ir.entry {
+            return false;
+        }
+        let [HirStmt::LoadVariable { dst, var_id }] = block.stmts.as_slice() else {
+            return false;
+        };
+        let is_first_param = self
+            .closure_param_sources
+            .get(&closure_block_id)
+            .and_then(|source| source.params.first())
+            .and_then(|param| param.var_id)
+            .is_some_and(|param_var_id| param_var_id == *var_id);
+        if *var_id != IN_VARIABLE_ID && !is_first_param {
+            return false;
+        }
+        let src = match &block.terminator {
+            HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => src,
+            _ => return false,
+        };
+        dst == src
     }
 }
 
