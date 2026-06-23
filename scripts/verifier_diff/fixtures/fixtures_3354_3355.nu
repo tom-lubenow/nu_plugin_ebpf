@@ -28,18 +28,17 @@ export const VERIFIER_DIFF_FIXTURES_3354_3355 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-str-substring-negative-range-reject"
+        name: "global-define-type-array-string-str-substring-negative-range-join-length"
         category: "globals"
-        tags: [globals arrays string str substring range diagnostics global-define reject]
+        tags: [globals arrays string str substring range join length global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
             '  ["abcd"] | global-define --type "array{string:8:1}" names'
-            '  ((global-get names) | str substring 1..-1 | str join "")'
+            '  ((((global-get names) | str substring 1..-1 | str join "") | str length) == 3)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "supports only non-negative byte range ends"
+        local: "accept"
+        kernel: "accept"
     }
 ]

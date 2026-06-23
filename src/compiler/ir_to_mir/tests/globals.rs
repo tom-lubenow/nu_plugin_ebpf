@@ -14798,14 +14798,18 @@ fn test_lower_global_define_type_string_array_str_substring_range_feeds_join() {
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_substring_negative_range_rejects_runtime_array() {
+fn test_string_array_str_substring_negative_range_constant_list_feeds_join_length() {
     let define_decl = DeclId::new(10_614);
     let global_get_decl = DeclId::new(10_615);
     let substring_decl = DeclId::new(10_616);
+    let join_decl = DeclId::new(10_969);
+    let length_decl = DeclId::new(10_970);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (substring_decl, "str substring".to_string()),
+        (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
     ]);
 
     let func = HirFunction {
@@ -14875,19 +14879,42 @@ fn test_lower_global_define_type_string_array_str_substring_negative_range_rejec
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::String("".into()),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(11),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(10)],
+                        pipeline_input: Some(RegId::new(9)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(12),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(11)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(9) },
+            terminator: HirTerminator::Return {
+                src: RegId::new(12),
+            },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 10,
+        register_count: 13,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -14895,12 +14922,19 @@ fn test_lower_global_define_type_string_array_str_substring_negative_range_rejec
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("runtime typed string array str substring should reject negative bounds");
+    .expect("constant typed string array str substring should fold negative range bounds");
 
     assert!(
-        err.to_string()
-            .contains("supports only non-negative byte range starts"),
-        "expected negative range diagnostic, got: {err}"
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected negative range constant substring to avoid runtime substring branches"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "constant typed string array negative range substring consumed by str join should compile",
     );
 }
 
