@@ -25,6 +25,16 @@ const PROGRAM_SURFACE_PACKET_KERNEL_FEATURE_EXPECTATIONS = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
+            '  helper-call "bpf_map_push_elem" shared_queue value 0 --kind queue; map-peek shared_queue value'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_map_peek_elem"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
             '  adjust-packet --head 0'
             '  adjust-packet --meta 0'
             '  adjust-packet --tail 0'
