@@ -9,6 +9,73 @@ def validate-kernel-feature-key-expectation [label: string expected_keys actual_
     }
 }
 
+def duplicate-values [values] {
+    mut seen = []
+    mut duplicates = []
+
+    for value in $values {
+        if $value in $seen {
+            if $value not-in $duplicates {
+                $duplicates = ($duplicates | append $value)
+            }
+        } else {
+            $seen = ($seen | append $value)
+        }
+    }
+
+    $duplicates
+}
+
+def fixed-helper-map-kernel-feature-expectation-records [] {
+    $FIXED_HELPER_MAP_KERNEL_FEATURE_EXPECTATIONS
+    | each {|expectation|
+        if (($expectation.feature_keys | length) != 1) {
+            fail "fixed helper map-kind expectation should declare exactly one feature key"
+        }
+
+        let line = (($expectation.program | get 1) | str trim)
+        {
+            helper: (source-line-helper-call-name $line)
+            feature_key: ($expectation.feature_keys | first)
+        }
+    }
+}
+
+def validate-fixed-helper-map-kernel-feature-expectation-coverage [] {
+    let expected_helpers = ($HELPER_CALL_FIXED_MAP_KIND_FEATURES | each {|entry| $entry.helper })
+    let actual_records = (fixed-helper-map-kernel-feature-expectation-records)
+    let actual_helpers = ($actual_records | each {|record| $record.helper })
+    let duplicate_helpers = (duplicate-values $actual_helpers)
+
+    if (($duplicate_helpers | length) > 0) {
+        fail $"fixed helper map-kind expectations contain duplicate helpers: ($duplicate_helpers | sort | str join ',')"
+    }
+
+    let missing = ($expected_helpers | where {|helper| $helper not-in $actual_helpers })
+    let unexpected = ($actual_helpers | where {|helper| $helper not-in $expected_helpers })
+    if (($missing | length) > 0) or (($unexpected | length) > 0) {
+        fail $"fixed helper map-kind expectation coverage drifted: missing=($missing | sort | str join ',') unexpected=($unexpected | sort | str join ',')"
+    }
+
+    for entry in $HELPER_CALL_FIXED_MAP_KIND_FEATURES {
+        let expected_feature = (map-kind-kernel-feature $entry.kind)
+        if $expected_feature == null {
+            fail $"fixed helper map-kind registry references unknown map kind: ($entry.helper) -> ($entry.kind)"
+        }
+
+        let actual = (
+            $actual_records
+            | where {|record| $record.helper == $entry.helper }
+            | first
+        )
+        let actual_key = ($actual | get feature_key)
+        let expected_key = ($expected_feature | get key)
+        if $actual_key != $expected_key {
+            fail $"fixed helper map-kind expectation drifted for ($entry.helper): expected=($expected_key) actual=($actual_key)"
+        }
+    }
+}
+
 def validate-program-target-kernel-feature-expectations [] {
     for expectation in $PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
@@ -234,6 +301,7 @@ def validate-program-callback-btf-kernel-feature-expectations [] {
 }
 
 def validate-verifier-feature-expectations [] {
+    validate-fixed-helper-map-kernel-feature-expectation-coverage
     validate-program-target-kernel-feature-expectations
     validate-program-language-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
