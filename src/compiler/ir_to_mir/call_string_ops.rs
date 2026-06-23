@@ -7308,6 +7308,21 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_reg) = input_reg
+            && let Some(input_meta) = self.get_metadata(input_reg).cloned()
+            && Self::runtime_tracked_string_fill_supported(&input_meta, width, alignment, &fill)
+        {
+            return self.lower_runtime_tracked_string_fill_result(
+                src_dst,
+                result_vreg,
+                input_vreg,
+                &input_meta,
+                width,
+                alignment,
+                &fill,
+            );
+        }
+
         if self.fill_runtime_bool_type(input_reg, input_vreg)
             && Self::runtime_bool_fill_supported(width, &fill)
         {
@@ -7368,6 +7383,279 @@ impl<'a> HirToMirLowering<'a> {
             || meta
                 .string_char_width_min
                 .is_some_and(|min_width| min_width >= width)
+    }
+
+    fn runtime_tracked_string_fill_supported(
+        meta: &RegMetadata,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+    ) -> bool {
+        let Some(input_bound) = meta.string_len_bound else {
+            return false;
+        };
+        let Some(input_min_width) = meta.string_char_width_min else {
+            return false;
+        };
+        if meta.string_slot.is_none() || meta.string_len_vreg.is_none() {
+            return false;
+        }
+        if meta.constant_value.is_some()
+            || meta.literal_string.is_some()
+            || meta.literal_int.is_some()
+        {
+            return false;
+        }
+        if input_min_width > input_bound {
+            return false;
+        }
+        if fill.len() != 1
+            && !Self::runtime_string_fill_right_len_thresholds(
+                width,
+                alignment,
+                input_min_width,
+                input_bound,
+            )
+            .is_empty()
+        {
+            return false;
+        }
+
+        Self::runtime_string_fill_output_len_bound(
+            width,
+            alignment,
+            fill.len(),
+            input_min_width,
+            input_bound,
+        )
+        .is_some_and(|bound| bound <= MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH)
+    }
+
+    fn lower_runtime_tracked_string_fill_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+    ) -> Result<(), CompileError> {
+        let input_slot = input_meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "fill requires tracked string input in eBPF".into(),
+            )
+        })?;
+        let input_len_vreg = input_meta.string_len_vreg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "fill requires tracked string length in eBPF".into(),
+            )
+        })?;
+        let input_bound = input_meta.string_len_bound.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "fill requires tracked string length bound in eBPF".into(),
+            )
+        })?;
+        let input_min_width = input_meta.string_char_width_min.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "fill requires tracked string character width in eBPF".into(),
+            )
+        })?;
+        let string_len_bound = Self::runtime_string_fill_output_len_bound(
+            width,
+            alignment,
+            fill.len(),
+            input_min_width,
+            input_bound,
+        )
+        .ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "fill tracked string output length overflowed in eBPF".into(),
+            )
+        })?;
+        let aligned_len =
+            align_to_eight(string_len_bound.saturating_add(1)).clamp(16, MAX_STRING_SIZE);
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        };
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::I64);
+
+        if !fill.is_empty() {
+            let (guaranteed_left_pad, conditional_left_thresholds) =
+                Self::runtime_string_fill_left_padding(
+                    width,
+                    alignment,
+                    input_min_width,
+                    input_bound,
+                );
+            for _ in 0..guaranteed_left_pad {
+                self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+            }
+            for threshold in conditional_left_thresholds {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_len_vreg),
+                    threshold,
+                    fill,
+                );
+            }
+        }
+
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::VReg(input_vreg),
+            val_type: StringAppendType::StringSlot {
+                slot: input_slot,
+                max_len: input_bound,
+            },
+        });
+
+        if !fill.is_empty() {
+            for threshold in Self::runtime_string_fill_right_len_thresholds(
+                width,
+                alignment,
+                input_min_width,
+                input_bound,
+            ) {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(len_vreg),
+                    threshold,
+                    fill,
+                );
+            }
+        }
+
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(string_len_bound);
+        meta.string_char_width_min = Some(Self::runtime_string_fill_min_width(
+            width,
+            fill,
+            input_min_width,
+            input_bound,
+        ));
+        meta.field_type = Some(array_ty);
+        Ok(())
+    }
+
+    fn runtime_string_fill_output_len_bound(
+        width: usize,
+        alignment: FillAlignment,
+        fill_len: usize,
+        input_min_width: usize,
+        input_len_bound: usize,
+    ) -> Option<usize> {
+        if fill_len == 0 || width <= input_min_width {
+            return Some(input_len_bound);
+        }
+
+        let mut bound = input_len_bound;
+        for input_width in input_min_width..=input_len_bound {
+            let (left_pad, right_pad) =
+                Self::runtime_fill_pad_counts(width, alignment, input_width);
+            let pad_count = left_pad.checked_add(right_pad)?;
+            let padded_len = fill_len.checked_mul(pad_count)?.checked_add(input_width)?;
+            bound = bound.max(padded_len);
+        }
+        Some(bound)
+    }
+
+    fn runtime_string_fill_min_width(
+        width: usize,
+        fill: &str,
+        input_min_width: usize,
+        input_len_bound: usize,
+    ) -> usize {
+        let fill_chars = fill.chars().count();
+        if fill_chars == 0 || width <= input_min_width {
+            return input_min_width;
+        }
+
+        (input_min_width..=input_len_bound)
+            .map(|input_width| {
+                let pad_count = width.saturating_sub(input_width);
+                input_width.saturating_add(fill_chars.saturating_mul(pad_count))
+            })
+            .min()
+            .unwrap_or(input_min_width)
+    }
+
+    fn runtime_string_fill_left_padding(
+        width: usize,
+        alignment: FillAlignment,
+        input_min_width: usize,
+        input_len_bound: usize,
+    ) -> (usize, Vec<i64>) {
+        let max_left_pad = (input_min_width..=input_len_bound)
+            .map(|input_width| Self::runtime_fill_pad_counts(width, alignment, input_width).0)
+            .max()
+            .unwrap_or(0);
+        let guaranteed_left_pad = (input_min_width..=input_len_bound)
+            .map(|input_width| Self::runtime_fill_pad_counts(width, alignment, input_width).0)
+            .min()
+            .unwrap_or(0);
+
+        let mut thresholds = Vec::with_capacity(max_left_pad.saturating_sub(guaranteed_left_pad));
+        for pad_index in (guaranteed_left_pad + 1)..=max_left_pad {
+            let Some(max_input_width) = (input_min_width..=input_len_bound)
+                .filter(|input_width| {
+                    Self::runtime_fill_pad_counts(width, alignment, *input_width).0 >= pad_index
+                })
+                .max()
+            else {
+                continue;
+            };
+            thresholds.push(max_input_width.saturating_add(1) as i64);
+        }
+        (guaranteed_left_pad, thresholds)
+    }
+
+    fn runtime_string_fill_right_len_thresholds(
+        width: usize,
+        alignment: FillAlignment,
+        input_min_width: usize,
+        input_len_bound: usize,
+    ) -> Vec<i64> {
+        let max_right_pad = (input_min_width..=input_len_bound)
+            .map(|input_width| Self::runtime_fill_pad_counts(width, alignment, input_width).1)
+            .max()
+            .unwrap_or(0);
+        if max_right_pad == 0 {
+            return Vec::new();
+        }
+
+        ((width - max_right_pad + 1)..=width)
+            .map(|threshold| threshold as i64)
+            .collect()
     }
 
     fn fill_runtime_bool_type(&self, input_reg: Option<RegId>, input_vreg: VReg) -> bool {

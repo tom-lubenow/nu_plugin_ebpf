@@ -21516,7 +21516,7 @@ fn test_lower_fill_passthrough_on_tracked_runtime_string_when_padding_impossible
 }
 
 #[test]
-fn test_lower_fill_rejects_padded_tracked_runtime_string() {
+fn test_lower_fill_pads_tracked_runtime_string() {
     let first_fill_decl = DeclId::new(2552);
     let second_fill_decl = DeclId::new(2553);
     let starts_with_decl = DeclId::new(2554);
@@ -21536,7 +21536,7 @@ fn test_lower_fill_rejects_padded_tracked_runtime_string() {
     ]);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &decl_names,
@@ -21544,14 +21544,52 @@ fn test_lower_fill_rejects_padded_tracked_runtime_string() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("padded fill on tracked runtime strings should remain unsupported");
+    .expect("padded fill on tracked runtime strings should lower");
 
     assert!(
-        err.to_string().contains(
-            "fill requires compile-time known string, int, float, filesize, or bool input"
-        ),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::StringSlot { .. },
+                    ..
+                }
+            )),
+        "expected tracked runtime string fill to append the source string slot"
     );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b"0"
+            )),
+        "expected tracked runtime string fill to emit padding"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected padded tracked runtime string to feed str starts-with"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("padded tracked runtime string fill should compile through codegen");
 }
 
 #[test]

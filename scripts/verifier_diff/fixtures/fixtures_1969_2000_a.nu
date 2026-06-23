@@ -26,6 +26,19 @@ const VERIFIER_DIFF_FIXTURES_1969_2000_A = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-tracked-string-fill"
+        category: "language-core"
+        tags: [string runtime fill tracked]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  random int 0..9 | fill | fill --alignment right --character "0" --width 2 | str starts-with "0"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-float-fill-right"
         category: "language-core"
         tags: [float fill right]
