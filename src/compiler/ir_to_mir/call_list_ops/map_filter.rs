@@ -177,6 +177,15 @@ impl<'a> HirToMirLowering<'a> {
         let scalar_where_item = Self::typed_fixed_array_where_scalar_type(&elem_ty);
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         if !scalar_where_item && !self.current_call_result_list_shape_metadata_only {
+            if let Some(value) = self.typed_fixed_array_where_constant_value(
+                input_meta,
+                array_len,
+                closure_block_id,
+                closure_ir,
+            ) {
+                self.lower_compile_time_only_constant_value(src_dst, &value);
+                return Ok(true);
+            }
             if matches!(elem_ty, MirType::U64)
                 && input_meta.zero_initialized_global
                 && self.current_call_result_direct_list_projection.is_some()
@@ -512,6 +521,141 @@ impl<'a> HirToMirLowering<'a> {
         Ok((item_vreg, item_meta))
     }
 
+    fn typed_fixed_array_where_constant_value(
+        &self,
+        input_meta: &RegMetadata,
+        array_len: usize,
+        closure_block_id: NuBlockId,
+        closure_ir: &HirFunction,
+    ) -> Option<nu_protocol::Value> {
+        if self.current_call_result_direct_list_projection.is_none() {
+            return None;
+        }
+        let nu_protocol::Value::List { vals, .. } = input_meta.constant_value.as_ref()? else {
+            return None;
+        };
+        if vals.len() != array_len {
+            return None;
+        }
+
+        let mut filtered = Vec::new();
+        for value in vals {
+            if self.constant_closure_bool_for_value(closure_block_id, closure_ir, value)? {
+                filtered.push(value.clone());
+            }
+        }
+        Some(nu_protocol::Value::list(filtered, Span::unknown()))
+    }
+
+    fn constant_closure_bool_for_value(
+        &self,
+        closure_block_id: NuBlockId,
+        closure_ir: &HirFunction,
+        input: &nu_protocol::Value,
+    ) -> Option<bool> {
+        let value = self.constant_closure_return_for_value(closure_block_id, closure_ir, input)?;
+        match value {
+            nu_protocol::Value::Bool { val, .. } => Some(val),
+            _ => None,
+        }
+    }
+
+    fn constant_closure_return_for_value(
+        &self,
+        closure_block_id: NuBlockId,
+        closure_ir: &HirFunction,
+        input: &nu_protocol::Value,
+    ) -> Option<nu_protocol::Value> {
+        let [block] = closure_ir.blocks.as_slice() else {
+            return None;
+        };
+        if block.id != closure_ir.entry {
+            return None;
+        }
+        let return_src = match block.terminator {
+            HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => src,
+            _ => return None,
+        };
+
+        let mut reg_constants = HashMap::<RegId, nu_protocol::Value>::new();
+        let mut var_constants = HashMap::<VarId, nu_protocol::Value>::new();
+        var_constants.insert(IN_VARIABLE_ID, input.clone());
+        if let Some(param_var_id) = self
+            .closure_param_sources
+            .get(&closure_block_id)
+            .and_then(|source| source.params.first())
+            .and_then(|param| param.var_id)
+        {
+            var_constants.insert(param_var_id, input.clone());
+        }
+
+        for stmt in &block.stmts {
+            if let HirStmt::Call {
+                decl_id,
+                src_dst,
+                args,
+            } = stmt
+            {
+                self.apply_constant_closure_call(*decl_id, *src_dst, args, &mut reg_constants)?;
+            } else {
+                Self::apply_constant_hir_stmt(stmt, &mut reg_constants, &mut var_constants)?;
+            }
+        }
+
+        reg_constants.get(&return_src).cloned()
+    }
+
+    fn apply_constant_closure_call(
+        &self,
+        decl_id: DeclId,
+        src_dst: RegId,
+        args: &HirCallArgs,
+        reg_constants: &mut HashMap<RegId, nu_protocol::Value>,
+    ) -> Option<()> {
+        if !args.positional.is_empty()
+            || !args.rest.is_empty()
+            || !args.named.is_empty()
+            || !args.flags.is_empty()
+            || !args.parser_info.is_empty()
+        {
+            return None;
+        }
+        let input_reg = args.pipeline_input.unwrap_or(src_dst);
+        let input = reg_constants.get(&input_reg)?;
+        let value = match self.decl_names.get(&decl_id).map(String::as_str)? {
+            "str length" => Self::constant_string_length_value(input)?,
+            "bytes length" => Self::constant_bytes_length_value(input)?,
+            _ => return None,
+        };
+        reg_constants.insert(src_dst, value);
+        Some(())
+    }
+
+    fn constant_string_length_value(value: &nu_protocol::Value) -> Option<nu_protocol::Value> {
+        let len = match value {
+            nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                val.len()
+            }
+            nu_protocol::Value::Binary { val, .. } => val.len(),
+            _ => return None,
+        };
+        Some(nu_protocol::Value::int(
+            i64::try_from(len).ok()?,
+            Span::unknown(),
+        ))
+    }
+
+    fn constant_bytes_length_value(value: &nu_protocol::Value) -> Option<nu_protocol::Value> {
+        let len = match value {
+            nu_protocol::Value::Binary { val, .. } => val.len(),
+            _ => return None,
+        };
+        Some(nu_protocol::Value::int(
+            i64::try_from(len).ok()?,
+            Span::unknown(),
+        ))
+    }
+
     fn typed_fixed_array_element_semantics(
         input_meta: &RegMetadata,
     ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
@@ -719,7 +863,139 @@ impl<'a> HirToMirLowering<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::hir::{HirBlock, HirClosureParam, HirClosureParamSource};
+    use nu_protocol::Record;
+    use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
+    use nu_protocol::casing::Casing;
     use std::collections::HashMap;
+
+    #[test]
+    fn typed_fixed_array_where_constant_value_filters_record_field_predicate() {
+        let closure_block_id = NuBlockId::new(1);
+        let row_var = VarId::new(7);
+        let mut closure_param_sources = HashMap::new();
+        closure_param_sources.insert(
+            closure_block_id,
+            HirClosureParamSource {
+                params: vec![HirClosureParam {
+                    name: "row".into(),
+                    var_id: Some(row_var),
+                }],
+            },
+        );
+        let decl_names = HashMap::new();
+        let closure_irs = HashMap::new();
+        let captures = Vec::new();
+        let user_functions = HashMap::new();
+        let decl_signatures = HashMap::new();
+        let mut lowering = HirToMirLowering::new(HirToMirLoweringInput {
+            probe_ctx: None,
+            decl_names: &decl_names,
+            closure_irs: &closure_irs,
+            closure_param_sources: &closure_param_sources,
+            captures: &captures,
+            ctx_param: None,
+            type_hints: None,
+            external_map_key_types: None,
+            external_map_key_semantics: None,
+            external_map_max_entries: None,
+            external_map_inner_templates: None,
+            external_map_value_types: None,
+            external_map_value_semantics: None,
+            user_functions: &user_functions,
+            decl_signatures: &decl_signatures,
+        });
+
+        let closure_ir = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: row_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![PathMember::test_string(
+                                "pid".to_string(),
+                                false,
+                                Casing::Sensitive,
+                            )],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::Equal),
+                        rhs: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::unknown(); 5],
+            ast: vec![],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        };
+
+        let input_meta = RegMetadata {
+            constant_value: Some(nu_protocol::Value::list(
+                vec![record_value(7, 2), record_value(9, 3)],
+                Span::unknown(),
+            )),
+            ..Default::default()
+        };
+        assert!(
+            lowering
+                .typed_fixed_array_where_constant_value(
+                    &input_meta,
+                    2,
+                    closure_block_id,
+                    &closure_ir
+                )
+                .is_none(),
+            "where constants should not fold without a direct list projection"
+        );
+
+        lowering.current_call_result_direct_list_projection = Some(DirectListProjection::First);
+        let folded = lowering
+            .typed_fixed_array_where_constant_value(&input_meta, 2, closure_block_id, &closure_ir)
+            .expect("record where predicate should fold");
+        let nu_protocol::Value::List { vals, .. } = folded else {
+            panic!("expected folded list");
+        };
+        assert_eq!(vals.len(), 1);
+        let nu_protocol::Value::Record { val, .. } = &vals[0] else {
+            panic!("expected folded record");
+        };
+        assert!(matches!(
+            val.get("pid"),
+            Some(nu_protocol::Value::Int { val: 9, .. })
+        ));
+    }
+
+    fn record_value(pid: i64, cpu: i64) -> nu_protocol::Value {
+        let mut record = Record::new();
+        record.insert(
+            "pid".to_string(),
+            nu_protocol::Value::int(pid, Span::unknown()),
+        );
+        record.insert(
+            "cpu".to_string(),
+            nu_protocol::Value::int(cpu, Span::unknown()),
+        );
+        nu_protocol::Value::record(record, Span::unknown())
+    }
 
     #[test]
     fn typed_fixed_array_numeric_list_input_accepts_only_trusted_kernel_arrays() {

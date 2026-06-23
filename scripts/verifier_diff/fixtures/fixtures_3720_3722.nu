@@ -28,9 +28,9 @@ export const VERIFIER_DIFF_FIXTURES_3720_3722 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-where-first-rejects"
+        name: "global-define-type-array-string-where-first"
         category: "globals"
-        tags: [globals arrays string where closure first diagnostics reject]
+        tags: [globals arrays string where closure first str length global-define initializer accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -38,8 +38,7 @@ export const VERIFIER_DIFF_FIXTURES_3720_3722 = [
             '  ((((global-get names) | where {|x| ($x | str length) == 3 } | first) | str length) == 3)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "metadata-only shape consumers"
+        local: "accept"
+        kernel: "accept"
     }
 ]

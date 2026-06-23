@@ -396,6 +396,12 @@ impl NamedGlobalTypeShape {
             | Self::U32
             | Self::U64 => named_global_numeric_constant_i64(value).is_some(),
             Self::Bool => matches!(value, Value::Bool { .. }),
+            Self::Bytes { len } => {
+                matches!(value, Value::Binary { val, .. } if val.len() <= *len)
+            }
+            Self::String { content_cap, .. } => {
+                matches!(value, Value::String { val, .. } | Value::Glob { val, .. } if val.len() <= *content_cap)
+            }
             Self::FixedArray { elem, len } => {
                 let Value::List { vals, .. } = value else {
                     return false;
@@ -404,6 +410,17 @@ impl NamedGlobalTypeShape {
                     && vals
                         .iter()
                         .all(|value| elem.shape.preserves_source_constant_value(value))
+            }
+            Self::Record(fields) => {
+                let Value::Record { val, .. } = value else {
+                    return false;
+                };
+                val.len() == fields.len()
+                    && fields.iter().all(|field| {
+                        val.get(&field.name).is_some_and(|value| {
+                            field.ty.shape.preserves_source_constant_value(value)
+                        })
+                    })
             }
             _ => false,
         }

@@ -42,9 +42,9 @@ export const VERIFIER_DIFF_FIXTURES_3716_3719 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-record-where-first-rejects"
+        name: "global-define-type-array-record-where-first"
         category: "globals"
-        tags: [globals records arrays where closure first diagnostics reject]
+        tags: [globals records arrays where closure first get global-define initializer accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -52,8 +52,7 @@ export const VERIFIER_DIFF_FIXTURES_3716_3719 = [
             '  (((global-get seen_entries) | where {|row| $row.pid == 9 } | first).pid == 9)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "metadata-only shape consumers"
+        local: "accept"
+        kernel: "accept"
     }
 ]
