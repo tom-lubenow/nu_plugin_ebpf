@@ -367,12 +367,32 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_args.is_empty() || !self.positional_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "str length does not accept arguments in eBPF".into(),
+                "str length does not accept named arguments in eBPF".into(),
             ));
         }
         let length_mode = self.string_length_mode()?;
+
+        if !self.positional_args.is_empty() {
+            let path_regs = self
+                .positional_args
+                .iter()
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str length",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    Ok(nu_protocol::Value::int(
+                        Self::known_string_length(&item, length_mode),
+                        Span::unknown(),
+                    ))
+                },
+            );
+        }
 
         if let Some(input) = self.exact_string_list_input(input_reg, "str length")? {
             let lengths = input
@@ -6534,6 +6554,25 @@ impl<'a> HirToMirLowering<'a> {
     where
         F: Fn(String) -> Result<String, CompileError> + Copy,
     {
+        self.lower_known_string_value_cell_paths(command, src_dst, input_reg, path_regs, |item| {
+            Ok(nu_protocol::Value::string(
+                transform(item)?,
+                Span::unknown(),
+            ))
+        })
+    }
+
+    fn lower_known_string_value_cell_paths<F>(
+        &mut self,
+        command: &str,
+        src_dst: RegId,
+        input_reg: Option<RegId>,
+        path_regs: &[RegId],
+        transform: F,
+    ) -> Result<(), CompileError>
+    where
+        F: Fn(String) -> Result<nu_protocol::Value, CompileError> + Copy,
+    {
         let paths = path_regs
             .iter()
             .map(|reg| self.string_cell_path_arg(command, *reg))
@@ -6635,13 +6674,12 @@ impl<'a> HirToMirLowering<'a> {
         transform: F,
     ) -> Result<(), CompileError>
     where
-        F: Fn(String) -> Result<String, CompileError> + Copy,
+        F: Fn(String) -> Result<nu_protocol::Value, CompileError> + Copy,
     {
         let Some((member, rest)) = members.split_first() else {
             return match value {
                 nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
-                    let output = transform(val.clone())?;
-                    *value = nu_protocol::Value::string(output, Span::unknown());
+                    *value = transform(val.clone())?;
                     Ok(())
                 }
                 other => Err(CompileError::UnsupportedInstruction(format!(

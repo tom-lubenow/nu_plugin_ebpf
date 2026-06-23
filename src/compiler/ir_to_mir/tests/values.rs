@@ -16636,6 +16636,195 @@ fn test_lower_str_length_unicode_width_on_known_string_materializes_count() {
 }
 
 #[test]
+fn test_lower_str_length_chars_record_cell_path_materializes_field_count() {
+    let str_length_decl = DeclId::new(80840);
+    let mut record = Record::new();
+    record.push("name", Value::string("नु", Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: str_length_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"chars".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(2),
+                        path: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should lower for compile-time known record cell-path input");
+
+    assert_program_returns_constant(&result.program, 2, "str length --chars record cell path");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --chars record cell-path result consumed by field projection should compile",
+    );
+}
+
+#[test]
+fn test_lower_str_length_unicode_width_table_nested_cell_path_materializes_field_counts() {
+    let str_length_decl = DeclId::new(80841);
+    let get_decl = DeclId::new(80842);
+    let mut first_inner = Record::new();
+    first_inner.push(
+        "name",
+        Value::string("abcdefghijklmnopq", Span::test_data()),
+    );
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push(
+        "name",
+        Value::string("abcdefghijklmnopqrstuvw", Span::test_data()),
+    );
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: str_length_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"unicode-width".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3)],
+                            pipeline_input: Some(RegId::new(2)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 6,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --unicode-width should lower for compile-time known nested table cell-path input");
+
+    let expected_lengths = [17i64.to_le_bytes(), 23i64.to_le_bytes()];
+    for expected in expected_lengths {
+        assert!(
+            result.readonly_globals.iter().any(|global| global
+                .data
+                .windows(expected.len())
+                .any(|window| window == expected)),
+            "expected materialized table field to contain unicode-width length {}",
+            i64::from_le_bytes(expected)
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --unicode-width nested table cell-path result consumed by projection should compile",
+    );
+}
+
+#[test]
 fn test_lower_str_length_on_known_string_list_materializes_numeric_lengths() {
     let str_length_decl = DeclId::new(402);
     let sum_decl = DeclId::new(403);
