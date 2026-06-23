@@ -3495,6 +3495,65 @@ impl<'a> HirToMirLowering<'a> {
                 "str index-of requires a string substring argument in eBPF".into(),
             )
         })?;
+        if self.positional_args.len() > 1 {
+            for key in self.named_args.keys() {
+                if key != "range" {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "str index-of does not support named argument --{key} in eBPF"
+                    )));
+                }
+            }
+            let range = if let Some((_, range_reg)) = self.named_args.get("range").copied() {
+                Some(
+                    self.get_metadata(range_reg)
+                        .and_then(|meta| meta.maybe_open_range)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "str index-of --range requires a compile-time known range in eBPF"
+                                    .into(),
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
+            let needle = self.literal_string_arg(needle_reg, "str index-of")?;
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str index-of",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    let (search_start, search_end) = range
+                        .map(|range| Self::string_range_byte_bounds(range, item.len()))
+                        .unwrap_or((0, item.len()));
+                    let index = if use_grapheme_clusters {
+                        Self::grapheme_index_of_in_byte_range(
+                            &item,
+                            &needle,
+                            search_from_end,
+                            search_start,
+                            search_end,
+                        )?
+                    } else {
+                        Self::byte_index_of_in_range(
+                            &item,
+                            &needle,
+                            search_from_end,
+                            search_start,
+                            search_end,
+                        )
+                    };
+                    Ok(nu_protocol::Value::int(index, Span::unknown()))
+                },
+            );
+        }
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "str index-of accepts exactly one substring argument in eBPF".into(),

@@ -20648,6 +20648,92 @@ fn test_lower_string_list_index_of_materializes_numeric_lists() {
 }
 
 #[test]
+fn test_lower_str_index_of_record_cell_path_materializes_index_fields() {
+    let cases = [
+        ("foobar", "ob", Vec::new(), 2),
+        ("ababa", "ba", vec![b"end".to_vec()], 3),
+        ("🇯🇵ほげ", "ほ", vec![b"grapheme-clusters".to_vec()], 1),
+    ];
+
+    for (index, (input, needle, flags, expected)) in cases.into_iter().enumerate() {
+        let index_of_decl = DeclId::new(80870 + index);
+        let mut record = Record::new();
+        record.push("name", Value::string(input, Span::test_data()));
+        let hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::record(record, Span::test_data())),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::String(needle.as_bytes().to_vec()),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::Call {
+                            decl_id: index_of_decl,
+                            src_dst: RegId::new(3),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(1), RegId::new(2)],
+                                pipeline_input: Some(RegId::new(0)),
+                                flags,
+                                ..HirCallArgs::default()
+                            },
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(3),
+                            path: RegId::new(4),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(3) },
+                }],
+                entry: HirBlockId(0),
+                spans: Vec::new(),
+                ast: Vec::new(),
+                comments: Vec::new(),
+                register_count: 5,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("str index-of should lower record cell-path case {index}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, "str index-of record cell path");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+            "str index-of record cell-path result consumed by field projection should compile",
+        );
+    }
+}
+
+#[test]
 fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
     let replace_decl = DeclId::new(126);
     let starts_with_decl = DeclId::new(128);
