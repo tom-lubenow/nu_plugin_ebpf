@@ -1155,9 +1155,10 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut renamed_fields = Vec::with_capacity(typed_fields.len());
         for (field, renamed_name) in typed_fields.iter().zip(renamed_names) {
-            let mut record_field = self.project_typed_record_scalar_field(
+            let scratch_reg = self.alloc_synthetic_reg("rename")?;
+            let mut record_field = self.project_typed_record_field(
                 "rename",
-                src_dst,
+                scratch_reg,
                 input_vreg,
                 &input_runtime_ty,
                 &input_meta,

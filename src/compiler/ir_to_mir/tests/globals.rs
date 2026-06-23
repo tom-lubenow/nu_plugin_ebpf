@@ -22826,6 +22826,158 @@ fn test_lower_global_define_type_record_rename_supports_scalar_fields() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_rename_preserves_string_fields() {
+    for (case_idx, use_column_mapping) in [false, true].into_iter().enumerate() {
+        let base_decl = 10_410 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let rename_decl = DeclId::new(base_decl + 2);
+        let get_decl = DeclId::new(base_decl + 3);
+        let length_decl = DeclId::new(base_decl + 4);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (rename_decl, "rename".to_string()),
+            (get_decl, "get".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let mut stmts = vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::String("seen_state".into()),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String("record{pid:i64,comm:string:8,cpu:u32}".into()),
+            },
+            HirStmt::Call {
+                decl_id: define_decl,
+                src_dst: RegId::new(2),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    named: vec![(b"type".to_vec(), RegId::new(1))],
+                    ..HirCallArgs::default()
+                },
+            },
+            HirStmt::Call {
+                decl_id: global_get_decl,
+                src_dst: RegId::new(3),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    ..HirCallArgs::default()
+                },
+            },
+        ];
+
+        let mut next_reg = 4;
+        let rename_reg = RegId::new(next_reg);
+        next_reg += 1;
+        if use_column_mapping {
+            let mapping_reg = RegId::new(next_reg);
+            next_reg += 1;
+            let mut mapping = Record::new();
+            mapping.push("comm", Value::string("name", Span::test_data()));
+            stmts.push(HirStmt::LoadValue {
+                dst: mapping_reg,
+                val: Box::new(Value::record(mapping, Span::test_data())),
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: rename_decl,
+                src_dst: rename_reg,
+                args: HirCallArgs {
+                    named: vec![(b"column".to_vec(), mapping_reg)],
+                    pipeline_input: Some(RegId::new(3)),
+                    ..HirCallArgs::default()
+                },
+            });
+        } else {
+            let mut rename_args = Vec::new();
+            for name in ["tid", "name", "core"] {
+                let name_reg = RegId::new(next_reg);
+                next_reg += 1;
+                stmts.push(HirStmt::LoadLiteral {
+                    dst: name_reg,
+                    lit: HirLiteral::String(name.into()),
+                });
+                rename_args.push(name_reg);
+            }
+            stmts.push(HirStmt::Call {
+                decl_id: rename_decl,
+                src_dst: rename_reg,
+                args: HirCallArgs {
+                    positional: rename_args,
+                    pipeline_input: Some(RegId::new(3)),
+                    ..HirCallArgs::default()
+                },
+            });
+        }
+
+        let name_field_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: name_field_reg,
+            lit: HirLiteral::String("name".into()),
+        });
+
+        let name_result_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: name_result_reg,
+            args: HirCallArgs {
+                positional: vec![name_field_reg],
+                pipeline_input: Some(rename_reg),
+                ..HirCallArgs::default()
+            },
+        });
+
+        let length_result_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: length_result_reg,
+            args: HirCallArgs {
+                pipeline_input: Some(name_result_reg),
+                ..HirCallArgs::default()
+            },
+        });
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return {
+                    src: length_result_reg,
+                },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: next_reg,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("typed record rename should preserve string fields: {err:?}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record renamed string field should compile: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_supports_scalar_fields() {
     let define_decl = DeclId::new(10_390);
     let global_get_decl = DeclId::new(10_391);
