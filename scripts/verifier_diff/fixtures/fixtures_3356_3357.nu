@@ -14,18 +14,17 @@ export const VERIFIER_DIFF_FIXTURES_3356_3357 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-str-replace-variable-length-reject"
+        name: "global-define-type-array-string-str-replace-variable-length-join-length"
         category: "globals"
-        tags: [globals arrays string str replace diagnostics global-define reject]
+        tags: [globals arrays string str replace join length global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
             '  ["aa"] | global-define --type "array{string:8:1}" names'
-            '  ((global-get names) | str replace "a" "zz" | str join "")'
+            '  ((((global-get names) | str replace "a" "zz" | str join "") | str length) == 3)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "replacement length to equal find length"
+        local: "accept"
+        kernel: "accept"
     }
 ]

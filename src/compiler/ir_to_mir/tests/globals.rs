@@ -15089,14 +15089,18 @@ fn test_lower_global_define_type_string_array_str_replace_all_supports_nul_bytes
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_replace_rejects_variable_length_output() {
+fn test_string_array_str_replace_variable_length_constant_list_feeds_join_length() {
     let define_decl = DeclId::new(10_622);
     let global_get_decl = DeclId::new(10_623);
     let replace_decl = DeclId::new(10_624);
+    let join_decl = DeclId::new(10_971);
+    let length_decl = DeclId::new(10_972);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (replace_decl, "str replace".to_string()),
+        (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
     ]);
 
     let func = HirFunction {
@@ -15153,19 +15157,42 @@ fn test_lower_global_define_type_string_array_str_replace_rejects_variable_lengt
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String("".into()),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(8)],
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(10),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(9)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(7) },
+            terminator: HirTerminator::Return {
+                src: RegId::new(10),
+            },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 8,
+        register_count: 11,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -15173,12 +15200,20 @@ fn test_lower_global_define_type_string_array_str_replace_rejects_variable_lengt
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("typed string array str replace should reject variable-length replacement");
+    .expect("constant typed string array str replace should fold variable-length output");
 
     assert!(
-        err.to_string()
-            .contains("replacement length to equal find length"),
-        "expected fixed-length replacement diagnostic, got: {err}"
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected variable-length constant replace to avoid runtime string compares"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "constant typed string array variable-length replace consumed by str join should compile",
     );
 }
 
