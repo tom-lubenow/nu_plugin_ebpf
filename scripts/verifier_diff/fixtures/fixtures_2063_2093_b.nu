@@ -55,6 +55,45 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-runtime-string-direct-first"
+        category: "language-core"
+        tags: [aggregate record values first string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { comm: $ctx.comm pid: $ctx.pid } | values | first | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-runtime-string-direct-last"
+        category: "language-core"
+        tags: [aggregate record values last string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid comm: $ctx.comm } | values | last | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-runtime-string-reverse-first"
+        category: "language-core"
+        tags: [aggregate record values reverse first string accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid comm: $ctx.comm } | values | reverse | first | str starts-with "n"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-first-last"
         category: "language-core"
         tags: [aggregate record values list mixed first last reverse string]

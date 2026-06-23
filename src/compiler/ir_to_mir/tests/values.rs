@@ -9802,6 +9802,133 @@ fn make_runtime_record_values_string_get_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_runtime_record_values_string_direct_consumer_starts_with_program(
+    values_decl: DeclId,
+    consumer_decl: DeclId,
+    reverse_decl: Option<DeclId>,
+    starts_with_decl: DeclId,
+    comm_first: bool,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::Record { capacity: 2 },
+    }];
+
+    let mut insert_field = |field_name: &str, value_reg: RegId| {
+        stmts.extend([
+            HirStmt::LoadVariable {
+                dst: value_reg,
+                var_id: ctx_var,
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(4),
+                lit: HirLiteral::CellPath(Box::new(CellPath {
+                    members: vec![string_member(field_name)],
+                })),
+            },
+            HirStmt::FollowCellPath {
+                src_dst: value_reg,
+                path: RegId::new(4),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(field_name.as_bytes().to_vec()),
+            },
+            HirStmt::RecordInsert {
+                src_dst: RegId::new(0),
+                key: RegId::new(1),
+                val: value_reg,
+            },
+        ]);
+    };
+
+    if comm_first {
+        insert_field("comm", RegId::new(2));
+        insert_field("pid", RegId::new(3));
+    } else {
+        insert_field("pid", RegId::new(2));
+        insert_field("comm", RegId::new(3));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: values_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let (consumer_input, consumer_dst, prefix_reg, starts_with_dst, register_count) =
+        if let Some(reverse_decl) = reverse_decl {
+            stmts.push(HirStmt::Call {
+                decl_id: reverse_decl,
+                src_dst: RegId::new(6),
+                args: HirCallArgs {
+                    pipeline_input: Some(RegId::new(5)),
+                    ..HirCallArgs::default()
+                },
+            });
+            (
+                RegId::new(6),
+                RegId::new(7),
+                RegId::new(8),
+                RegId::new(9),
+                10,
+            )
+        } else {
+            (
+                RegId::new(5),
+                RegId::new(6),
+                RegId::new(7),
+                RegId::new(8),
+                9,
+            )
+        };
+
+    stmts.extend([
+        HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: consumer_dst,
+            args: HirCallArgs {
+                pipeline_input: Some(consumer_input),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: prefix_reg,
+            lit: HirLiteral::String(b"n".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: starts_with_dst,
+            args: HirCallArgs {
+                positional: vec![prefix_reg],
+                pipeline_input: Some(consumer_dst),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_dst,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_record_mixed_values_first_program(values_decl: DeclId, first_decl: DeclId) -> HirProgram {
     let mut record = Record::new();
     record.push("pid", Value::int(7, Span::test_data()));
@@ -52350,6 +52477,68 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_get_directly() {
     assert_no_runtime_list_operations(&result.program, "runtime mixed record values string get");
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("runtime record values string get should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_first_last_directly() {
+    for (offset, consumer_name, reverse_name, comm_first, label) in [
+        (
+            0,
+            "first",
+            None,
+            true,
+            "runtime mixed record values string first",
+        ),
+        (
+            10,
+            "last",
+            None,
+            false,
+            "runtime mixed record values string last",
+        ),
+        (
+            20,
+            "first",
+            Some("reverse"),
+            false,
+            "runtime mixed record values string reverse first",
+        ),
+    ] {
+        let values_decl = DeclId::new(81_690 + offset);
+        let consumer_decl = DeclId::new(81_691 + offset);
+        let reverse_decl = reverse_name.map(|_| DeclId::new(81_692 + offset));
+        let starts_with_decl = DeclId::new(81_693 + offset);
+        let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+            values_decl,
+            consumer_decl,
+            reverse_decl,
+            starts_with_decl,
+            comm_first,
+        );
+        let mut decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+        if let Some(reverse_decl) = reverse_decl {
+            decl_names.insert(reverse_decl, "reverse".to_string());
+        }
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{label} should lower directly: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, label);
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{label} should compile through codegen: {err}"));
+    }
 }
 
 #[test]

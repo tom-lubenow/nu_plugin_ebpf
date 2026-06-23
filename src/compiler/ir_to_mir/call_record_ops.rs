@@ -1497,8 +1497,12 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let (index, strict_bounds, pass_through_marker) = match projection {
-            DirectListProjection::First => (0, false, None),
-            DirectListProjection::Last => (len.saturating_sub(1), false, None),
+            DirectListProjection::First => (0, false, Some(DirectListProjection::First)),
+            DirectListProjection::Last => (
+                len.saturating_sub(1),
+                false,
+                Some(DirectListProjection::Last),
+            ),
             DirectListProjection::Index(index) => (
                 index_to_usize(index)?,
                 true,
