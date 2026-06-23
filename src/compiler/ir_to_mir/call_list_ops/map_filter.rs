@@ -177,6 +177,20 @@ impl<'a> HirToMirLowering<'a> {
         let scalar_where_item = Self::typed_fixed_array_where_scalar_type(&elem_ty);
         let constant_predicate = Self::constant_bool_closure_result(closure_ir);
         if !scalar_where_item && !self.current_call_result_list_shape_metadata_only {
+            if matches!(elem_ty, MirType::U64)
+                && input_meta.zero_initialized_global
+                && self.current_call_result_direct_list_projection.is_some()
+                && self.zero_equality_closure_result(closure_block_id, closure_ir)
+            {
+                let vals = (0..array_len)
+                    .map(|_| nu_protocol::Value::int(0, Span::unknown()))
+                    .collect::<Vec<_>>();
+                self.lower_compile_time_only_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(vals, Span::unknown()),
+                );
+                return Ok(true);
+            }
             if matches!(constant_predicate, Some(true)) {
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
@@ -581,13 +595,7 @@ impl<'a> HirToMirLowering<'a> {
         let [HirStmt::LoadVariable { dst, var_id }] = block.stmts.as_slice() else {
             return false;
         };
-        let is_first_param = self
-            .closure_param_sources
-            .get(&closure_block_id)
-            .and_then(|source| source.params.first())
-            .and_then(|param| param.var_id)
-            .is_some_and(|param_var_id| param_var_id == *var_id);
-        if *var_id != IN_VARIABLE_ID && !is_first_param {
+        if !self.closure_var_is_input_param(closure_block_id, *var_id) {
             return false;
         }
         let src = match &block.terminator {
@@ -595,6 +603,82 @@ impl<'a> HirToMirLowering<'a> {
             _ => return false,
         };
         dst == src
+    }
+
+    fn zero_equality_closure_result(
+        &self,
+        closure_block_id: NuBlockId,
+        closure_ir: &HirFunction,
+    ) -> bool {
+        let [block] = closure_ir.blocks.as_slice() else {
+            return false;
+        };
+        if block.id != closure_ir.entry {
+            return false;
+        }
+        let (first, second, lhs_dst, op, rhs) = match block.stmts.as_slice() {
+            [first, second, HirStmt::BinaryOp { lhs_dst, op, rhs }] => {
+                (first, second, lhs_dst, op, rhs)
+            }
+            [
+                first,
+                second,
+                HirStmt::BinaryOp { lhs_dst, op, rhs },
+                HirStmt::Span { src_dst },
+            ] if src_dst == lhs_dst => (first, second, lhs_dst, op, rhs),
+            _ => return false,
+        };
+        if !matches!(
+            op,
+            nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal)
+        ) {
+            return false;
+        }
+        let src = match &block.terminator {
+            HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => src,
+            _ => return false,
+        };
+        if src != lhs_dst {
+            return false;
+        }
+
+        let input_equals_zero = match (first, second) {
+            (
+                HirStmt::LoadVariable { dst, var_id },
+                HirStmt::LoadLiteral {
+                    dst: zero_dst,
+                    lit: HirLiteral::Int(0),
+                },
+            ) => {
+                lhs_dst == dst
+                    && rhs == zero_dst
+                    && self.closure_var_is_input_param(closure_block_id, *var_id)
+            }
+            (
+                HirStmt::LoadLiteral {
+                    dst: zero_dst,
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadVariable { dst, var_id },
+            ) => {
+                lhs_dst == zero_dst
+                    && rhs == dst
+                    && self.closure_var_is_input_param(closure_block_id, *var_id)
+            }
+            _ => false,
+        };
+        input_equals_zero
+    }
+
+    fn closure_var_is_input_param(&self, closure_block_id: NuBlockId, var_id: VarId) -> bool {
+        if var_id == IN_VARIABLE_ID {
+            return true;
+        }
+        self.closure_param_sources
+            .get(&closure_block_id)
+            .and_then(|source| source.params.first())
+            .and_then(|param| param.var_id)
+            .is_some_and(|param_var_id| param_var_id == var_id)
     }
 }
 

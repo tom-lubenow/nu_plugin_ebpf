@@ -33,9 +33,9 @@ export const VERIFIER_DIFF_FIXTURES_3754_3756 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-u64-where-dynamic-first-rejects"
+        name: "global-define-type-array-u64-where-zero-first-accepts-zero-fill"
         category: "globals"
-        tags: [globals arrays u64 where closure first diagnostics reject global-define]
+        tags: [globals arrays u64 where closure first zero-fill accept global-define]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -43,8 +43,8 @@ export const VERIFIER_DIFF_FIXTURES_3754_3756 = [
             '  (((global-get ports) | where {|x| $x == 0 } | first) == 0)'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "where on typed fixed arrays with u64, fixed-array, or record elements is supported only for metadata-only shape consumers"
+        default_test_lane: "dry-run"
     }
 ]

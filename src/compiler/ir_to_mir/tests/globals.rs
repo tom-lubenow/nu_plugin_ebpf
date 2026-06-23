@@ -17314,6 +17314,162 @@ fn test_lower_global_define_type_u64_array_find_first_rejects_when_global_writte
 }
 
 #[test]
+fn test_lower_global_define_type_u64_array_where_zero_first_folds_zero_fill() {
+    let define_decl = DeclId::new(11_320);
+    let global_get_decl = DeclId::new(11_321);
+    let where_decl = DeclId::new(11_322);
+    let first_decl = DeclId::new(11_323);
+    let row_condition_block_id = nu_protocol::BlockId::new(11);
+    let row_param_var = VarId::new(75);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (where_decl, "where".to_string()),
+        (first_decl, "first".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{u64:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::RowCondition(row_condition_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: where_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: first_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let row_condition = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: row_param_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(
+        func,
+        HashMap::from([(row_condition_block_id, row_condition)]),
+        vec![],
+        None,
+    );
+    hir.closure_param_sources.insert(
+        row_condition_block_id,
+        HirClosureParamSource {
+            params: vec![HirClosureParam {
+                name: "x".to_string(),
+                var_id: Some(row_param_var),
+            }],
+        },
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("u64 fixed-array where zero predicate feeding first should fold zero fill");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. } | MirInst::ListNew { .. })),
+        "metadata-only u64 where first should not materialize a runtime list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected first filtered element to fold to zero"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "u64 fixed-array where zero predicate feeding first should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_bool_array_compact_is_passthrough() {
     let define_decl = DeclId::new(10_970);
     let global_get_decl = DeclId::new(10_971);
