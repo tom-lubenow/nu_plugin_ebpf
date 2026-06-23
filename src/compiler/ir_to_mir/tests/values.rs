@@ -17689,6 +17689,196 @@ fn test_lower_str_contains_ignore_case_on_known_string_materializes_bool() {
 }
 
 #[test]
+fn test_lower_str_predicates_record_cell_path_materialize_bool_fields() {
+    let cases = [
+        ("str starts-with", "foo"),
+        ("str ends-with", "bar"),
+        ("str contains", "oba"),
+    ];
+
+    for (index, (command, pattern)) in cases.into_iter().enumerate() {
+        let predicate_decl = DeclId::new(80850 + index);
+        let mut record = Record::new();
+        record.push("name", Value::string("foobar", Span::test_data()));
+        let hir = HirProgram::new(
+            HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadValue {
+                            dst: RegId::new(0),
+                            val: Box::new(Value::record(record, Span::test_data())),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::String(pattern.as_bytes().to_vec()),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::Call {
+                            decl_id: predicate_decl,
+                            src_dst: RegId::new(3),
+                            args: HirCallArgs {
+                                positional: vec![RegId::new(1), RegId::new(2)],
+                                pipeline_input: Some(RegId::new(0)),
+                                ..HirCallArgs::default()
+                            },
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(4),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("name")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(3),
+                            path: RegId::new(4),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(3) },
+                }],
+                entry: HirBlockId(0),
+                spans: Vec::new(),
+                ast: Vec::new(),
+                comments: Vec::new(),
+                register_count: 5,
+                file_count: 0,
+            },
+            HashMap::new(),
+            vec![],
+            None,
+        );
+        let decl_names = HashMap::from([(predicate_decl, command.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command} should lower for compile-time known record cell-path input: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, 1, command);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command} record cell-path result should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_str_contains_ignore_case_table_nested_cell_path_materializes_bool_fields() {
+    let contains_decl = DeclId::new(80860);
+    let get_decl = DeclId::new(80861);
+    let mut first_inner = Record::new();
+    first_inner.push("name", Value::string("Alpha", Span::test_data()));
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push("name", Value::string("Beta", Span::test_data()));
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"ALP".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: contains_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"ignore-case".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(5),
+                        path: RegId::new(6),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(5) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (contains_decl, "str contains".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str contains --ignore-case should lower for compile-time known nested table cell-path input");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str contains --ignore-case nested table cell-path result consumed by projection should compile",
+    );
+}
+
+#[test]
 fn test_lower_str_contains_too_long_substring_is_false() {
     let contains_decl = DeclId::new(123);
     let hir = make_string_arg_pipeline_call_program(contains_decl, "a", "abcdef");

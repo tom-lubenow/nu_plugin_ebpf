@@ -818,6 +818,37 @@ impl<'a> HirToMirLowering<'a> {
                 "str starts-with requires a string prefix argument in eBPF".into(),
             )
         })?;
+        if self.positional_args.len() > 1 {
+            let prefix = self.literal_string_arg(prefix_reg, "str starts-with")?;
+            let prefix = if ignore_case {
+                prefix.to_lowercase()
+            } else {
+                prefix
+            };
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str starts-with",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    Ok(nu_protocol::Value::bool(
+                        item.starts_with(&prefix),
+                        Span::unknown(),
+                    ))
+                },
+            );
+        }
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "str starts-with accepts exactly one prefix argument in eBPF".into(),
@@ -1858,6 +1889,37 @@ impl<'a> HirToMirLowering<'a> {
                 "str ends-with requires a string suffix argument in eBPF".into(),
             )
         })?;
+        if self.positional_args.len() > 1 {
+            let suffix = self.literal_string_arg(suffix_reg, "str ends-with")?;
+            let suffix = if ignore_case {
+                suffix.to_lowercase()
+            } else {
+                suffix
+            };
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str ends-with",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    Ok(nu_protocol::Value::bool(
+                        item.ends_with(&suffix),
+                        Span::unknown(),
+                    ))
+                },
+            );
+        }
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "str ends-with accepts exactly one suffix argument in eBPF".into(),
@@ -2047,6 +2109,37 @@ impl<'a> HirToMirLowering<'a> {
                 "str contains requires a string substring argument in eBPF".into(),
             )
         })?;
+        if self.positional_args.len() > 1 {
+            let needle = self.literal_string_arg(needle_reg, "str contains")?;
+            let needle = if ignore_case {
+                needle.to_lowercase()
+            } else {
+                needle
+            };
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str contains",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    Ok(nu_protocol::Value::bool(
+                        item.contains(&needle),
+                        Span::unknown(),
+                    ))
+                },
+            );
+        }
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "str contains accepts exactly one substring argument in eBPF".into(),
