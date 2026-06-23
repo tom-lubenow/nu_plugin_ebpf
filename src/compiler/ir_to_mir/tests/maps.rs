@@ -3277,6 +3277,34 @@ fn test_lower_map_put_rejects_queue_kind() {
 }
 
 #[test]
+fn test_lower_map_put_rejects_bloom_filter_kind() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "bloom-filter");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bloom-filter map-put should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-put --kind bloom-filter is not an update map"));
+            assert!(
+                msg.contains("use map-push to insert values and map-contains --kind bloom-filter"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_put_rejects_redirect_only_devmap_kind() {
     let hir = make_map_put_program(DeclId::new(42), 0, "devmap");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");

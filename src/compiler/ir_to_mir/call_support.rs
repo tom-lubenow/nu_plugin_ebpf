@@ -970,6 +970,9 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
             ))),
+            Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is not an update map; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
+            ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
             ))),
