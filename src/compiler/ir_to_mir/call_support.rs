@@ -1811,7 +1811,7 @@ impl<'a> HirToMirLowering<'a> {
         }
         if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put is not supported for socket map kind {} ('{}'); use specialized socket-map update helpers instead",
+                "map-put is not supported for socket map kind {} ('{}') through generic map-update helpers; use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
                 map_kind, map_name
             )));
         }

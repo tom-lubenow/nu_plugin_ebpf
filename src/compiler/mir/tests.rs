@@ -161,6 +161,16 @@ fn test_socket_map_lookup_error_names_supported_surfaces() {
 }
 
 #[test]
+fn test_socket_map_update_error_names_supported_surfaces() {
+    let msg = MapKind::SockHash.generic_map_op_error(MapOpKind::Update, "active");
+
+    assert!(msg.contains("map update is not supported for socket map kind sockhash ('active')"));
+    assert!(msg.contains("generic map-update helpers"));
+    assert!(msg.contains("map-put from sock_ops"));
+    assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
+}
+
+#[test]
 fn test_map_kind_kernel_compatibility_metadata() {
     let expected = [
         (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),

@@ -3671,6 +3671,8 @@ fn test_lower_map_put_rejects_sockhash_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("helper 'bpf_sock_hash_update' is only valid in sock_ops"));
+            assert!(msg.contains("map-put from sock_ops"));
+            assert!(msg.contains("redirect-socket from sk_msg/sk_skb"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

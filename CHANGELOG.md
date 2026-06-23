@@ -31,6 +31,9 @@ documentation changes that matter to external alpha consumers.
 - Improved unsupported socket-map `map-get` diagnostics so source and MIR
   validation paths point to `map-put` from `sock_ops` and `redirect-socket` from
   `sk_msg` / `sk_skb`.
+- Improved unsupported socket-map `map-put` diagnostics for non-`sock_ops` and
+  shared MIR update paths so they point to `sock_ops` updates and
+  `redirect-socket` redirects.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2367_2367 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper 'bpf_sock_hash_update' is only valid in sock_ops"
+        error_contains: "use map-put from sock_ops for socket-map updates or redirect-socket from sk_msg/sk_skb"
     }
 ]

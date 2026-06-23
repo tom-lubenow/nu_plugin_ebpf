@@ -9520,7 +9520,9 @@ impl<'a> HirToMirLowering<'a> {
             )
         })?;
         if let Some(message) = probe_ctx.helper_call_error(helper) {
-            return Err(CompileError::UnsupportedInstruction(message));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{message}; use map-put from sock_ops for socket-map updates or redirect-socket from sk_msg/sk_skb for redirects"
+            )));
         }
         let ctx_vreg = self.pipeline_input.ok_or_else(|| {
             CompileError::UnsupportedInstruction(
