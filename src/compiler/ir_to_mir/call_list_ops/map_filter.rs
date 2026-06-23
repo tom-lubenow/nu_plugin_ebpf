@@ -180,7 +180,7 @@ impl<'a> HirToMirLowering<'a> {
             if matches!(elem_ty, MirType::U64)
                 && input_meta.zero_initialized_global
                 && self.current_call_result_direct_list_projection.is_some()
-                && self.zero_equality_closure_result(closure_block_id, closure_ir)
+                && self.zero_comparison_closure_keeps_zero(closure_block_id, closure_ir)
             {
                 let vals = (0..array_len)
                     .map(|_| nu_protocol::Value::int(0, Span::unknown()))
@@ -605,7 +605,7 @@ impl<'a> HirToMirLowering<'a> {
         dst == src
     }
 
-    fn zero_equality_closure_result(
+    fn zero_comparison_closure_keeps_zero(
         &self,
         closure_block_id: NuBlockId,
         closure_ir: &HirFunction,
@@ -628,12 +628,9 @@ impl<'a> HirToMirLowering<'a> {
             ] if src_dst == lhs_dst => (first, second, lhs_dst, op, rhs),
             _ => return false,
         };
-        if !matches!(
-            op,
-            nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal)
-        ) {
+        let nu_protocol::ast::Operator::Comparison(comparison) = op else {
             return false;
-        }
+        };
         let src = match &block.terminator {
             HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => src,
             _ => return false,
@@ -642,32 +639,56 @@ impl<'a> HirToMirLowering<'a> {
             return false;
         }
 
-        let input_equals_zero = match (first, second) {
+        match (first, second) {
             (
                 HirStmt::LoadVariable { dst, var_id },
                 HirStmt::LoadLiteral {
-                    dst: zero_dst,
-                    lit: HirLiteral::Int(0),
+                    dst: lit_dst,
+                    lit: HirLiteral::Int(value),
                 },
             ) => {
-                lhs_dst == dst
-                    && rhs == zero_dst
+                *value >= 0
+                    && lhs_dst == dst
+                    && rhs == lit_dst
                     && self.closure_var_is_input_param(closure_block_id, *var_id)
+                    && Self::zero_comparison_result(*comparison, *value, true)
             }
             (
                 HirStmt::LoadLiteral {
-                    dst: zero_dst,
-                    lit: HirLiteral::Int(0),
+                    dst: lit_dst,
+                    lit: HirLiteral::Int(value),
                 },
                 HirStmt::LoadVariable { dst, var_id },
             ) => {
-                lhs_dst == zero_dst
+                *value >= 0
+                    && lhs_dst == lit_dst
                     && rhs == dst
                     && self.closure_var_is_input_param(closure_block_id, *var_id)
+                    && Self::zero_comparison_result(*comparison, *value, false)
             }
             _ => false,
+        }
+    }
+
+    fn zero_comparison_result(
+        comparison: nu_protocol::ast::Comparison,
+        nonnegative_value: i64,
+        input_on_lhs: bool,
+    ) -> bool {
+        let (lhs, rhs) = if input_on_lhs {
+            (0, nonnegative_value)
+        } else {
+            (nonnegative_value, 0)
         };
-        input_equals_zero
+        match comparison {
+            nu_protocol::ast::Comparison::Equal => lhs == rhs,
+            nu_protocol::ast::Comparison::NotEqual => lhs != rhs,
+            nu_protocol::ast::Comparison::LessThan => lhs < rhs,
+            nu_protocol::ast::Comparison::LessThanOrEqual => lhs <= rhs,
+            nu_protocol::ast::Comparison::GreaterThan => lhs > rhs,
+            nu_protocol::ast::Comparison::GreaterThanOrEqual => lhs >= rhs,
+            _ => false,
+        }
     }
 
     fn closure_var_is_input_param(&self, closure_block_id: NuBlockId, var_id: VarId) -> bool {

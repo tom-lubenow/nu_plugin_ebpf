@@ -17314,7 +17314,7 @@ fn test_lower_global_define_type_u64_array_find_first_rejects_when_global_writte
 }
 
 #[test]
-fn test_lower_global_define_type_u64_array_where_zero_first_folds_zero_fill() {
+fn test_lower_global_define_type_u64_array_where_zero_kept_comparison_first_folds_zero_fill() {
     let define_decl = DeclId::new(11_320);
     let global_get_decl = DeclId::new(11_321);
     let where_decl = DeclId::new(11_322);
@@ -17398,11 +17398,13 @@ fn test_lower_global_define_type_u64_array_where_zero_first_folds_zero_fill() {
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(1),
-                    lit: HirLiteral::Int(0),
+                    lit: HirLiteral::Int(1),
                 },
                 HirStmt::BinaryOp {
                     lhs_dst: RegId::new(0),
-                    op: nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal),
+                    op: nu_protocol::ast::Operator::Comparison(
+                        nu_protocol::ast::Comparison::NotEqual,
+                    ),
                     rhs: RegId::new(1),
                 },
             ],
