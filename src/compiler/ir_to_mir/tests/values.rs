@@ -21593,6 +21593,71 @@ fn test_lower_fill_pads_tracked_runtime_string() {
 }
 
 #[test]
+fn test_lower_fill_pads_context_runtime_string_with_char_count() {
+    let fill_decl = DeclId::new(2555);
+    let starts_with_decl = DeclId::new(2556);
+    let hir = make_ctx_field_fill_then_starts_with_program_with_options(
+        "comm",
+        fill_decl,
+        starts_with_decl,
+        Some(4),
+        None,
+        None,
+        " ",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("padded fill on context runtime strings should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::StringSlot { .. },
+                    ..
+                }
+            )),
+        "expected context runtime string fill to append the source string slot"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes == b" "
+            )),
+        "expected context runtime string fill to emit default padding"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("padded context runtime string fill should compile through codegen");
+}
+
+#[test]
 fn test_lower_starts_with_operator_on_runtime_tracked_string() {
     let fill_decl = DeclId::new(509);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");

@@ -69,18 +69,17 @@ const VERIFIER_DIFF_FIXTURES_2564_2570 = [
         kernel: "accept"
     }
     {
-        name: "core-string-fill-rejects-dynamic-input"
+        name: "core-string-fill-accepts-context-comm-input"
         category: "language-core"
-        tags: [string fill diagnostics reject]
+        tags: [string fill accept runtime context]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  $ctx.comm | fill --width 4'
+            '  (($ctx.comm | fill --width 4 | str length) >= 0)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "fill requires compile-time known string, int, float, filesize, or bool input in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-string-fill-mixed-list-join"
