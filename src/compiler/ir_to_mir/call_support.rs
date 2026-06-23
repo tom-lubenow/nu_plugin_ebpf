@@ -858,6 +858,12 @@ impl<'a> HirToMirLowering<'a> {
         Some(CompileError::UnsupportedInstruction(message))
     }
 
+    fn map_define_unknown_kind_error(context: &str) -> CompileError {
+        CompileError::UnsupportedInstruction(format!(
+            "{context} --kind must name a recognized value-carrying map family; map-define supports hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, local-storage map kinds, bloom-filter, array-of-maps, hash-of-maps, and arena"
+        ))
+    }
+
     fn is_generic_data_map_kind(kind: MapKind) -> bool {
         kind.supports_generic_map_op(MapOpKind::Lookup)
             || kind.is_queue_or_stack()
@@ -1140,17 +1146,10 @@ impl<'a> HirToMirLowering<'a> {
                 )))
             }
             Some(map_kind) => Err(
-                Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(
-                    || {
-                        CompileError::UnsupportedInstruction(format!(
-                            "{context} --kind must name a recognized value-carrying map family"
-                        ))
-                    },
-                ),
+                Self::reserved_special_map_kind_error(context, &kind, map_kind)
+                    .unwrap_or_else(|| Self::map_define_unknown_kind_error(context)),
             ),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must name a recognized value-carrying map family"
-            ))),
+            None => Err(Self::map_define_unknown_kind_error(context)),
         }
     }
 

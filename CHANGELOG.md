@@ -55,6 +55,8 @@ documentation changes that matter to external alpha consumers.
   they point to `redirect-map` for map-backed redirects.
 - Improved source-level redirect-map `map-define` and `map-contains`
   diagnostics so they point to `redirect-map` for map-backed redirects.
+- Improved source-level `map-define` unknown-kind diagnostics so they list the
+  supported value-carrying map families.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

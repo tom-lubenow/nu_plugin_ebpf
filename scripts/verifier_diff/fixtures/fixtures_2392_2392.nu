@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2392_2392 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-get --kind must name a recognized map family"
+        error_contains: "map-get supports hash, array, lpm-trie"
     }
 ]

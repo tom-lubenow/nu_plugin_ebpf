@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2399_2399 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind must name a recognized value-carrying map family"
+        error_contains: "map-define supports hash, array, queue, stack"
     }
 ]

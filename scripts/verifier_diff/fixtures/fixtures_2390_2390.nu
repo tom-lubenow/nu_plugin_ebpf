@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2390_2390 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind must name a recognized map family"
+        error_contains: "map-delete supports hash, lpm-trie, lru-hash"
     }
 ]

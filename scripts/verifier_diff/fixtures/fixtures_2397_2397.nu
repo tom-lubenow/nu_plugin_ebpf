@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2397_2397 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-contains --kind must be one of"
+        error_contains: "sk-storage, task-storage, inode-storage, cgrp-storage"
     }
 ]
