@@ -12,6 +12,9 @@ documentation changes that matter to external alpha consumers.
 - Added verifier and Rust coverage for metadata-backed runtime `transpose`
   zero-count direct row projections, and documented the runtime transpose
   consumer surface in the reference.
+- Improved unsupported runtime `transpose` diagnostics to suggest supported
+  shape-only, direct-row, and `--as-record` consumers instead of implying all
+  runtime metadata-backed records are unsupported.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

@@ -109,7 +109,7 @@ const VERIFIER_DIFF_FIXTURES_2767_2776 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "transpose requires compile-time known record values in eBPF"
+        error_contains: "metadata-backed runtime records must be consumed by length"
     }
     {
         name: "core-record-default-rejects-missing-input"

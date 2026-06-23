@@ -53,7 +53,7 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "transpose requires compile-time known record values"
+        error_contains: "metadata-backed runtime records must be consumed by length"
     }
     {
         name: "core-record-transpose-runtime-length"

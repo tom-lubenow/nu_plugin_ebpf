@@ -2179,7 +2179,7 @@ impl<'a> HirToMirLowering<'a> {
         let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref()
         else {
             return Err(CompileError::UnsupportedInstruction(
-                "transpose requires compile-time known record values in eBPF".into(),
+                "transpose can materialize only compile-time known record values in eBPF; metadata-backed runtime records must be consumed by length, is-empty/is-not-empty, describe, direct row projection, or --as-record field projection".into(),
             ));
         };
 
