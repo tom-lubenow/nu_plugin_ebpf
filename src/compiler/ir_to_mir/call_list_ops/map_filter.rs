@@ -325,17 +325,30 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if matches!(elem_ty, MirType::U64)
-            && self.current_call_result_list_shape_metadata_only
             && self.identity_closure_result(closure_block_id, closure_ir)
         {
-            let vals = (0..array_len)
-                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
-                .collect::<Vec<_>>();
-            self.lower_compile_time_only_constant_value(
-                src_dst,
-                &nu_protocol::Value::list(vals, Span::unknown()),
-            );
-            return Ok(true);
+            if self.current_call_result_direct_list_projection.is_some()
+                && input_meta.zero_initialized_global
+            {
+                let vals = (0..array_len)
+                    .map(|_| nu_protocol::Value::int(0, Span::unknown()))
+                    .collect::<Vec<_>>();
+                self.lower_compile_time_only_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(vals, Span::unknown()),
+                );
+                return Ok(true);
+            }
+            if self.current_call_result_list_shape_metadata_only {
+                let vals = (0..array_len)
+                    .map(|_| nu_protocol::Value::nothing(Span::unknown()))
+                    .collect::<Vec<_>>();
+                self.lower_compile_time_only_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(vals, Span::unknown()),
+                );
+                return Ok(true);
+            }
         }
 
         let (input_vreg, base_runtime_ty) =
