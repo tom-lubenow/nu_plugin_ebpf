@@ -25677,6 +25677,154 @@ fn test_lower_global_define_type_record_values_reverse_get_rejects_invalid_index
 }
 
 #[test]
+fn test_lower_global_define_type_record_values_drop_direct_consumers_project_string_field() {
+    let define_decl = DeclId::new(10_385);
+    let global_get_decl = DeclId::new(10_386);
+    let values_decl = DeclId::new(10_387);
+    let drop_decl = DeclId::new(10_388);
+    let first_decl = DeclId::new(10_389);
+    let get_decl = DeclId::new(10_390);
+    let str_length_decl = DeclId::new(10_391);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (drop_decl, "drop".to_string()),
+        (first_decl, "first".to_string()),
+        (get_decl, "get".to_string()),
+        (str_length_decl, "str length".to_string()),
+    ]);
+
+    for (case_name, consumer_decl, consumer_positional) in [
+        ("drop first", first_decl, Vec::new()),
+        ("drop get", get_decl, vec![RegId::new(2)]),
+    ] {
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(5)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: drop_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(6)),
+                            positional: vec![RegId::new(3)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: consumer_decl,
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(7)),
+                            positional: consumer_positional.clone(),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: str_length_decl,
+                        src_dst: RegId::new(9),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(8)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(9) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 10,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("values | {case_name} should project through drop: {err}"));
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            !instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+            )),
+            "values | {case_name} on a typed record should not materialize the values list"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 8,
+                    ty: MirType::U64,
+                    ..
+                }
+            )),
+            "expected values | {case_name} to project the original string field after dropping the scalar field"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record values | {case_name} should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_string_field_supports_string_append() {
     let define_decl = DeclId::new(118);
     let get_decl = DeclId::new(119);

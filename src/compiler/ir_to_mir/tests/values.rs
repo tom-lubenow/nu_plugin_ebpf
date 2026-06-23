@@ -54481,6 +54481,88 @@ fn make_runtime_record_transpose_direct_get_program(
     hir
 }
 
+fn make_runtime_record_transpose_drop_direct_get_field_program(
+    random_decl: DeclId,
+    transpose_decl: DeclId,
+    drop_decl: DeclId,
+    consumer_decl: DeclId,
+    get_decl: DeclId,
+    use_index_get: bool,
+) -> HirProgram {
+    let mut hir = make_runtime_record_transpose_shape_consumer_program(
+        random_decl,
+        transpose_decl,
+        drop_decl,
+        Vec::new(),
+    );
+    let block = &mut hir.main.blocks[0];
+    block.stmts.pop();
+    block.stmts.extend([
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::Call {
+            decl_id: drop_decl,
+            src_dst: RegId::new(9),
+            args: HirCallArgs {
+                positional: vec![RegId::new(8)],
+                pipeline_input: Some(RegId::new(7)),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+
+    let (row_reg, field_reg) = if use_index_get {
+        block.stmts.extend([
+            HirStmt::LoadLiteral {
+                dst: RegId::new(10),
+                lit: HirLiteral::Int(0),
+            },
+            HirStmt::Call {
+                decl_id: consumer_decl,
+                src_dst: RegId::new(11),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(10)],
+                    pipeline_input: Some(RegId::new(9)),
+                    ..HirCallArgs::default()
+                },
+            },
+        ]);
+        (RegId::new(11), RegId::new(12))
+    } else {
+        block.stmts.push(HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: RegId::new(10),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(9)),
+                ..HirCallArgs::default()
+            },
+        });
+        (RegId::new(10), RegId::new(11))
+    };
+    let result_reg = RegId::new(field_reg.get() + 1);
+
+    block.stmts.extend([
+        HirStmt::LoadValue {
+            dst: field_reg,
+            val: Box::new(Value::string("value", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: result_reg,
+            args: HirCallArgs {
+                positional: vec![field_reg],
+                pipeline_input: Some(row_reg),
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+    block.terminator = HirTerminator::Return { src: result_reg };
+    hir.main.register_count = result_reg.get() + 1;
+    hir
+}
+
 fn make_runtime_record_transpose_as_record_field_item_program(
     random_decl: DeclId,
     transpose_decl: DeclId,
@@ -54636,6 +54718,52 @@ fn test_lower_transpose_on_runtime_record_direct_projects_row_value() {
     assert_no_runtime_list_operations(&result.program, "runtime record transpose direct value");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime record transpose direct value should compile");
+}
+
+#[test]
+fn test_lower_transpose_on_runtime_record_drop_direct_projects_row_value() {
+    for (offset, consumer_name, use_index_get) in [(0, "first", false), (10, "get", true)] {
+        let random_decl = DeclId::new(81960 + offset);
+        let transpose_decl = DeclId::new(81961 + offset);
+        let drop_decl = DeclId::new(81962 + offset);
+        let consumer_decl = DeclId::new(81963 + offset);
+        let get_decl = DeclId::new(81964 + offset);
+        let hir = make_runtime_record_transpose_drop_direct_get_field_program(
+            random_decl,
+            transpose_decl,
+            drop_decl,
+            consumer_decl,
+            get_decl,
+            use_index_get,
+        );
+        let decl_names = HashMap::from([
+            (random_decl, "random int".to_string()),
+            (transpose_decl, "transpose".to_string()),
+            (drop_decl, "drop".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("runtime metadata-record transpose | drop 1 | {consumer_name} should direct-project row values: {err}")
+        });
+
+        let label = format!("runtime record transpose drop {consumer_name} direct value");
+        assert_program_returns_constant(&result.program, 7, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("runtime record transpose drop {consumer_name} value should compile: {err}")
+            });
+    }
 }
 
 #[test]
