@@ -22918,6 +22918,147 @@ fn test_lower_global_define_type_record_values_get_string_field_direct_projectio
 }
 
 #[test]
+fn test_lower_global_define_type_record_values_slice_get_string_field_direct_projection() {
+    for (case_idx, (transform_name, count, index)) in
+        [("skip", 1_i64, 0_i64), ("take", 2_i64, 1_i64)]
+            .into_iter()
+            .enumerate()
+    {
+        let base_decl = 10_670 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let values_decl = DeclId::new(base_decl + 2);
+        let transform_decl = DeclId::new(base_decl + 3);
+        let get_decl = DeclId::new(base_decl + 4);
+        let length_decl = DeclId::new(base_decl + 5);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (values_decl, "values".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (get_decl, "get".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,comm:string:8}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: values_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::Int(count),
+                    },
+                    HirStmt::Call {
+                        decl_id: transform_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(5)],
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::Int(index),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(7)],
+                            pipeline_input: Some(RegId::new(6)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: length_decl,
+                        src_dst: RegId::new(9),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(8)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(9) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 10,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("typed record values | {transform_name} | get string field should lower directly: {err:?}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().all(|inst| !matches!(
+                inst,
+                MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+            )),
+            "expected values | {transform_name} | get string field to avoid materializing a numeric values list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "typed record values | {transform_name} | get string field should compile through codegen: {err:?}"
+                )
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_insert_update_upsert_supports_scalar_fields() {
     for (case_idx, (cmd_name, replacement_field, get_field, expected_offset)) in [
         ("insert", "tid", "uid", 8),

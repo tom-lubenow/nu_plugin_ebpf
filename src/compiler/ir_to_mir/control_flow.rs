@@ -1769,6 +1769,84 @@ impl<'a> HirToMirLowering<'a> {
                     next_dst == dst,
                 )
             }
+            Some("skip") if args.positional.len() <= 1 => {
+                let skip_count = if let Some(arg) = args.positional.first() {
+                    self.direct_list_projection_count_arg(
+                        stmts,
+                        search_start,
+                        consumer_index,
+                        *arg,
+                    )?
+                } else {
+                    1
+                };
+                let (skip_consumer_index, consumer_decl_id, skip_consumer_dst, consumer_args) =
+                    Self::next_direct_list_projection_call(
+                        stmts,
+                        consumer_index.saturating_add(1),
+                        next_dst,
+                    )?;
+                let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
+                    Some("first") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::Index(skip_count)
+                    }
+                    Some("get") if consumer_args.positional.len() == 1 => {
+                        let index = self.direct_list_projection_index_arg(
+                            stmts,
+                            search_start,
+                            skip_consumer_index,
+                            *consumer_args.positional.first()?,
+                        )?;
+                        if index < 0 {
+                            return None;
+                        }
+                        DirectListProjection::Index(skip_count.checked_add(index)?)
+                    }
+                    _ => return None,
+                };
+                (
+                    projection,
+                    skip_consumer_index,
+                    next_dst == dst || skip_consumer_dst == dst,
+                )
+            }
+            Some("take") if args.positional.len() == 1 => {
+                let take_count = self.direct_list_projection_count_arg(
+                    stmts,
+                    search_start,
+                    consumer_index,
+                    *args.positional.first()?,
+                )?;
+                let (take_consumer_index, consumer_decl_id, take_consumer_dst, consumer_args) =
+                    Self::next_direct_list_projection_call(
+                        stmts,
+                        consumer_index.saturating_add(1),
+                        next_dst,
+                    )?;
+                let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
+                    Some("first") if consumer_args.positional.is_empty() && take_count > 0 => {
+                        DirectListProjection::Index(0)
+                    }
+                    Some("get") if consumer_args.positional.len() == 1 => {
+                        let index = self.direct_list_projection_index_arg(
+                            stmts,
+                            search_start,
+                            take_consumer_index,
+                            *consumer_args.positional.first()?,
+                        )?;
+                        if index < 0 || index >= take_count {
+                            return None;
+                        }
+                        DirectListProjection::Index(index)
+                    }
+                    _ => return None,
+                };
+                (
+                    projection,
+                    take_consumer_index,
+                    next_dst == dst || take_consumer_dst == dst,
+                )
+            }
             Some("reverse") if args.positional.is_empty() => {
                 let (reverse_consumer_index, consumer_decl_id, reverse_consumer_dst, consumer_args) =
                     Self::next_direct_list_projection_call(
@@ -1816,6 +1894,18 @@ impl<'a> HirToMirLowering<'a> {
         (!old_value_reused).then_some(projection)
     }
 
+    fn direct_list_projection_count_arg(
+        &self,
+        stmts: &[HirStmt],
+        search_start: usize,
+        consumer_index: usize,
+        arg: RegId,
+    ) -> Option<i64> {
+        let count =
+            self.direct_list_projection_int_arg(stmts, search_start, consumer_index, arg)?;
+        (count >= 0).then_some(count)
+    }
+
     fn direct_list_projection_index_arg(
         &self,
         stmts: &[HirStmt],
@@ -1838,6 +1928,34 @@ impl<'a> HirToMirLowering<'a> {
                 HirStmt::LoadLiteral { dst, lit } if *dst == arg => {
                     return Self::direct_list_projection_literal_index(lit);
                 }
+                HirStmt::LoadValue { dst, val } if *dst == arg => match val.as_ref() {
+                    Value::Int { val, .. } => return Some(*val),
+                    _ => return None,
+                },
+                stmt if Self::stmt_touches_reg(stmt, arg) => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn direct_list_projection_int_arg(
+        &self,
+        stmts: &[HirStmt],
+        search_start: usize,
+        consumer_index: usize,
+        arg: RegId,
+    ) -> Option<i64> {
+        if let Some(value) = self.get_metadata(arg).and_then(|meta| meta.literal_int) {
+            return Some(value);
+        }
+
+        for stmt in stmts.get(search_start..consumer_index)?.iter().rev() {
+            match stmt {
+                HirStmt::LoadLiteral {
+                    dst,
+                    lit: HirLiteral::Int(value),
+                } if *dst == arg => return Some(*value),
                 HirStmt::LoadValue { dst, val } if *dst == arg => match val.as_ref() {
                     Value::Int { val, .. } => return Some(*val),
                     _ => return None,
