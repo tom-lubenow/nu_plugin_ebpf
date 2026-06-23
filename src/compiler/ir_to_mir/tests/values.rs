@@ -8904,6 +8904,7 @@ fn make_record_values_empty_transform_first_last_is_empty_program(
     transform_decl: DeclId,
     consumer_decl: DeclId,
     is_empty_decl: DeclId,
+    count: i64,
 ) -> HirProgram {
     let mut record = Record::new();
     record.push("pid", Value::int(7, Span::test_data()));
@@ -8924,7 +8925,7 @@ fn make_record_values_empty_transform_first_last_is_empty_program(
         },
         HirStmt::LoadLiteral {
             dst: RegId::new(2),
-            lit: HirLiteral::Int(2),
+            lit: HirLiteral::Int(count),
         },
         HirStmt::Call {
             decl_id: transform_decl,
@@ -52168,11 +52169,17 @@ fn test_lower_values_on_numeric_metadata_record_reverse_first_projects_last_fiel
 
 #[test]
 fn test_lower_values_on_metadata_record_empty_drop_skip_first_last_return_nothing() {
-    for (offset, transform_name, consumer_name) in [
-        (0, "drop", "first"),
-        (10, "drop", "last"),
-        (20, "skip", "first"),
-        (30, "skip", "last"),
+    for (offset, transform_name, count, consumer_name) in [
+        (0, "drop", 2, "first"),
+        (10, "drop", 2, "last"),
+        (20, "skip", 2, "first"),
+        (30, "skip", 2, "last"),
+        (40, "take", 0, "first"),
+        (50, "take", 0, "last"),
+        (60, "first", 0, "first"),
+        (70, "first", 0, "last"),
+        (80, "last", 0, "first"),
+        (90, "last", 0, "last"),
     ] {
         let values_decl = DeclId::new(82_010 + offset);
         let transform_decl = DeclId::new(82_011 + offset);
@@ -52183,6 +52190,7 @@ fn test_lower_values_on_metadata_record_empty_drop_skip_first_last_return_nothin
             transform_decl,
             consumer_decl,
             is_empty_decl,
+            count,
         );
         let decl_names = HashMap::from([
             (values_decl, "values".to_string()),
@@ -52200,10 +52208,13 @@ fn test_lower_values_on_metadata_record_empty_drop_skip_first_last_return_nothin
             &HashMap::new(),
         )
         .unwrap_or_else(|err| {
-            panic!("values | {transform_name} 2 | {consumer_name} should return nothing: {err}")
+            panic!(
+                "values | {transform_name} {count} | {consumer_name} should return nothing: {err}"
+            )
         });
 
-        let label = format!("metadata record values {transform_name} empty {consumer_name}");
+        let label =
+            format!("metadata record values {transform_name} {count} empty {consumer_name}");
         assert_program_returns_constant(&result.program, 1, &label);
         assert_no_runtime_list_operations(&result.program, &label);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))

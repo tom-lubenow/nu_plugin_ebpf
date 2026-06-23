@@ -1763,9 +1763,6 @@ impl<'a> HirToMirLowering<'a> {
                     consumer_index,
                     *args.positional.first()?,
                 )?;
-                if last_count <= 0 {
-                    return None;
-                }
                 let (last_consumer_index, consumer_decl_id, last_consumer_dst, consumer_args) =
                     Self::next_direct_list_projection_call(
                         stmts,
@@ -1777,7 +1774,7 @@ impl<'a> HirToMirLowering<'a> {
                         DirectListProjection::LastFirst(last_count)
                     }
                     Some("last") if consumer_args.positional.is_empty() => {
-                        DirectListProjection::Last
+                        DirectListProjection::LastLast(last_count)
                     }
                     Some("get") if consumer_args.positional.len() == 1 => {
                         let index = self.direct_list_projection_index_arg(
@@ -1876,10 +1873,10 @@ impl<'a> HirToMirLowering<'a> {
                         next_dst,
                     )?;
                 let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
-                    Some("first") if consumer_args.positional.is_empty() && take_count > 0 => {
-                        DirectListProjection::Index(0)
+                    Some("first") if consumer_args.positional.is_empty() => {
+                        DirectListProjection::TakeFirst(take_count)
                     }
-                    Some("last") if consumer_args.positional.is_empty() && take_count > 0 => {
+                    Some("last") if consumer_args.positional.is_empty() => {
                         DirectListProjection::TakeLast(take_count)
                     }
                     Some("get") if consumer_args.positional.len() == 1 => {

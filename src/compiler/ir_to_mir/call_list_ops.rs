@@ -1866,8 +1866,7 @@ impl<'a> HirToMirLowering<'a> {
             })?;
         let static_count = self.stack_list_static_count_arg("last", raw_count)?;
         if input_meta.direct_projected_list_consumer.is_some()
-            && let (Some(input_reg), Some(count)) = (input_reg, static_count)
-            && count > 0
+            && let (Some(input_reg), Some(_count)) = (input_reg, static_count)
         {
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)

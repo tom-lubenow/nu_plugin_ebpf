@@ -215,6 +215,25 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-empty-counted-first-last"
+        category: "language-core"
+        tags: [aggregate record values take first last count empty accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let take_first_empty = ({ pid: 7 cpu: 2 } | values | take 0 | first | is-empty)'
+            '  let take_last_empty = ({ pid: 7 cpu: 2 } | values | take 0 | last | is-empty)'
+            '  let first_first_empty = ({ pid: 7 cpu: 2 } | values | first 0 | first | is-empty)'
+            '  let first_last_empty = ({ pid: 7 cpu: 2 } | values | first 0 | last | is-empty)'
+            '  let last_first_empty = ({ pid: 7 cpu: 2 } | values | last 0 | first | is-empty)'
+            '  let last_last_empty = ({ pid: 7 cpu: 2 } | values | last 0 | last | is-empty)'
+            '  $take_first_empty and ($take_last_empty and ($first_first_empty and ($first_last_empty and ($last_first_empty and $last_last_empty))))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-first-last"
         category: "language-core"
         tags: [aggregate record values list mixed first last reverse string]

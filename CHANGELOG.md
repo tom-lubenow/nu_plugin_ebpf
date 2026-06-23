@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Extended metadata-backed record `values` direct projections through
+  zero-count `take` / `first N` / `last N` chains so scalar `first` / `last`
+  return `nothing` instead of falling off the optimized lowering path.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

@@ -1508,6 +1508,14 @@ impl<'a> HirToMirLowering<'a> {
                 true,
                 Some(DirectListProjection::Index(index)),
             ),
+            DirectListProjection::TakeFirst(count) => {
+                let out_len = count_to_usize(count)?.min(len);
+                if out_len == 0 {
+                    (len, false, Some(DirectListProjection::First))
+                } else {
+                    (0, true, Some(DirectListProjection::First))
+                }
+            }
             DirectListProjection::TakeLast(count) => {
                 let out_len = count_to_usize(count)?.min(len);
                 if out_len == 0 {
@@ -1526,6 +1534,14 @@ impl<'a> HirToMirLowering<'a> {
                         true,
                         Some(DirectListProjection::First),
                     )
+                }
+            }
+            DirectListProjection::LastLast(count) => {
+                let out_len = count_to_usize(count)?.min(len);
+                if out_len == 0 {
+                    (len, false, Some(DirectListProjection::Last))
+                } else {
+                    (len - 1, true, Some(DirectListProjection::Last))
                 }
             }
             DirectListProjection::LastIndex { count, index } => {
