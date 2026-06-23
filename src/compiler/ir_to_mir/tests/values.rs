@@ -20317,6 +20317,243 @@ fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
 }
 
 #[test]
+fn test_lower_str_replace_record_cell_path_materializes_transformed_field() {
+    let replace_decl = DeclId::new(80830);
+    let starts_with_decl = DeclId::new(80831);
+    let mut record = Record::new();
+    record.push("comm", Value::string("foobaz", Span::test_data()));
+    record.push("pid", Value::int(7, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"foo".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"bar".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("comm")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: replace_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2), RegId::new(3)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("comm")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(6),
+                        val: Box::new(Value::string("barbaz", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: starts_with_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(6)],
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 8,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace should lower for compile-time known record cell-path input");
+
+    let mut transformed = 6u64.to_le_bytes().to_vec();
+    transformed.extend_from_slice(b"barbaz");
+    assert!(
+        result.readonly_globals.iter().any(|global| global
+            .data
+            .windows(transformed.len())
+            .any(|window| window == transformed.as_slice())),
+        "expected materialized record field to contain the replaced string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str replace record cell-path result consumed by field projection should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_replace_table_nested_cell_path_materializes_transformed_fields() {
+    let replace_decl = DeclId::new(80832);
+    let get_decl = DeclId::new(80833);
+    let starts_with_decl = DeclId::new(80834);
+    let mut first_inner = Record::new();
+    first_inner.push("name", Value::string("foo", Span::test_data()));
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push("name", Value::string("foofoo", Span::test_data()));
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"foo".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"bar".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: replace_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2), RegId::new(3)],
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"all".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(5)],
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(6),
+                        path: RegId::new(7),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(8),
+                        val: Box::new(Value::string("barbar", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: starts_with_decl,
+                        src_dst: RegId::new(9),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(8)],
+                            pipeline_input: Some(RegId::new(6)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(9) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 10,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace should lower for compile-time known nested table cell-path input");
+
+    let mut transformed = 6u64.to_le_bytes().to_vec();
+    transformed.extend_from_slice(b"barbar");
+    assert!(
+        result.readonly_globals.iter().any(|global| global
+            .data
+            .windows(transformed.len())
+            .any(|window| window == transformed.as_slice())),
+        "expected materialized table field to contain the replaced second-row string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str replace nested table cell-path result consumed by row projection should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_str_replace_on_runtime_tracked_string_preserves_length() {
     let replace_decl = DeclId::new(16_902);
     let length_decl = DeclId::new(16_903);

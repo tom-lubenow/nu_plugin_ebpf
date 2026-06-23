@@ -5145,9 +5145,9 @@ impl<'a> HirToMirLowering<'a> {
                     .into(),
             ));
         }
-        if self.positional_args.len() != 2 {
+        if self.positional_args.len() < 2 {
             return Err(CompileError::UnsupportedInstruction(
-                "str replace requires exactly two string arguments in eBPF".into(),
+                "str replace requires find and replacement string arguments in eBPF".into(),
             ));
         }
 
@@ -5162,6 +5162,32 @@ impl<'a> HirToMirLowering<'a> {
             .any(|flag| flag == "regex" || flag == "multiline");
         let no_expand = self.named_flags.iter().any(|flag| flag == "no-expand");
         let multiline = self.named_flags.iter().any(|flag| flag == "multiline");
+
+        if self.positional_args.len() > 2 {
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(2)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_cell_paths(
+                "str replace",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    Self::replace_known_string(
+                        &item,
+                        &find,
+                        &replacement,
+                        replace_all,
+                        use_regex,
+                        no_expand,
+                        multiline,
+                    )
+                },
+            );
+        }
 
         if let Some(input) = self.exact_string_list_input(input_reg, "str replace")? {
             let output = input
@@ -6438,11 +6464,22 @@ impl<'a> HirToMirLowering<'a> {
         let trim_right = self.named_flags.iter().any(|flag| flag == "right");
 
         if !self.positional_args.is_empty() {
-            return self.lower_known_string_cell_paths("str trim", src_dst, input_reg, |item| {
-                Ok(Self::trim_known_string(
-                    item, trim_char, trim_left, trim_right,
-                ))
-            });
+            let path_regs = self
+                .positional_args
+                .iter()
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_cell_paths(
+                "str trim",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    Ok(Self::trim_known_string(
+                        item, trim_char, trim_left, trim_right,
+                    ))
+                },
+            );
         }
 
         if let Some(input) = self.exact_string_list_input(input_reg, "str trim")? {
@@ -6491,15 +6528,15 @@ impl<'a> HirToMirLowering<'a> {
         command: &str,
         src_dst: RegId,
         input_reg: Option<RegId>,
+        path_regs: &[RegId],
         transform: F,
     ) -> Result<(), CompileError>
     where
         F: Fn(String) -> Result<String, CompileError> + Copy,
     {
-        let paths = self
-            .positional_args
+        let paths = path_regs
             .iter()
-            .map(|(_, reg)| self.string_cell_path_arg(command, *reg))
+            .map(|reg| self.string_cell_path_arg(command, *reg))
             .collect::<Result<Vec<_>, _>>()?;
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
@@ -9113,9 +9150,18 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !self.positional_args.is_empty() {
-            return self.lower_known_string_cell_paths(command, src_dst, input_reg, |item| {
-                Self::known_string_transform(command, item)
-            });
+            let path_regs = self
+                .positional_args
+                .iter()
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_cell_paths(
+                command,
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| Self::known_string_transform(command, item),
+            );
         }
 
         if let Some(input) = self.exact_string_list_input(input_reg, command)? {
