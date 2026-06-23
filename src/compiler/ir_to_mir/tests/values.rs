@@ -8448,6 +8448,77 @@ fn make_record_set_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_string_set_then_length_program(
+    command_decl: DeclId,
+    get_decl: DeclId,
+    length_decl: DeclId,
+    field: &str,
+    value: &str,
+    return_field: &str,
+) -> HirProgram {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("comm", Value::string("nu", Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(rec, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(field.into()),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2), RegId::new(3)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(return_field.into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_merge_then_field_program(
     command_decl: DeclId,
     merge_fields: &[(&str, i64)],
@@ -53977,6 +54048,53 @@ fn test_lower_insert_adds_metadata_record_field() {
 }
 
 #[test]
+fn test_lower_insert_update_upsert_metadata_record_string_fields() {
+    for (case_idx, (cmd_name, field, return_field)) in [
+        ("insert", "exe", "exe"),
+        ("update", "comm", "comm"),
+        ("upsert", "comm", "comm"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let base_decl = 82_010 + case_idx * 10;
+        let command_decl = DeclId::new(base_decl);
+        let get_decl = DeclId::new(base_decl + 1);
+        let length_decl = DeclId::new(base_decl + 2);
+        let hir = make_record_string_set_then_length_program(
+            command_decl,
+            get_decl,
+            length_decl,
+            field,
+            "bash",
+            return_field,
+        );
+        let decl_names = HashMap::from([
+            (command_decl, cmd_name.to_string()),
+            (get_decl, "get".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{cmd_name} should preserve metadata-backed string fields: {err:?}")
+        });
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("metadata-backed record {cmd_name} string field should compile: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_update_replaces_metadata_record_field() {
     let update_decl = DeclId::new(98);
     let hir = make_record_set_then_field_program(update_decl, "pid", 9, "pid");
@@ -54200,6 +54318,93 @@ fn test_lower_default_adds_missing_metadata_record_field() {
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("default-added record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_default_empty_replaces_metadata_record_string_field() {
+    let default_decl = DeclId::new(82_040);
+    let get_decl = DeclId::new(82_041);
+    let length_decl = DeclId::new(82_042);
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("comm", Value::string("", Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(rec, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(1),
+                    val: Box::new(Value::string("fallback", Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("comm".into()),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("comm".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (default_decl, "default".to_string()),
+        (get_decl, "get".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty should preserve replacement string field metadata");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default --empty string record field should compile through codegen");
 }
 
 #[test]
