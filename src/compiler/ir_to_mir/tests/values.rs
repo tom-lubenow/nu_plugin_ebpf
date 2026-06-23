@@ -24973,6 +24973,226 @@ fn test_lower_str_case_commands_on_known_strings_materialize_converted_literals(
 }
 
 #[test]
+fn test_lower_str_upcase_record_cell_path_materializes_transformed_field() {
+    let upcase_decl = DeclId::new(80820);
+    let starts_with_decl = DeclId::new(80821);
+    let mut record = Record::new();
+    record.push("comm", Value::string("bash", Span::test_data()));
+    record.push("pid", Value::int(7, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("comm")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: upcase_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("comm")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(2),
+                        path: RegId::new(3),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(4),
+                        val: Box::new(Value::string("BASH", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: starts_with_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            pipeline_input: Some(RegId::new(2)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(5) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 6,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (upcase_decl, "str upcase".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str upcase should lower for compile-time known record cell-path input");
+
+    let mut transformed = 4u64.to_le_bytes().to_vec();
+    transformed.extend_from_slice(b"BASH");
+    assert!(
+        result.readonly_globals.iter().any(|global| global
+            .data
+            .windows(transformed.len())
+            .any(|window| window == transformed.as_slice())),
+        "expected materialized record field to contain the uppercased string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str upcase record cell-path result consumed by field projection should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_snake_case_table_nested_cell_path_materializes_transformed_fields() {
+    let snake_case_decl = DeclId::new(80822);
+    let get_decl = DeclId::new(80823);
+    let starts_with_decl = DeclId::new(80824);
+    let mut first_inner = Record::new();
+    first_inner.push("name", Value::string("NuShell", Span::test_data()));
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push("name", Value::string("HelloWorld", Span::test_data()));
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: snake_case_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3)],
+                            pipeline_input: Some(RegId::new(2)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(6),
+                        val: Box::new(Value::string("hello_world", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: starts_with_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(6)],
+                            pipeline_input: Some(RegId::new(4)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 8,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (snake_case_decl, "str snake-case".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str snake-case should lower for compile-time known nested table cell-path input");
+
+    let mut transformed = 11u64.to_le_bytes().to_vec();
+    transformed.extend_from_slice(b"hello_world");
+    assert!(
+        result.readonly_globals.iter().any(|global| global
+            .data
+            .windows(transformed.len())
+            .any(|window| window == transformed.as_slice())),
+        "expected materialized table field to contain the snake-case second-row string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str snake-case nested table cell-path result consumed by row projection should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
     let substring_decl = DeclId::new(140);
     let starts_with_decl = DeclId::new(141);
