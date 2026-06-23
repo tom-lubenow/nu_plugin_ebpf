@@ -9813,6 +9813,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
     values_decl: DeclId,
     consumer_decl: DeclId,
     pre_consumer: Option<RuntimeRecordValuesStringPreConsumer>,
+    consumer_index: Option<i64>,
     starts_with_decl: DeclId,
     comm_first: bool,
 ) -> HirProgram {
@@ -9867,7 +9868,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
         },
     });
 
-    let (consumer_input, consumer_dst, prefix_reg, starts_with_dst, register_count) =
+    let (consumer_input, consumer_dst, next_reg_id) =
         if let Some(RuntimeRecordValuesStringPreConsumer::Reverse(reverse_decl)) = pre_consumer {
             stmts.push(HirStmt::Call {
                 decl_id: reverse_decl,
@@ -9877,13 +9878,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
                     ..HirCallArgs::default()
                 },
             });
-            (
-                RegId::new(6),
-                RegId::new(7),
-                RegId::new(8),
-                RegId::new(9),
-                10,
-            )
+            (RegId::new(6), RegId::new(7), 8)
         } else if let Some(RuntimeRecordValuesStringPreConsumer::FirstCount { decl_id, count }) =
             pre_consumer
         {
@@ -9902,13 +9897,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
                     },
                 },
             ]);
-            (
-                RegId::new(7),
-                RegId::new(8),
-                RegId::new(9),
-                RegId::new(10),
-                11,
-            )
+            (RegId::new(7), RegId::new(8), 9)
         } else if let Some(RuntimeRecordValuesStringPreConsumer::LastCount { decl_id, count }) =
             pre_consumer
         {
@@ -9927,20 +9916,30 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
                     },
                 },
             ]);
+            (RegId::new(7), RegId::new(8), 9)
+        } else {
+            (RegId::new(5), RegId::new(6), 7)
+        };
+
+    let (consumer_positional, prefix_reg, starts_with_dst, register_count) =
+        if let Some(index) = consumer_index {
+            let index_reg = RegId::new(next_reg_id);
+            stmts.push(HirStmt::LoadLiteral {
+                dst: index_reg,
+                lit: HirLiteral::Int(index),
+            });
             (
-                RegId::new(7),
-                RegId::new(8),
-                RegId::new(9),
-                RegId::new(10),
-                11,
+                vec![index_reg],
+                RegId::new(next_reg_id + 1),
+                RegId::new(next_reg_id + 2),
+                next_reg_id + 3,
             )
         } else {
             (
-                RegId::new(5),
-                RegId::new(6),
-                RegId::new(7),
-                RegId::new(8),
-                9,
+                Vec::new(),
+                RegId::new(next_reg_id),
+                RegId::new(next_reg_id + 1),
+                next_reg_id + 2,
             )
         };
 
@@ -9949,6 +9948,7 @@ fn make_runtime_record_values_string_direct_consumer_starts_with_program(
             decl_id: consumer_decl,
             src_dst: consumer_dst,
             args: HirCallArgs {
+                positional: consumer_positional,
                 pipeline_input: Some(consumer_input),
                 ..HirCallArgs::default()
             },
@@ -52569,6 +52569,7 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_first_last_directly
             values_decl,
             consumer_decl,
             reverse_decl.map(RuntimeRecordValuesStringPreConsumer::Reverse),
+            None,
             starts_with_decl,
             comm_first,
         );
@@ -52611,6 +52612,7 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_first_last_
             decl_id: first_decl,
             count: 2,
         }),
+        None,
         starts_with_decl,
         false,
     );
@@ -52653,6 +52655,7 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_first_
             decl_id: last_decl,
             count: 1,
         }),
+        None,
         starts_with_decl,
         false,
     );
@@ -52680,6 +52683,49 @@ fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_first_
     );
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("runtime record values last count string first should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_runtime_mixed_record_projects_string_counted_last_get_directly() {
+    let values_decl = DeclId::new(81_740);
+    let last_decl = DeclId::new(81_741);
+    let get_decl = DeclId::new(81_742);
+    let starts_with_decl = DeclId::new(81_743);
+    let hir = make_runtime_record_values_string_direct_consumer_starts_with_program(
+        values_decl,
+        get_decl,
+        Some(RuntimeRecordValuesStringPreConsumer::LastCount {
+            decl_id: last_decl,
+            count: 1,
+        }),
+        Some(0),
+        starts_with_decl,
+        false,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (last_decl, "last".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime mixed record values last count get should direct-project string fields");
+
+    assert_no_runtime_list_operations(
+        &result.program,
+        "runtime mixed record values string last count get",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("runtime record values last count string get should compile through codegen");
 }
 
 #[test]

@@ -1779,6 +1779,21 @@ impl<'a> HirToMirLowering<'a> {
                     Some("last") if consumer_args.positional.is_empty() => {
                         DirectListProjection::Last
                     }
+                    Some("get") if consumer_args.positional.len() == 1 => {
+                        let index = self.direct_list_projection_index_arg(
+                            stmts,
+                            search_start,
+                            last_consumer_index,
+                            *consumer_args.positional.first()?,
+                        )?;
+                        if index < 0 || index >= last_count {
+                            return None;
+                        }
+                        DirectListProjection::LastIndex {
+                            count: last_count,
+                            index,
+                        }
+                    }
                     _ => return None,
                 };
                 (

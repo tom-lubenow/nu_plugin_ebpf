@@ -1528,6 +1528,20 @@ impl<'a> HirToMirLowering<'a> {
                     )
                 }
             }
+            DirectListProjection::LastIndex { count, index } => {
+                let out_len = count_to_usize(count)?.min(len);
+                let index_usize = index_to_usize(index)?;
+                if index_usize >= out_len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "get index {index_usize} is out of bounds for {context} with length {out_len} in eBPF",
+                    )));
+                }
+                (
+                    len.saturating_sub(out_len).saturating_add(index_usize),
+                    true,
+                    Some(DirectListProjection::Index(index)),
+                )
+            }
             DirectListProjection::SkipLast(count) => {
                 let count = count_to_usize(count)?;
                 if count >= len {
