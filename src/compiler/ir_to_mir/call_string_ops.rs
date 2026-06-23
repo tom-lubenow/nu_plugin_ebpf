@@ -6399,11 +6399,6 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.positional_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "str trim does not support cell-path arguments in eBPF".into(),
-            ));
-        }
         if self
             .named_flags
             .iter()
@@ -6441,6 +6436,12 @@ impl<'a> HirToMirLowering<'a> {
 
         let trim_left = self.named_flags.iter().any(|flag| flag == "left");
         let trim_right = self.named_flags.iter().any(|flag| flag == "right");
+
+        if !self.positional_args.is_empty() {
+            return self.lower_known_string_trim_cell_paths(
+                src_dst, input_reg, trim_char, trim_left, trim_right,
+            );
+        }
 
         if let Some(input) = self.exact_string_list_input(input_reg, "str trim")? {
             let output = input
@@ -6481,6 +6482,200 @@ impl<'a> HirToMirLowering<'a> {
         let input = self.exact_string_input(input_reg, "str trim")?;
         let output = Self::trim_known_string(input, trim_char, trim_left, trim_right);
         self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn lower_known_string_trim_cell_paths(
+        &mut self,
+        src_dst: RegId,
+        input_reg: Option<RegId>,
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> Result<(), CompileError> {
+        let paths = self
+            .positional_args
+            .iter()
+            .map(|(_, reg)| self.string_trim_cell_path_arg(*reg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str trim cell-path arguments require record or table input in eBPF".into(),
+            )
+        })?;
+        let mut output = self
+            .get_metadata(input_reg)
+            .and_then(|meta| meta.constant_value.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str trim cell-path arguments require compile-time known record or table input in eBPF"
+                        .into(),
+                )
+            })?;
+
+        match output {
+            nu_protocol::Value::Record { .. } | nu_protocol::Value::List { .. } => {}
+            ref other => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "str trim cell-path arguments require compile-time known record or table input in eBPF; input has type {}",
+                    other.get_type()
+                )));
+            }
+        }
+
+        for path in &paths {
+            Self::trim_known_value_at_cell_path(
+                &mut output,
+                &path.members,
+                trim_char,
+                trim_left,
+                trim_right,
+            )?;
+        }
+
+        if self.current_call_result_metadata_only
+            || self.current_call_result_list_transform_metadata_only
+        {
+            self.lower_compile_time_only_constant_value(src_dst, &output);
+        } else {
+            self.lower_constant_value(src_dst, &output)?;
+        }
+        Ok(())
+    }
+
+    fn string_trim_cell_path_arg(&self, reg: RegId) -> Result<CellPath, CompileError> {
+        let meta = self.get_metadata(reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str trim cell-path arguments must be compile-time known in eBPF".into(),
+            )
+        })?;
+
+        let path = meta
+            .cell_path
+            .clone()
+            .or_else(|| match meta.constant_value.as_ref() {
+                Some(nu_protocol::Value::CellPath { val, .. }) => Some(val.clone()),
+                _ => None,
+            })
+            .or_else(|| {
+                meta.literal_string
+                    .clone()
+                    .or_else(|| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::String { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .map(|name| CellPath {
+                        members: vec![PathMember::string(
+                            name,
+                            false,
+                            Casing::Sensitive,
+                            Span::unknown(),
+                        )],
+                    })
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str trim cell-path arguments must be compile-time known in eBPF".into(),
+                )
+            })?;
+
+        match path.members.first() {
+            Some(PathMember::String { .. }) => Ok(path),
+            Some(PathMember::Int { .. }) => Err(CompileError::UnsupportedInstruction(
+                "str trim cell-path arguments must start with a record field in eBPF".into(),
+            )),
+            None => Err(CompileError::UnsupportedInstruction(
+                "str trim does not support empty cell paths in eBPF".into(),
+            )),
+        }
+    }
+
+    fn trim_known_value_at_cell_path(
+        value: &mut nu_protocol::Value,
+        members: &[PathMember],
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> Result<(), CompileError> {
+        let Some((member, rest)) = members.split_first() else {
+            return match value {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    let output =
+                        Self::trim_known_string(val.clone(), trim_char, trim_left, trim_right);
+                    *value = nu_protocol::Value::string(output, Span::unknown());
+                    Ok(())
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "str trim cell-path target must be a string in eBPF; target has type {}",
+                    other.get_type()
+                ))),
+            };
+        };
+
+        match member {
+            PathMember::String {
+                val: field, casing, ..
+            } => match value {
+                nu_protocol::Value::Record { val: record, .. } => {
+                    let Some(field_value) = record.to_mut().cased_mut(*casing).get_mut(field)
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "str trim cannot find record field '{field}' in eBPF"
+                        )));
+                    };
+                    Self::trim_known_value_at_cell_path(
+                        field_value,
+                        rest,
+                        trim_char,
+                        trim_left,
+                        trim_right,
+                    )
+                }
+                nu_protocol::Value::List { vals, .. } => {
+                    for item in vals.iter_mut() {
+                        let nu_protocol::Value::Record { val: record, .. } = item else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "str trim cell-path field '{field}' requires table rows to be records in eBPF"
+                            )));
+                        };
+                        let Some(field_value) = record.to_mut().cased_mut(*casing).get_mut(field)
+                        else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "str trim cannot find record field '{field}' in eBPF"
+                            )));
+                        };
+                        Self::trim_known_value_at_cell_path(
+                            field_value,
+                            rest,
+                            trim_char,
+                            trim_left,
+                            trim_right,
+                        )?;
+                    }
+                    Ok(())
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "str trim cannot access field '{field}' on {} in eBPF",
+                    other.get_type()
+                ))),
+            },
+            PathMember::Int { val: index, .. } => match value {
+                nu_protocol::Value::List { vals, .. } => {
+                    let len = vals.len();
+                    let Some(item) = vals.get_mut(*index) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "str trim cell-path index {index} is out of bounds for list length {len} in eBPF"
+                        )));
+                    };
+                    Self::trim_known_value_at_cell_path(
+                        item, rest, trim_char, trim_left, trim_right,
+                    )
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "str trim cannot access index {index} on {} in eBPF",
+                    other.get_type()
+                ))),
+            },
+        }
     }
 
     fn trim_known_string(
