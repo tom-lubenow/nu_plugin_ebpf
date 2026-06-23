@@ -23,6 +23,9 @@ documentation changes that matter to external alpha consumers.
 - Improved unsupported bloom-filter `map-get`, `map-put`, `map-peek`, and
   `map-pop` diagnostics so they point to `map-push` insertion and
   `map-contains` membership tests.
+- Improved shared MIR bloom-filter map-update diagnostics so lower compiler
+  validation paths point to `map-push` insertion and `map-contains` membership
+  tests.
 - Improved unsupported socket-map `map-contains` and `map-push` diagnostics so
   they point to `sock_ops` `map-put` updates and `redirect-socket` redirects.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback

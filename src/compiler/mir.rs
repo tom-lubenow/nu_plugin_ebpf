@@ -477,7 +477,7 @@ impl MapKind {
             }
             (MapOpKind::Update, MapKind::BloomFilter) => {
                 format!(
-                    "map update is not supported for bloom-filter map '{map_name}'; use map-push"
+                    "map update is not supported for bloom-filter map '{map_name}'; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
                 )
             }
             (MapOpKind::Update, MapKind::Queue | MapKind::Stack) => format!(

@@ -143,6 +143,15 @@ fn test_map_kind_surface_classification() {
 }
 
 #[test]
+fn test_bloom_filter_update_error_names_supported_surfaces() {
+    let msg = MapKind::BloomFilter.generic_map_op_error(MapOpKind::Update, "seen");
+
+    assert!(msg.contains("map update is not supported for bloom-filter map 'seen'"));
+    assert!(msg.contains("use map-push to insert values"));
+    assert!(msg.contains("map-contains --kind bloom-filter"));
+}
+
+#[test]
 fn test_map_kind_kernel_compatibility_metadata() {
     let expected = [
         (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),
