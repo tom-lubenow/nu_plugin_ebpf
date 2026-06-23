@@ -1053,7 +1053,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
+                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; use redirect-map for map-backed redirects instead of map-get; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
             ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not a lookup map; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
@@ -1091,7 +1091,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
+                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; use redirect-map for map-backed redirects instead of map-delete; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
             ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not deletable; use map-push to insert values and map-contains --kind bloom-filter for membership tests"

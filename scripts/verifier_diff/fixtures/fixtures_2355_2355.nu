@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2355_2355 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind xskmap is reserved for bpf_redirect_map"
+        error_contains: "use redirect-map for map-backed redirects"
     }
 ]

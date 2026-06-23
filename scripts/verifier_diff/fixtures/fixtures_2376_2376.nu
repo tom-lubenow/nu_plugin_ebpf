@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2376_2376 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-delete --kind devmap-hash is reserved for bpf_redirect_map"
+        error_contains: "use redirect-map for map-backed redirects"
     }
 ]

@@ -3609,6 +3609,10 @@ fn test_lower_map_get_rejects_redirect_only_cpumap_kind() {
                 msg.contains("map-get --kind cpumap is reserved for bpf_redirect_map"),
                 "{msg}"
             );
+            assert!(
+                msg.contains("use redirect-map for map-backed redirects"),
+                "{msg}"
+            );
             assert!(msg.contains("generic map commands only support"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
@@ -3790,6 +3794,10 @@ fn test_lower_map_delete_rejects_redirect_only_xskmap_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
                 msg.contains("map-delete --kind xskmap is reserved for bpf_redirect_map"),
+                "{msg}"
+            );
+            assert!(
+                msg.contains("use redirect-map for map-backed redirects"),
                 "{msg}"
             );
             assert!(msg.contains("generic map commands only support"), "{msg}");

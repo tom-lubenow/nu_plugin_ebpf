@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2369_2369 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-get --kind cpumap is reserved for bpf_redirect_map"
+        error_contains: "use redirect-map for map-backed redirects"
     }
 ]

@@ -51,6 +51,8 @@ documentation changes that matter to external alpha consumers.
 - Improved source-level cgroup-array `map-get`, `map-put`, `map-delete`, and
   `map-define` diagnostics so they point to `map-contains --kind cgroup-array`
   membership tests.
+- Improved source-level redirect-map `map-get` and `map-delete` diagnostics so
+  they point to `redirect-map` for map-backed redirects.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an
