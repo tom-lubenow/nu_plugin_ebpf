@@ -1834,7 +1834,7 @@ impl<'a> HirToMirLowering<'a> {
                     )?;
                 let projection = match self.decl_names.get(&consumer_decl_id).map(String::as_str) {
                     Some("first") if consumer_args.positional.is_empty() => {
-                        DirectListProjection::Index(skip_count)
+                        DirectListProjection::DropFirst(skip_count)
                     }
                     Some("last") if consumer_args.positional.is_empty() => {
                         DirectListProjection::SkipLast(skip_count)
@@ -1849,7 +1849,10 @@ impl<'a> HirToMirLowering<'a> {
                         if index < 0 {
                             return None;
                         }
-                        DirectListProjection::Index(skip_count.checked_add(index)?)
+                        DirectListProjection::DropIndex {
+                            drop: skip_count,
+                            index,
+                        }
                     }
                     _ => return None,
                 };

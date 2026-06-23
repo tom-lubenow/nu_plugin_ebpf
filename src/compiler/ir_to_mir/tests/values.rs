@@ -8899,6 +8899,76 @@ fn make_record_values_then_direct_consumer_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_values_empty_transform_first_last_is_empty_program(
+    values_decl: DeclId,
+    transform_decl: DeclId,
+    consumer_decl: DeclId,
+    is_empty_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(2),
+        },
+        HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: consumer_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: is_empty_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_source_record_sort_values_then_values_get_program(
     sort_decl: DeclId,
     values_decl: DeclId,
@@ -52094,6 +52164,55 @@ fn test_lower_values_on_numeric_metadata_record_reverse_first_projects_last_fiel
     assert_no_runtime_list_operations(&result.program, "metadata record values reverse first");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record values followed by reverse first should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_metadata_record_empty_drop_skip_first_last_return_nothing() {
+    for (offset, transform_name, consumer_name) in [
+        (0, "drop", "first"),
+        (10, "drop", "last"),
+        (20, "skip", "first"),
+        (30, "skip", "last"),
+    ] {
+        let values_decl = DeclId::new(82_010 + offset);
+        let transform_decl = DeclId::new(82_011 + offset);
+        let consumer_decl = DeclId::new(82_012 + offset);
+        let is_empty_decl = DeclId::new(82_013 + offset);
+        let hir = make_record_values_empty_transform_first_last_is_empty_program(
+            values_decl,
+            transform_decl,
+            consumer_decl,
+            is_empty_decl,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (consumer_decl, consumer_name.to_string()),
+            (is_empty_decl, "is-empty".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("values | {transform_name} 2 | {consumer_name} should return nothing: {err}")
+        });
+
+        let label = format!("metadata record values {transform_name} empty {consumer_name}");
+        assert_program_returns_constant(&result.program, 1, &label);
+        assert_no_runtime_list_operations(&result.program, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "record values | {transform_name} 2 | {consumer_name} nothing result should compile: {err}"
+                )
+            });
+    }
 }
 
 #[test]

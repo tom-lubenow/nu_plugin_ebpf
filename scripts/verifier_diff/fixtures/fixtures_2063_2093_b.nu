@@ -198,6 +198,23 @@ const VERIFIER_DIFF_FIXTURES_2063_2093_B = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-empty-drop-skip-first-last"
+        category: "language-core"
+        tags: [aggregate record values drop skip first last empty accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let drop_first_empty = ({ pid: 7 cpu: 2 } | values | drop 2 | first | is-empty)'
+            '  let drop_last_empty = ({ pid: 7 cpu: 2 } | values | drop 2 | last | is-empty)'
+            '  let skip_first_empty = ({ pid: 7 cpu: 2 } | values | skip 2 | first | is-empty)'
+            '  let skip_last_empty = ({ pid: 7 cpu: 2 } | values | skip 2 | last | is-empty)'
+            '  $drop_first_empty and ($drop_last_empty and ($skip_first_empty and $skip_last_empty))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-mixed-first-last"
         category: "language-core"
         tags: [aggregate record values list mixed first last reverse string]

@@ -1511,7 +1511,7 @@ impl<'a> HirToMirLowering<'a> {
             DirectListProjection::TakeLast(count) => {
                 let out_len = count_to_usize(count)?.min(len);
                 if out_len == 0 {
-                    (len, true, Some(DirectListProjection::Last))
+                    (len, false, Some(DirectListProjection::Last))
                 } else {
                     (out_len - 1, true, Some(DirectListProjection::Last))
                 }
@@ -1519,7 +1519,7 @@ impl<'a> HirToMirLowering<'a> {
             DirectListProjection::LastFirst(count) => {
                 let out_len = count_to_usize(count)?.min(len);
                 if out_len == 0 {
-                    (len, true, Some(DirectListProjection::First))
+                    (len, false, Some(DirectListProjection::First))
                 } else {
                     (
                         len.saturating_sub(out_len),
@@ -1545,7 +1545,7 @@ impl<'a> HirToMirLowering<'a> {
             DirectListProjection::SkipLast(count) => {
                 let count = count_to_usize(count)?;
                 if count >= len {
-                    (len, true, Some(DirectListProjection::Last))
+                    (len, false, Some(DirectListProjection::Last))
                 } else {
                     (len - 1, true, Some(DirectListProjection::Last))
                 }
@@ -1554,7 +1554,7 @@ impl<'a> HirToMirLowering<'a> {
                 let drop_count = count_to_usize(count)?.min(len);
                 let out_len = len.saturating_sub(drop_count);
                 if out_len == 0 {
-                    (len, true, Some(DirectListProjection::First))
+                    (len, false, Some(DirectListProjection::First))
                 } else {
                     (drop_count, true, Some(DirectListProjection::First))
                 }
@@ -1562,7 +1562,7 @@ impl<'a> HirToMirLowering<'a> {
             DirectListProjection::DropLast(count) => {
                 let count = count_to_usize(count)?;
                 if count >= len {
-                    (len, true, Some(DirectListProjection::Last))
+                    (len, false, Some(DirectListProjection::Last))
                 } else {
                     (len - 1, true, Some(DirectListProjection::Last))
                 }
@@ -1643,6 +1643,10 @@ impl<'a> HirToMirLowering<'a> {
                 src_dst,
                 &nu_protocol::Value::nothing(Span::unknown()),
             );
+            if let Some(marker) = pass_through_marker {
+                self.get_or_create_metadata(src_dst)
+                    .direct_projected_list_consumer = Some(marker);
+            }
             return Ok(());
         };
         if !Self::metadata_record_values_direct_projection_supported_field(&field) {
@@ -1827,6 +1831,10 @@ impl<'a> HirToMirLowering<'a> {
                 src_dst,
                 &nu_protocol::Value::nothing(Span::unknown()),
             );
+            if let Some(marker) = pass_through_marker {
+                self.get_or_create_metadata(src_dst)
+                    .direct_projected_list_consumer = Some(marker);
+            }
             return Ok(());
         };
 
@@ -2269,6 +2277,10 @@ impl<'a> HirToMirLowering<'a> {
                 src_dst,
                 &nu_protocol::Value::nothing(Span::unknown()),
             );
+            if let Some(marker) = pass_through_marker {
+                self.get_or_create_metadata(src_dst)
+                    .direct_projected_list_consumer = Some(marker);
+            }
             return Ok(());
         };
 

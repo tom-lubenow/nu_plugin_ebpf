@@ -173,4 +173,19 @@ const VERIFIER_DIFF_FIXTURES_2094_2125_A_B = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "core-record-transpose-runtime-empty-drop-skip-first-last"
+        category: "language-core"
+        tags: [aggregate record transpose drop skip first last empty accept runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let drop_first_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | drop 2 | first | is-empty)'
+            '  let skip_last_empty = ({ pid: $ctx.pid cpu: 7 } | transpose key value | skip 2 | last | is-empty)'
+            '  $drop_first_empty and $skip_last_empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
