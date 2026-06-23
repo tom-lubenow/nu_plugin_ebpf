@@ -1,6 +1,6 @@
 const VERIFIER_DIFF_FIXTURES_2509_2511 = [
     {
-        name: "core-string-distance-rejects-extra-compare-string"
+        name: "core-string-distance-rejects-cell-path-on-scalar-input"
         category: "language-core"
         tags: [string str distance diagnostics reject]
         target: "kprobe:ksys_read"
@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2509_2511 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str distance requires exactly one compare-string argument in eBPF"
+        error_contains: "str distance cell-path arguments require compile-time known record or table input in eBPF; input has type string"
     }
     {
         name: "core-string-distance-rejects-dynamic-non-string-input"

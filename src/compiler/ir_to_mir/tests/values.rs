@@ -18046,6 +18046,196 @@ fn test_lower_str_distance_on_known_strings_materializes_levenshtein_distance() 
 }
 
 #[test]
+fn test_lower_str_distance_record_cell_path_materializes_field_distance() {
+    let distance_decl = DeclId::new(80890);
+    let mut record = Record::new();
+    record.push("name", Value::string("kitten", Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(record, Span::test_data())),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(1),
+                        val: Box::new(Value::string("sitting", Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: distance_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(3),
+                        path: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(distance_decl, "str distance".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str distance should lower for compile-time known record cell-path input");
+
+    assert_program_returns_constant(&result.program, 3, "str distance record cell path");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str distance record cell-path result consumed by field projection should compile");
+}
+
+#[test]
+fn test_lower_str_distance_table_nested_cell_path_materializes_field_distances() {
+    let distance_decl = DeclId::new(80891);
+    let get_decl = DeclId::new(80892);
+    let mut first_inner = Record::new();
+    first_inner.push(
+        "name",
+        Value::string("abcdefghijklmnopq", Span::test_data()),
+    );
+    let mut first = Record::new();
+    first.push("meta", Value::record(first_inner, Span::test_data()));
+    let mut second_inner = Record::new();
+    second_inner.push(
+        "name",
+        Value::string("abcdefghijklmnopqrstuvw", Span::test_data()),
+    );
+    let mut second = Record::new();
+    second.push("meta", Value::record(second_inner, Span::test_data()));
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::record(first, Span::test_data()),
+                                Value::record(second, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(1),
+                        val: Box::new(Value::string("", Span::test_data())),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: distance_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("meta"), string_member("name")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(5),
+                        path: RegId::new(6),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(5) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (distance_decl, "str distance".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str distance should lower for compile-time known nested table cell-path input");
+
+    let expected = 23i64.to_le_bytes();
+    assert!(
+        result.readonly_globals.iter().any(|global| global
+            .data
+            .windows(expected.len())
+            .any(|window| window == expected)),
+        "expected materialized table field to contain distance 23"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str distance nested table cell-path result consumed by projection should compile");
+}
+
+#[test]
 fn test_lower_str_join_on_known_string_materializes_same_string() {
     let join_decl = DeclId::new(183);
     let starts_with_decl = DeclId::new(184);

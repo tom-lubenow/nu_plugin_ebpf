@@ -2662,14 +2662,35 @@ impl<'a> HirToMirLowering<'a> {
                 "str distance does not accept named arguments in eBPF".into(),
             ));
         }
-        if self.positional_args.len() != 1 {
+        if self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
                 "str distance requires exactly one compare-string argument in eBPF".into(),
             ));
         }
 
-        let input = self.exact_string_input(input_reg, "str distance")?;
         let compare = self.literal_string_arg(self.positional_args[0].1, "str distance")?;
+        if self.positional_args.len() > 1 {
+            let path_regs = self
+                .positional_args
+                .iter()
+                .skip(1)
+                .map(|(_, reg)| *reg)
+                .collect::<Vec<_>>();
+            return self.lower_known_string_value_cell_paths(
+                "str distance",
+                src_dst,
+                input_reg,
+                &path_regs,
+                |item| {
+                    Ok(nu_protocol::Value::int(
+                        levenshtein_distance(&item, &compare) as i64,
+                        Span::unknown(),
+                    ))
+                },
+            );
+        }
+
+        let input = self.exact_string_input(input_reg, "str distance")?;
         let distance = levenshtein_distance(&input, &compare) as i64;
         self.lower_i64_result(src_dst, result_vreg, distance)
     }
