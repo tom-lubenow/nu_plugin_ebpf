@@ -39,6 +39,60 @@ let PROGRAM_MAP_HELPER_STORAGE_KERNEL_FEATURE_EXPECTATIONS = (
     {
         program: [
             '{|ctx|'
+            '  helper-call "bpf_map_push_elem" raw_queue value 0 --kind queue'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_QUEUE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_push_elem" raw_stack value 0 --kind stack'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_STACK"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_peek_elem" raw_queue value --kind queue'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_QUEUE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_peek_elem" raw_stack value --kind stack'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_STACK"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_pop_elem" raw_queue value --kind queue'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_QUEUE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_pop_elem" raw_stack value --kind stack'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_STACK"]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  helper-call "bpf_ringbuf_query" custom_ringbuf 0'
             '  0'
             '}'
