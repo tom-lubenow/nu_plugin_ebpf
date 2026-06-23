@@ -968,7 +968,7 @@ impl<'a> HirToMirLowering<'a> {
         match map_kind {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not an update map; use map-push to insert values and map-contains --kind bloom-filter for membership tests"
@@ -1050,7 +1050,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
@@ -1088,7 +1088,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for cgroup membership helper-calls"
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
@@ -1132,7 +1132,7 @@ impl<'a> HirToMirLowering<'a> {
                 )))
             }
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for cgroup membership helper-calls"
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; use map-contains --kind cgroup-array for membership tests"
             ))),
             Some(map_kind) if map_kind.is_redirect_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(

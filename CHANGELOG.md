@@ -48,6 +48,9 @@ documentation changes that matter to external alpha consumers.
   kind wording.
 - Improved shared MIR cgroup-array operation diagnostics so lower compiler
   validation paths point to `map-contains --kind cgroup-array` membership tests.
+- Improved source-level cgroup-array `map-get`, `map-put`, `map-delete`, and
+  `map-define` diagnostics so they point to `map-contains --kind cgroup-array`
+  membership tests.
 - Hardened sched_ext kfunc policy diagnostic formatting so multi-callback
   messages avoid an internal unwrap.
 - Hardened simple loader event decoding so fixed-width integer events avoid an

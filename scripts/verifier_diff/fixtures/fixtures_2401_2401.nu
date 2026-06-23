@@ -12,6 +12,6 @@ const VERIFIER_DIFF_FIXTURES_2401_2401 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-define --kind cgroup-array is reserved for cgroup membership helper-calls"
+        error_contains: "use map-contains --kind cgroup-array for membership tests"
     }
 ]
