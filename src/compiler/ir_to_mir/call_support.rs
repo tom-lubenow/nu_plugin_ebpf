@@ -1215,6 +1215,10 @@ impl<'a> HirToMirLowering<'a> {
             MapKind::Queue => Ok(MapKind::Queue),
             MapKind::Stack => Ok(MapKind::Stack),
             MapKind::BloomFilter => Ok(MapKind::BloomFilter),
+            other if other.is_socket_map() => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} does not support socket map kind {}; use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb for redirects",
+                other
+            ))),
             other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind queue, --kind stack, or --kind bloom-filter, got {}",
                 other

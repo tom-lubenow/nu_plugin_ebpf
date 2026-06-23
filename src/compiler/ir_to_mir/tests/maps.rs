@@ -2595,6 +2595,36 @@ fn test_lower_map_push_respects_bloom_filter_kind() {
 }
 
 #[test]
+fn test_lower_map_push_rejects_sockmap_kind_with_guidance() {
+    let hir = make_map_push_program(DeclId::new(42), 0, "sockmap");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sockmap map-push should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("map-push does not support socket map kind sockmap"));
+            assert!(
+                msg.contains(
+                    "use map-put from sock_ops for updates or redirect-socket from sk_msg/sk_skb"
+                ),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_push_infers_prior_map_define_kind_when_kind_is_omitted() {
     let map_push_decl = DeclId::new(42);
     let (mut hir, mut decl_names) = map_define_with_value_type_hir("recent_pids", "queue", "int");
