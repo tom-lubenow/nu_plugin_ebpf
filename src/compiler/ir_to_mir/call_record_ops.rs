@@ -1634,6 +1634,122 @@ impl<'a> HirToMirLowering<'a> {
             .unwrap_or_else(|| field.ty.clone())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn lower_record_string_field_projection_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        field: &RecordField,
+        field_source_meta: Option<&RegMetadata>,
+        field_constant: Option<nu_protocol::Value>,
+        slot_len: usize,
+        content_cap: usize,
+        pass_through_marker: Option<DirectListProjection>,
+        op_name: &str,
+    ) -> Result<(), CompileError> {
+        let field_runtime_ty = self
+            .vreg_type_hints
+            .get(&field.value_vreg)
+            .cloned()
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{op_name} requires tracked string storage for field '{}'",
+                    field.name
+                ))
+            })?;
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        } = field_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{op_name} requires stack or map backed string storage for field '{}'",
+                field.name
+            )));
+        };
+
+        let payload_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: slot_len,
+        };
+        let expected_stored_len = 8usize.checked_add(slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{op_name} string field '{}' storage layout is too large",
+                field.name
+            ))
+        })?;
+        let stored_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: expected_stored_len,
+        };
+
+        let (source_offset, len_vreg) = if pointee.as_ref() == &stored_ty && field.ty == stored_ty {
+            let len_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: field.value_vreg,
+                offset: 0,
+                ty: MirType::U64,
+            });
+            (8, len_vreg)
+        } else if pointee.as_ref() == &payload_ty && field.ty == payload_ty {
+            let len_vreg = field_source_meta
+                .and_then(|meta| meta.string_len_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{op_name} requires tracked string length for field '{}'",
+                        field.name
+                    ))
+                })?;
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            (0, len_vreg)
+        } else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{op_name} string field '{}' has incompatible storage layout",
+                field.name
+            )));
+        };
+
+        let slot = self
+            .func
+            .alloc_stack_slot(slot_len, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(slot, payload_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(payload_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(slot, 0, field.value_vreg, source_offset, slot_len)?;
+
+        let mut out_meta = field_source_meta.cloned().unwrap_or_default();
+        out_meta.is_context = field.is_context;
+        out_meta.field_type = Some(payload_ty);
+        out_meta.string_slot = Some(slot);
+        out_meta.string_len_vreg = Some(len_vreg);
+        out_meta.string_len_bound = Some(content_cap);
+        out_meta.root_ctx_field = field.root_ctx_field.clone();
+        out_meta.trusted_btf = false;
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        });
+        out_meta.source_var = None;
+        out_meta.constant_value = field_constant;
+        if let Some(marker) = pass_through_marker {
+            out_meta.direct_projected_list_consumer = Some(marker);
+        }
+        self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
     fn lower_metadata_record_values_direct_projection(
         &mut self,
         src_dst: RegId,
@@ -1694,88 +1810,17 @@ impl<'a> HirToMirLowering<'a> {
             content_cap,
         }) = &field.semantics
         {
-            let field_runtime_ty = self
-                .vreg_type_hints
-                .get(&field.value_vreg)
-                .cloned()
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "values direct projection requires tracked string storage for field '{}'",
-                        field.name
-                    ))
-                })?;
-            let MirType::Ptr {
-                pointee,
-                address_space: AddressSpace::Stack | AddressSpace::Map,
-            } = field_runtime_ty
-            else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "values direct projection requires stack or map backed string storage for field '{}'",
-                    field.name
-                )));
-            };
-            let expected_stored_len = 8usize.checked_add(*slot_len).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "values direct projection string field '{}' storage layout is too large",
-                    field.name
-                ))
-            })?;
-            let storage_matches = matches!(
-                &field.ty,
-                MirType::Array { elem, len }
-                    if elem.as_ref() == &MirType::U8 && *len == expected_stored_len
-            );
-            if pointee.as_ref() != &field.ty || !storage_matches {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "values direct projection string field '{}' has incompatible storage layout",
-                    field.name
-                )));
-            }
-
-            let payload_ty = MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: *slot_len,
-            };
-            let slot = self
-                .func
-                .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
-            self.record_stack_slot_type(slot, payload_ty.clone());
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::StackSlot(slot),
-            });
-            self.vreg_type_hints.insert(
+            self.lower_record_string_field_projection_result(
+                src_dst,
                 result_vreg,
-                MirType::Ptr {
-                    pointee: Box::new(payload_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                },
-            );
-            let len_vreg = self.func.alloc_vreg();
-            self.vreg_type_hints.insert(len_vreg, MirType::U64);
-            self.emit(MirInst::Load {
-                dst: len_vreg,
-                ptr: field.value_vreg,
-                offset: 0,
-                ty: MirType::U64,
-            });
-            self.emit_ptr_to_slot_copy(slot, 0, field.value_vreg, 8, *slot_len)?;
-
-            let mut out_meta = field_source_meta.unwrap_or_default();
-            out_meta.is_context = field.is_context;
-            out_meta.field_type = Some(payload_ty);
-            out_meta.string_slot = Some(slot);
-            out_meta.string_len_vreg = Some(len_vreg);
-            out_meta.string_len_bound = Some(*content_cap);
-            out_meta.root_ctx_field = field.root_ctx_field;
-            out_meta.trusted_btf = false;
-            out_meta.annotated_semantics = field.semantics;
-            out_meta.source_var = None;
-            out_meta.constant_value = field_constant;
-            if let Some(marker) = pass_through_marker {
-                out_meta.direct_projected_list_consumer = Some(marker);
-            }
-            self.reg_metadata.insert(src_dst.get(), out_meta);
+                &field,
+                field_source_meta.as_ref(),
+                field_constant.clone(),
+                *slot_len,
+                *content_cap,
+                pass_through_marker,
+                "values direct projection",
+            )?;
             return Ok(());
         }
 
@@ -2631,85 +2676,17 @@ impl<'a> HirToMirLowering<'a> {
         }) = &field.semantics
             && can_materialize_string_projection
         {
-            let field_runtime_ty = self
-                .vreg_type_hints
-                .get(&field.value_vreg)
-                .cloned()
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "get requires tracked string storage for field '{}'",
-                        field.name
-                    ))
-                })?;
-            let MirType::Ptr {
-                pointee,
-                address_space: AddressSpace::Stack | AddressSpace::Map,
-            } = field_runtime_ty
-            else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "get requires stack or map backed string storage for field '{}'",
-                    field.name
-                )));
-            };
-            let expected_stored_len = 8usize.checked_add(*slot_len).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "get string field '{}' storage layout is too large",
-                    field.name
-                ))
-            })?;
-            let storage_matches = matches!(
-                &field.ty,
-                MirType::Array { elem, len }
-                    if elem.as_ref() == &MirType::U8 && *len == expected_stored_len
-            );
-            if pointee.as_ref() != &field.ty || !storage_matches {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "get string field '{}' has incompatible storage layout",
-                    field.name
-                )));
-            }
-
-            let payload_ty = MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: *slot_len,
-            };
-            let slot = self
-                .func
-                .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
-            self.record_stack_slot_type(slot, payload_ty.clone());
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::StackSlot(slot),
-            });
-            self.vreg_type_hints.insert(
+            self.lower_record_string_field_projection_result(
+                src_dst,
                 result_vreg,
-                MirType::Ptr {
-                    pointee: Box::new(payload_ty.clone()),
-                    address_space: AddressSpace::Stack,
-                },
-            );
-            let len_vreg = self.func.alloc_vreg();
-            self.vreg_type_hints.insert(len_vreg, MirType::U64);
-            self.emit(MirInst::Load {
-                dst: len_vreg,
-                ptr: field.value_vreg,
-                offset: 0,
-                ty: MirType::U64,
-            });
-            self.emit_ptr_to_slot_copy(slot, 0, field.value_vreg, 8, *slot_len)?;
-
-            let mut out_meta = field_source_meta.unwrap_or_default();
-            out_meta.is_context = field.is_context;
-            out_meta.field_type = Some(payload_ty);
-            out_meta.string_slot = Some(slot);
-            out_meta.string_len_vreg = Some(len_vreg);
-            out_meta.string_len_bound = Some(*content_cap);
-            out_meta.root_ctx_field = field.root_ctx_field;
-            out_meta.trusted_btf = false;
-            out_meta.annotated_semantics = field.semantics;
-            out_meta.source_var = None;
-            out_meta.constant_value = field_constant;
-            self.reg_metadata.insert(src_dst.get(), out_meta);
+                &field,
+                field_source_meta.as_ref(),
+                field_constant.clone(),
+                *slot_len,
+                *content_cap,
+                None,
+                "get",
+            )?;
             return Ok(());
         }
 

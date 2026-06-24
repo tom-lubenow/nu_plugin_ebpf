@@ -1486,7 +1486,7 @@ impl<'a> HirToMirLowering<'a> {
         let static_count = self.stack_list_static_count_arg(cmd_name, raw_count)?;
         if matches!(cmd_name, "take" | "first" | "skip" | "drop")
             && input_meta.direct_projected_list_consumer.is_some()
-            && let (Some(input_reg), Some(count)) = (input_reg, static_count)
+            && let (Some(input_reg), Some(_)) = (input_reg, static_count)
         {
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)
@@ -1497,17 +1497,9 @@ impl<'a> HirToMirLowering<'a> {
                 dst: result_vreg,
                 src: MirValue::VReg(input_vreg),
             });
+            // The producer already folded this slice and its final consumer into
+            // the direct projection, so the marker stays in consumer coordinates.
             self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
-            if cmd_name == "skip"
-                && let Some(out_meta) = self.reg_metadata.get_mut(&src_dst.get())
-                && let Some(DirectListProjection::Index(index)) =
-                    out_meta.direct_projected_list_consumer
-            {
-                out_meta.direct_projected_list_consumer = i64::try_from(count)
-                    .ok()
-                    .and_then(|count| index.checked_sub(count))
-                    .map(DirectListProjection::Index);
-            }
             return Ok(());
         }
         if let (Some(input_reg), Some(count)) = (input_reg, static_count)
