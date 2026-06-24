@@ -5040,6 +5040,139 @@ fn test_lower_xdp_eth_ipv4_tcp_seq_projection_reuses_dynamic_payload_steps() {
 }
 
 #[test]
+fn test_lower_xdp_eth_ipv4_esp_spi_projection_uses_be32_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("esp"),
+            string_member("spi"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 esp spi projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv6_esp_sequence_projection_reuses_extension_scan() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv6"),
+            string_member("esp"),
+            string_member("sequence"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv6 esp sequence projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. }))
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(4),
+                    ..
+                }
+            ))
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U32,
+                    ..
+                }
+            ))
+    );
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv4_esp_payload_projection_is_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("esp"),
+            string_member("payload"),
+            int_member(0),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("esp payload projection should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("typed field path 'data.eth.ipv4.esp.payload.0' has no field 'payload'"),
+        "{err}"
+    );
+}
+
+#[test]
 fn test_lower_xdp_eth_ipv6_udp_src_projection_reuses_bounded_ipv6_extension_scan() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

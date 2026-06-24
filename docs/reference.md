@@ -368,7 +368,7 @@ guarded write path. Those lower to guarded packet
 stores and automatically normalize big-endian packet scalars back to
 network byte order. Other packet families remain read-only for direct
 packet writes. Fixed header views `eth`, `arp`, `ipv4`, `ipv6`, `icmp`,
-`icmpv6`, `udp`, and `tcp` are also available, for example
+`icmpv6`, `udp`, `tcp`, and `esp` are also available, for example
 `$ctx.data.eth.ethertype`, `$ctx.data.eth.arp.opcode`,
 `$ctx.data.eth.payload.ipv4.protocol`,
 `$ctx.data.eth.payload.ipv6.next_header`,
@@ -387,9 +387,11 @@ automatically. ARP exposes fixed Ethernet/IPv4 fields such as
 `flags`, and per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`,
 `syn`, and `fin` fields; ICMP and ICMPv6 expose the raw
 `rest_of_header` word plus echo `echo_id` and `echo_sequence` fields.
+ESP exposes the fixed front-header `spi` and `sequence` fields.
 Packet headers also accept common kernel-header field aliases such as
 `eth.h_proto`, `ipv4.tot_len`, `ipv4.saddr`, `udp.source`, `udp.dest`,
-`tcp.source`, and `tcp.dest`. Those header views also support `payload`
+`tcp.source`, `tcp.dest`, `esp.security_parameter_index`, and `esp.seq`.
+Those header views also support `payload`
 stepping:
 `$ctx.data.eth.payload` skips Ethernet and up to two stacked VLAN tags
 when present, `$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized
@@ -631,7 +633,7 @@ and `socket_filter:tcp6:[::1]:31337`, which create and keep open a
 bound socket while attached. `socket_filter` return values are
 snapshot lengths: return `0` to drop the packet or a positive value to
 keep it, and aliases like `"pass"` / `"keep"` expand to
-`ctx.packet_len`. Deeper TCP option parsing and ESP/non-front-decodable
+`ctx.packet_len`. Deeper TCP option parsing and non-front-decodable
 IPv6 extension headers are still not modeled. Compile-time action
 aliases are available in return position and through the `action`
 intrinsic, for example `action pass` or `"drop" | action`. XDP closures can return strings like

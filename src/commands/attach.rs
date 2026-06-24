@@ -266,7 +266,7 @@ Context parameter syntax (recommended):
     action code explicitly. Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
-    `arp`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
+    `arp`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, `tcp`, and `esp`. On `xdp`,
     `lwt_xmit`, `tc_action`, `tc`, `tcx`, `netkit`, `sk_msg`, `sk_skb`, and
     `sk_skb_parser`, those same scalar/header paths are also writable
     after shadowing the closure parameter as mutable, for
@@ -300,8 +300,9 @@ Context parameter syntax (recommended):
     router/neighbor-advertisement flag fields. Packet headers also accept
     common kernel-header field aliases such as `eth.h_proto`,
     `ipv4.tot_len`, `ipv4.saddr`, `udp.source`, `udp.dest`,
-    `tcp.source`, and `tcp.dest`. Deeper TCP option parsing and
-    ESP/non-front-decodable IPv6 extension headers are still not modeled.
+    `tcp.source`, and `tcp.dest`. ESP exposes the fixed front-header
+    `spi` and `sequence` fields. Deeper TCP option parsing and
+    non-front-decodable IPv6 extension headers are still not modeled.
     Writable skb metadata is attach-sensitive. On `socket_filter`,
     fixed `ctx.cb.N` is writable. On `lwt_*`, `ctx.mark`,
     `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action`, `tc`, `tcx`, and `netkit`, `ctx.mark`,

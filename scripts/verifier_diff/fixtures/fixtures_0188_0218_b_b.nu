@@ -101,4 +101,21 @@ const VERIFIER_DIFF_FIXTURES_0188_0218_B_B = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "xdp-packet-esp-header-fields"
+        category: "packet"
+        tags: [xdp packet header esp source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let esp4 = ($ctx.data.eth.ipv4.esp.spi + $ctx.data.eth.ipv4.esp.sequence)'
+            '  let esp6 = ($ctx.data.eth.ipv6.esp.security_parameter_index + $ctx.data.eth.ipv6.esp.seq)'
+            '  ($esp4 + $esp6) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]

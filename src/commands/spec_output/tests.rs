@@ -1663,6 +1663,90 @@ fn test_spec_record_includes_packet_context_metadata() {
         "icmp echo_id should expose identifier alias"
     );
 
+    let esp = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "esp")
+        })
+        .expect("esp packet header should be present")
+        .as_record()
+        .expect("esp packet header should be a record");
+    assert!(
+        !esp.get("payload_step")
+            .expect("esp payload_step should be present")
+            .as_bool()
+            .expect("esp payload_step should be a bool"),
+        "esp should not expose generic payload stepping"
+    );
+    let esp_fields = esp
+        .get("fields")
+        .expect("esp packet header fields should be present")
+        .as_list()
+        .expect("esp packet header fields should be a list");
+    let spi = esp_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "spi")
+        })
+        .expect("esp spi field should be present")
+        .as_record()
+        .expect("esp spi field should be a record");
+    assert_eq!(
+        spi.get("offset")
+            .expect("esp spi offset should be present")
+            .as_int()
+            .expect("esp spi offset should be an int"),
+        0
+    );
+    assert!(
+        spi.get("packet_big_endian")
+            .expect("esp spi endian metadata should be present")
+            .as_bool()
+            .expect("esp spi endian metadata should be a bool")
+    );
+    assert!(
+        spi.get("names")
+            .expect("esp spi names should be present")
+            .as_list()
+            .expect("esp spi names should be a list")
+            .iter()
+            .any(|name| name
+                .as_str()
+                .is_ok_and(|name| name == "security_parameter_index")),
+        "esp spi should expose its long-form alias"
+    );
+    let sequence = esp_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "sequence")
+        })
+        .expect("esp sequence field should be present")
+        .as_record()
+        .expect("esp sequence field should be a record");
+    assert_eq!(
+        sequence
+            .get("offset")
+            .expect("esp sequence offset should be present")
+            .as_int()
+            .expect("esp sequence offset should be an int"),
+        4
+    );
+
     let eth = packet_headers
         .iter()
         .find(|header| {

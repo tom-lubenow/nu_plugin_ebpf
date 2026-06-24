@@ -642,7 +642,7 @@ impl<'a> HirToMirLowering<'a> {
         let header = PacketHeaderKind::from_type_name(name)?;
         let target = header.protocol_view_target(val)?;
         Some((
-            Self::packet_payload_step_kind_for_header(header),
+            Self::packet_payload_step_kind_for_header(header)?,
             target.mir_type(),
         ))
     }
@@ -663,16 +663,20 @@ impl<'a> HirToMirLowering<'a> {
                 name: Some(name), ..
             } => {
                 let header = PacketHeaderKind::from_type_name(name)?;
-                header
-                    .supports_payload_step()
-                    .then_some(Self::packet_payload_step_kind_for_header(header))
+                if header.supports_payload_step() {
+                    Self::packet_payload_step_kind_for_header(header)
+                } else {
+                    None
+                }
             }
             _ => None,
         }
     }
 
-    fn packet_payload_step_kind_for_header(header: PacketHeaderKind) -> PacketPayloadStepKind {
-        match header {
+    fn packet_payload_step_kind_for_header(
+        header: PacketHeaderKind,
+    ) -> Option<PacketPayloadStepKind> {
+        Some(match header {
             PacketHeaderKind::Ethernet => PacketPayloadStepKind::Ethernet,
             PacketHeaderKind::Arp => PacketPayloadStepKind::Arp,
             PacketHeaderKind::Ipv4 => PacketPayloadStepKind::Ipv4,
@@ -681,7 +685,8 @@ impl<'a> HirToMirLowering<'a> {
             PacketHeaderKind::Icmpv6 => PacketPayloadStepKind::Icmpv6,
             PacketHeaderKind::Udp => PacketPayloadStepKind::Udp,
             PacketHeaderKind::Tcp => PacketPayloadStepKind::Tcp,
-        }
+            PacketHeaderKind::Esp => return None,
+        })
     }
 
     fn packet_field_is_big_endian(current_ty: &MirType, member: &PathMember) -> bool {

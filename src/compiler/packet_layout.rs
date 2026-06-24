@@ -10,6 +10,7 @@ pub(crate) enum PacketHeaderKind {
     Icmp,
     Icmpv6,
     Tcp,
+    Esp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -114,6 +115,7 @@ const ALL_PACKET_HEADERS: &[PacketHeaderKind] = &[
     PacketHeaderKind::Icmp,
     PacketHeaderKind::Icmpv6,
     PacketHeaderKind::Tcp,
+    PacketHeaderKind::Esp,
 ];
 
 const PACKET_PROTOCOL_VIEWS: &[PacketHeaderProtocolView] = &[
@@ -123,9 +125,11 @@ const PACKET_PROTOCOL_VIEWS: &[PacketHeaderProtocolView] = &[
     protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Udp),
     protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Icmp),
     protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Tcp),
+    protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Esp),
     protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Udp),
     protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Icmpv6),
     protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Tcp),
+    protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Esp),
 ];
 
 const ETHERNET_FIELDS: &[PacketHeaderFieldSpec] = &[
@@ -382,6 +386,23 @@ const TCP_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("urg_ptr", PacketHeaderFieldType::U16, 18, true),
 ];
 
+const ESP_FIELDS: &[PacketHeaderFieldSpec] = &[
+    packet_field_with_aliases(
+        "spi",
+        &["security_parameter_index"],
+        PacketHeaderFieldType::U32,
+        0,
+        true,
+    ),
+    packet_field_with_aliases(
+        "sequence",
+        &["seq", "seq_no", "sequence_number"],
+        PacketHeaderFieldType::U32,
+        4,
+        true,
+    ),
+];
+
 impl PacketHeaderFieldType {
     pub(crate) fn mir_type(self) -> MirType {
         match self {
@@ -426,6 +447,7 @@ impl PacketHeaderKind {
             Self::Icmp => "icmp",
             Self::Icmpv6 => "icmpv6",
             Self::Tcp => "tcp",
+            Self::Esp => "esp",
         }
     }
 
@@ -439,6 +461,7 @@ impl PacketHeaderKind {
             Self::Icmp => "__packet_icmp",
             Self::Icmpv6 => "__packet_icmpv6",
             Self::Tcp => "__packet_tcp",
+            Self::Esp => "__packet_esp",
         }
     }
 
@@ -452,6 +475,7 @@ impl PacketHeaderKind {
             Self::Icmp => &["icmp", "icmphdr"],
             Self::Icmpv6 => &["icmpv6", "icmp6", "icmpv6hdr", "icmp6hdr"],
             Self::Tcp => &["tcp", "tcphdr"],
+            Self::Esp => &["esp", "esphdr"],
         }
     }
 
@@ -465,6 +489,7 @@ impl PacketHeaderKind {
             Self::Icmp => ICMP_FIELDS,
             Self::Icmpv6 => ICMPV6_FIELDS,
             Self::Tcp => TCP_FIELDS,
+            Self::Esp => ESP_FIELDS,
         }
     }
 
@@ -494,7 +519,7 @@ impl PacketHeaderKind {
     }
 
     pub(crate) fn supports_payload_step(self) -> bool {
-        !matches!(self, Self::Arp)
+        !matches!(self, Self::Arp | Self::Esp)
     }
 
     pub(crate) fn from_type_name(name: &str) -> Option<Self> {

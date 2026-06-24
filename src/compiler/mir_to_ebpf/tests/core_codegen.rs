@@ -6371,6 +6371,37 @@ fn test_compile_xdp_eth_ipv6_icmpv6_code_projection() {
 }
 
 #[test]
+fn test_compile_xdp_eth_ipv4_esp_spi_projection() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("esp"),
+            string_member("spi"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("eth ipv4 esp spi projection should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("eth ipv4 esp spi projection should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_fentry_aggregate_scalar_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],
