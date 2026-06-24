@@ -1015,7 +1015,13 @@ fn propagate_state(propagation: PropagateState<'_, '_, '_, '_>) {
             true
         }
         Some(existing) => {
-            let merged = existing.join(&state);
+            let mut merged = existing.join(&state);
+            if matches!(
+                func.block(pred).terminator,
+                MirInst::LoopBack { header, .. } if header == block
+            ) {
+                merged.widen_loop_back_from(existing);
+            }
             if !merged.equivalent(existing) {
                 in_states.insert(block, merged);
                 true

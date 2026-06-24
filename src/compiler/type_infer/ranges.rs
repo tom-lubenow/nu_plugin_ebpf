@@ -62,6 +62,31 @@ impl SlotSourceState {
     }
 }
 
+fn merge_value_range(current: ValueRange, incoming: ValueRange, widen: bool) -> ValueRange {
+    if !widen {
+        return current.merge(incoming);
+    }
+
+    match (current, incoming) {
+        (ValueRange::Unset, other) => other,
+        (known, ValueRange::Unset) => known,
+        (ValueRange::Unknown, _) | (_, ValueRange::Unknown) => ValueRange::Unknown,
+        (
+            ValueRange::Known { min, max },
+            ValueRange::Known {
+                min: incoming_min,
+                max: incoming_max,
+            },
+        ) => {
+            if incoming_min < min || incoming_max > max {
+                ValueRange::Unknown
+            } else {
+                ValueRange::Known { min, max }
+            }
+        }
+    }
+}
+
 impl<'a> TypeInference<'a> {
     pub(super) fn compute_list_caps(&self, func: &MirFunction) -> HashMap<VReg, usize> {
         let mut caps: HashMap<VReg, usize> = HashMap::new();
@@ -334,7 +359,7 @@ impl<'a> TypeInference<'a> {
                     );
                 }
                 MirInst::LoopBack { header, .. } => {
-                    self.propagate_range_state(
+                    self.propagate_loop_back_range_state(
                         *header,
                         &state,
                         &source_ranges,
@@ -700,7 +725,7 @@ impl<'a> TypeInference<'a> {
                     }
                 }
                 MirInst::LoopBack { header, .. } => {
-                    self.propagate_range_state(
+                    self.propagate_loop_back_range_state(
                         *header,
                         &state,
                         &source_ranges,
@@ -1003,7 +1028,7 @@ impl<'a> TypeInference<'a> {
                     );
                 }
                 MirInst::LoopBack { header, .. } => {
-                    self.propagate_range_state(
+                    self.propagate_loop_back_range_state(
                         *header,
                         &state,
                         &source_ranges,
@@ -1232,7 +1257,7 @@ impl<'a> TypeInference<'a> {
                     );
                 }
                 MirInst::LoopBack { header, .. } => {
-                    self.propagate_range_state(
+                    self.propagate_loop_back_range_state(
                         *header,
                         &state,
                         &source_ranges,
@@ -1956,12 +1981,71 @@ impl<'a> TypeInference<'a> {
         in_slot_sources: &mut HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>>,
         worklist: &mut VecDeque<BlockId>,
     ) {
+        self.propagate_range_state_impl(
+            target,
+            next,
+            next_source_ranges,
+            next_reg_sources,
+            next_slot_sources,
+            in_states,
+            in_source_ranges,
+            in_reg_sources,
+            in_slot_sources,
+            worklist,
+            false,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn propagate_loop_back_range_state(
+        &self,
+        target: BlockId,
+        next: &[ValueRange],
+        next_source_ranges: &HashMap<RangeSource, ValueRange>,
+        next_reg_sources: &HashMap<VReg, SlotSourceState>,
+        next_slot_sources: &HashMap<StackSlotId, SlotSourceState>,
+        in_states: &mut HashMap<BlockId, Vec<ValueRange>>,
+        in_source_ranges: &mut HashMap<BlockId, HashMap<RangeSource, ValueRange>>,
+        in_reg_sources: &mut HashMap<BlockId, HashMap<VReg, SlotSourceState>>,
+        in_slot_sources: &mut HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>>,
+        worklist: &mut VecDeque<BlockId>,
+    ) {
+        self.propagate_range_state_impl(
+            target,
+            next,
+            next_source_ranges,
+            next_reg_sources,
+            next_slot_sources,
+            in_states,
+            in_source_ranges,
+            in_reg_sources,
+            in_slot_sources,
+            worklist,
+            true,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn propagate_range_state_impl(
+        &self,
+        target: BlockId,
+        next: &[ValueRange],
+        next_source_ranges: &HashMap<RangeSource, ValueRange>,
+        next_reg_sources: &HashMap<VReg, SlotSourceState>,
+        next_slot_sources: &HashMap<StackSlotId, SlotSourceState>,
+        in_states: &mut HashMap<BlockId, Vec<ValueRange>>,
+        in_source_ranges: &mut HashMap<BlockId, HashMap<RangeSource, ValueRange>>,
+        in_reg_sources: &mut HashMap<BlockId, HashMap<VReg, SlotSourceState>>,
+        in_slot_sources: &mut HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>>,
+        worklist: &mut VecDeque<BlockId>,
+        widen_known_ranges: bool,
+    ) {
         let entry = in_states
             .entry(target)
             .or_insert_with(|| vec![ValueRange::Unset; next.len()]);
         let mut changed = false;
         for (dst, src) in entry.iter_mut().zip(next.iter().copied()) {
-            let merged = dst.merge(src);
+            let merged = merge_value_range(*dst, src, widen_known_ranges);
             if *dst != merged {
                 *dst = merged;
                 changed = true;
@@ -1969,11 +2053,14 @@ impl<'a> TypeInference<'a> {
         }
         let source_entry = in_source_ranges.entry(target).or_default();
         for (source, incoming) in next_source_ranges {
-            let merged = source_entry
-                .get(source)
-                .copied()
-                .unwrap_or(ValueRange::Unset)
-                .merge(*incoming);
+            let merged = merge_value_range(
+                source_entry
+                    .get(source)
+                    .copied()
+                    .unwrap_or(ValueRange::Unset),
+                *incoming,
+                widen_known_ranges,
+            );
             if source_entry.get(source).copied() != Some(merged) {
                 source_entry.insert(source.clone(), merged);
                 changed = true;

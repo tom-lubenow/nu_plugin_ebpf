@@ -76,6 +76,24 @@ const VERIFIER_DIFF_FIXTURES_1626_1656_B = [
         error_contains: "Range end must be a compile-time known integer for eBPF loops"
     }
     {
+        name: "core-dynamic-bounded-range-loop"
+        category: "language-core"
+        tags: [control-flow loop range runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  mut sum = 0'
+            '  for i in 1..$n {'
+            '    $sum = ($sum + $i)'
+            '  }'
+            '  $sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-literal-list-iterate"
         category: "language-core"
         tags: [control-flow loop aggregate list]

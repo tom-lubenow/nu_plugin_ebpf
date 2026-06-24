@@ -1135,6 +1135,7 @@ impl<'a> HirToMirLowering<'a> {
                     .unwrap_or(1);
 
                 let end_meta = self.get_metadata(*end).cloned();
+                let mut dynamic_bounded_range = None;
                 let end_val = if let Some(value) = end_meta.as_ref().and_then(|m| m.literal_int) {
                     Some(value)
                 } else if end_meta
@@ -1142,6 +1143,34 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|m| m.constant_value.as_ref())
                     .is_some_and(|value| matches!(value, Value::Nothing { .. }))
                 {
+                    None
+                } else if let (Some(start_val), Some(end_range), true) = (
+                    start_val,
+                    end_meta.as_ref().and_then(|m| m.bounded_range),
+                    end_meta
+                        .as_ref()
+                        .and_then(|m| m.field_type.as_ref())
+                        .is_some_and(MirType::is_scalar_like),
+                ) {
+                    if step_val <= 0 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "Dynamic range end supports only positive range steps in eBPF loops"
+                                .into(),
+                        ));
+                    }
+                    let (end_min, end_max) = end_range.min_max().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "Range end must have valid compile-time bounds for eBPF loops".into(),
+                        )
+                    })?;
+                    dynamic_bounded_range = Some(DynamicBoundedRange {
+                        start: start_val,
+                        step: step_val,
+                        end_vreg: self.get_vreg(*end),
+                        end_min,
+                        end_max,
+                        inclusive: *inclusion == RangeInclusion::Inclusive,
+                    });
                     None
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
@@ -1157,12 +1186,12 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 let inclusive = *inclusion == RangeInclusion::Inclusive;
-                let maybe_open_range = MaybeOpenRange {
+                let maybe_open_range = dynamic_bounded_range.is_none().then_some(MaybeOpenRange {
                     start: start_val,
                     step: step_val,
                     end: end_val,
                     inclusive,
-                };
+                });
                 let bounded_range =
                     start_val
                         .zip(end_val)
@@ -1181,7 +1210,8 @@ impl<'a> HirToMirLowering<'a> {
 
                 let meta = self.get_or_create_metadata(dst);
                 meta.bounded_range = bounded_range;
-                meta.maybe_open_range = Some(maybe_open_range);
+                meta.dynamic_bounded_range = dynamic_bounded_range;
+                meta.maybe_open_range = maybe_open_range;
             }
 
             HirLiteral::List { capacity } => {

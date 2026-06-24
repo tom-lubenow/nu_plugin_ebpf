@@ -93,6 +93,90 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    pub(super) fn lower_dynamic_bounded_range_iterate(
+        &mut self,
+        dst: RegId,
+        stream: RegId,
+        range: DynamicBoundedRange,
+        body_block: BlockId,
+        exit_block: BlockId,
+        initialize_exit_value: bool,
+    ) -> Result<(), CompileError> {
+        if range.step <= 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "Dynamic range iteration supports only positive steps in eBPF loops".into(),
+            ));
+        }
+
+        let limit = if range.inclusive {
+            range.end_max.checked_add(1).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Dynamic inclusive range end overflows eBPF loop bounds".into(),
+                )
+            })?
+        } else {
+            range.end_max
+        };
+
+        let dst_vreg = self.get_vreg(dst);
+        let counter_vreg = self.get_vreg(stream);
+        let guard_block = self.func.alloc_block();
+        self.terminate(MirInst::LoopHeader {
+            counter: counter_vreg,
+            start: range.start,
+            step: range.step,
+            limit,
+            body: guard_block,
+            exit: exit_block,
+        });
+
+        let header_block = self.current_block;
+        self.current_block = guard_block;
+        let cmp_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: cmp_vreg,
+            op: if range.inclusive {
+                BinOpKind::Le
+            } else {
+                BinOpKind::Lt
+            },
+            lhs: MirValue::VReg(counter_vreg),
+            rhs: MirValue::VReg(range.end_vreg),
+        });
+        self.vreg_type_hints.insert(cmp_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: cmp_vreg,
+            if_true: body_block,
+            if_false: exit_block,
+        });
+        self.current_block = header_block;
+
+        self.loop_body_inits
+            .entry(body_block)
+            .or_default()
+            .push(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(counter_vreg),
+            });
+        if initialize_exit_value {
+            self.loop_body_inits
+                .entry(exit_block)
+                .or_default()
+                .push(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+        }
+
+        self.loop_contexts.push(LoopContext {
+            header_block,
+            exit_block,
+            counter_vreg,
+            step: range.step,
+        });
+        Ok(())
+    }
+
     pub(super) fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
         fn cleanup_only_for_src(stmts: &[HirStmt], src: RegId) -> bool {
             stmts.iter().all(|stmt| {
@@ -804,6 +888,28 @@ impl<'a> HirToMirLowering<'a> {
                         counter_vreg,
                         step: range.step,
                     });
+                    Self::record_hir_block_exit(
+                        block.id,
+                        &self.reg_map,
+                        &self.reg_metadata,
+                        &mut exit_reg_maps,
+                        &mut exit_reg_metadata,
+                    );
+                    continue;
+                }
+
+                if let Some(range) = self
+                    .get_metadata(*stream)
+                    .and_then(|m| m.dynamic_bounded_range)
+                {
+                    self.lower_dynamic_bounded_range_iterate(
+                        *dst,
+                        *stream,
+                        range,
+                        body_block,
+                        exit_block,
+                        !cleanup_return_exit,
+                    )?;
                     Self::record_hir_block_exit(
                         block.id,
                         &self.reg_map,
@@ -2817,6 +2923,13 @@ impl<'a> HirToMirLowering<'a> {
                         counter_vreg,
                         step: range.step,
                     });
+                } else if let Some(range) = self
+                    .get_metadata(*stream)
+                    .and_then(|m| m.dynamic_bounded_range)
+                {
+                    self.lower_dynamic_bounded_range_iterate(
+                        *dst, *stream, range, body_block, exit_block, true,
+                    )?;
                 } else if let Some((_slot, max_len)) =
                     self.get_metadata(*stream).and_then(|m| m.list_buffer)
                 {

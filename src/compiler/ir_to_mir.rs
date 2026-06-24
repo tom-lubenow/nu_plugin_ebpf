@@ -173,6 +173,38 @@ struct BoundedRange {
     inclusive: bool,
 }
 
+impl BoundedRange {
+    fn min_max(self) -> Option<(i64, i64)> {
+        if self.step == 0 {
+            return None;
+        }
+        let last = if self.inclusive {
+            self.end
+        } else {
+            self.end.checked_sub(self.step.signum())?
+        };
+        Some((self.start.min(last), self.start.max(last)))
+    }
+}
+
+/// Runtime endpoint with compile-time proven bounds for a range iterator.
+#[derive(Debug, Clone, Copy)]
+struct DynamicBoundedRange {
+    /// Start value
+    start: i64,
+    /// Step value
+    step: i64,
+    /// Runtime end value register
+    end_vreg: VReg,
+    /// Minimum possible runtime end value
+    #[allow(dead_code)]
+    end_min: i64,
+    /// Maximum possible runtime end value
+    end_max: i64,
+    /// Whether end is inclusive
+    inclusive: bool,
+}
+
 /// Compile-time range info where a string command may supply defaults from input length.
 #[derive(Debug, Clone, Copy)]
 struct MaybeOpenRange {
@@ -256,6 +288,8 @@ struct RegMetadata {
     source_var: Option<VarId>,
     /// Bounded range for iteration
     bounded_range: Option<BoundedRange>,
+    /// Dynamic-end range with compile-time proven iteration bounds.
+    dynamic_bounded_range: Option<DynamicBoundedRange>,
     /// Compile-time range that may omit one bound for string byte-range commands.
     maybe_open_range: Option<MaybeOpenRange>,
     /// List buffer (stack slot, max_len) for list construction

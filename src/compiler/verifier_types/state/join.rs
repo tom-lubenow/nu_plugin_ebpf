@@ -465,6 +465,32 @@ impl VerifierState {
         }
     }
 
+    pub(in crate::compiler::verifier_types) fn widen_loop_back_from(
+        &mut self,
+        previous: &VerifierState,
+    ) {
+        for (range, previous_range) in self.ranges.iter_mut().zip(previous.ranges.iter().copied()) {
+            *range = widen_loop_back_range(previous_range, *range);
+        }
+        for (slot, range) in self.stack_slot_value_ranges.iter_mut() {
+            let Some(previous_range) = previous.stack_slot_value_ranges.get(slot).copied() else {
+                continue;
+            };
+            *range = widen_loop_back_range(previous_range, *range);
+        }
+        self.stack_slot_value_ranges
+            .retain(|_, range| matches!(range, ValueRange::Known { .. }));
+
+        for (idx, ty) in self.regs.iter_mut().enumerate() {
+            let previous_ty = previous
+                .regs
+                .get(idx)
+                .copied()
+                .unwrap_or(VerifierType::Uninit);
+            *ty = widen_loop_back_type(previous_ty, *ty);
+        }
+    }
+
     fn join_context_field_pointer_type(
         reg: VReg,
         ty: VerifierType,
@@ -560,6 +586,63 @@ impl VerifierState {
                 VerifierType::Scalar | VerifierType::Bool,
             )
         )
+    }
+}
+
+fn widen_loop_back_range(previous: ValueRange, current: ValueRange) -> ValueRange {
+    match (previous, current) {
+        (ValueRange::Unknown, _) | (_, ValueRange::Unknown) => ValueRange::Unknown,
+        (
+            ValueRange::Known { min, max },
+            ValueRange::Known {
+                min: current_min,
+                max: current_max,
+            },
+        ) => {
+            if current_min < min || current_max > max {
+                ValueRange::Unknown
+            } else {
+                ValueRange::Known {
+                    min: current_min,
+                    max: current_max,
+                }
+            }
+        }
+    }
+}
+
+fn widen_loop_back_type(previous: VerifierType, current: VerifierType) -> VerifierType {
+    let (
+        VerifierType::Ptr {
+            bounds: Some(previous_bounds),
+            ..
+        },
+        VerifierType::Ptr {
+            space,
+            nullability,
+            bounds: Some(current_bounds),
+            ringbuf_ref,
+            kfunc_ref,
+        },
+    ) = (previous, current)
+    else {
+        return current;
+    };
+
+    if current_bounds.origin() == previous_bounds.origin()
+        && (current_bounds.min() < previous_bounds.min()
+            || current_bounds.max() > previous_bounds.max()
+            || current_bounds.limit() > previous_bounds.limit())
+    {
+        VerifierType::Ptr {
+            space,
+            nullability,
+            bounds: None,
+            ringbuf_ref,
+            kfunc_ref,
+        }
+    } else {
+        current
     }
 }
 

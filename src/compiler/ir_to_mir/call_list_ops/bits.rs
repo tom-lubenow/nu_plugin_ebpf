@@ -1699,7 +1699,19 @@ impl<'a> HirToMirLowering<'a> {
                 rhs: rhs_value,
             });
             self.reset_call_result_metadata(src_dst);
-            self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            if cmd_name == "bits and"
+                && let Some(mask) = rhs_const
+                && mask >= 0
+            {
+                out_meta.bounded_range = Some(BoundedRange {
+                    start: 0,
+                    step: 1,
+                    end: mask,
+                    inclusive: true,
+                });
+            }
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
