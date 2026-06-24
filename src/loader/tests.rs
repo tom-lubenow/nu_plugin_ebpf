@@ -1719,48 +1719,43 @@ fn live_arena_fixture_for_program(prog_type: EbpfProgramType, target: &str) -> E
 }
 
 #[test]
-fn test_attach_rejects_live_map_in_map_before_aya_load() {
+fn test_xdp_map_in_map_routes_to_libbpf_loader() {
     let state = EbpfState::new();
     let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
     let object = live_map_in_map_fixture(HashMap::from([(outer_ref, inner_ref)]), vec![]);
 
     let err = state
         .attach(&object)
-        .expect_err("live map-in-map should reject before Aya load");
+        .expect_err("xdp map-in-map should route to libbpf loader");
+    let message = err.to_string();
 
     assert!(
-        matches!(
-            err,
-            LoadError::Load(ref msg)
-                if msg.contains("Aya-backed live loading of map-in-map runtime map 'outer'")
-                    && msg.contains("declared inner template is 'inner' (hash)")
-                    && msg.contains("Aya's map creation path")
-                    && msg.contains("inner_map_fd")
-                    && msg.contains("--dry-run")
-        ),
-        "unexpected map-in-map live attach error: {err:?}"
+        !message.contains("Aya-backed live loading of map-in-map runtime map"),
+        "xdp map-in-map should not hit the Aya-only rejection: {err:?}"
+    );
+    assert!(
+        message.contains("libbpf") || message.contains("xdp") || message.contains("Failed to load"),
+        "unexpected xdp map-in-map libbpf dispatch error: {err:?}"
     );
 }
 
 #[test]
-fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
+fn test_xdp_map_in_map_without_inner_template_metadata_rejects_before_aya_load() {
     let state = EbpfState::new();
     let object = live_map_in_map_fixture(HashMap::new(), vec![]);
 
     let err = state
         .attach(&object)
-        .expect_err("live map-in-map should reject before Aya load");
+        .expect_err("map-in-map without inner template metadata should reject");
+    let message = err.to_string();
 
     assert!(
-        matches!(
-            err,
-            LoadError::Load(ref msg)
-                if msg.contains("Aya-backed live loading of map-in-map runtime map 'outer'")
-                    && msg.contains("no compiled inner-template metadata was found")
-                    && msg.contains("inner_map_fd")
-                    && msg.contains("--dry-run")
-        ),
-        "unexpected map-in-map live attach error: {err:?}"
+        !message.contains("Aya-backed live loading of map-in-map runtime map"),
+        "xdp map-in-map should not hit the Aya-only rejection: {err:?}"
+    );
+    assert!(
+        message.contains("inner-map") || message.contains("libbpf") || message.contains("xdp"),
+        "unexpected map-in-map missing-template error: {err:?}"
     );
 }
 
@@ -2087,24 +2082,22 @@ fn test_live_arena_map_diagnostic_rejects_live_load() {
 }
 
 #[test]
-fn test_attach_rejects_live_arena_map_before_aya_load() {
+fn test_xdp_arena_map_routes_to_libbpf_loader() {
     let state = EbpfState::new();
     let object = live_arena_fixture_for_program(EbpfProgramType::Xdp, "lo");
 
     let err = state
         .attach(&object)
-        .expect_err("Aya-backed live arena maps should reject before Aya load");
+        .expect_err("xdp arena maps should route to libbpf loader");
+    let message = err.to_string();
 
     assert!(
-        matches!(
-            err,
-            LoadError::Load(ref msg)
-                if msg.contains("Aya-backed live loading of arena runtime map 'arena_pages'")
-                    && msg.contains("map_extra metadata")
-                    && msg.contains("mmap setup")
-                    && msg.contains("--dry-run")
-        ),
-        "unexpected arena live attach error before Aya load: {err:?}"
+        !message.contains("Aya-backed live loading of arena runtime map"),
+        "xdp arena map should not hit the Aya-only rejection: {err:?}"
+    );
+    assert!(
+        message.contains("libbpf") || message.contains("xdp") || message.contains("Failed to load"),
+        "unexpected xdp arena libbpf dispatch error: {err:?}"
     );
 }
 

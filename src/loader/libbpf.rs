@@ -89,6 +89,7 @@ type BpfObjectFindProgramByNameFn =
     unsafe extern "C" fn(*const bpf_object, *const c_char) -> *mut bpf_program;
 type BpfMapFdFn = unsafe extern "C" fn(*const bpf_map) -> c_int;
 type BpfMapNameFn = unsafe extern "C" fn(*const bpf_map) -> *const c_char;
+type BpfProgramFdFn = unsafe extern "C" fn(*const bpf_program) -> c_int;
 type BpfMapAttachStructOpsFn = unsafe extern "C" fn(*const bpf_map) -> *mut bpf_link;
 type BpfProgramAttachKprobeFn =
     unsafe extern "C" fn(*const bpf_program, bool, *const c_char) -> *mut bpf_link;
@@ -104,6 +105,8 @@ type BpfProgramAttachNetfilterFn =
 type BpfProgramAttachNetkitFn =
     unsafe extern "C" fn(*const bpf_program, c_int, *const BpfNetkitOpts) -> *mut bpf_link;
 type BpfProgramAttachNetnsFn = unsafe extern "C" fn(*const bpf_program, c_int) -> *mut bpf_link;
+type BpfXdpAttachFn = unsafe extern "C" fn(c_int, c_int, u32, *const c_void) -> c_int;
+type BpfXdpDetachFn = unsafe extern "C" fn(c_int, u32, *const c_void) -> c_int;
 type BpfLinkDestroyFn = unsafe extern "C" fn(*mut bpf_link) -> c_int;
 type LibbpfGetErrorFn = unsafe extern "C" fn(*const c_void) -> c_long;
 
@@ -117,6 +120,7 @@ struct LibbpfApi {
     bpf_object_find_program_by_name: BpfObjectFindProgramByNameFn,
     bpf_map_fd: BpfMapFdFn,
     bpf_map_name: BpfMapNameFn,
+    bpf_program_fd: BpfProgramFdFn,
     bpf_map_attach_struct_ops: BpfMapAttachStructOpsFn,
     bpf_program_attach_kprobe: BpfProgramAttachKprobeFn,
     bpf_program_attach_raw_tracepoint: BpfProgramAttachRawTracepointFn,
@@ -127,6 +131,8 @@ struct LibbpfApi {
     bpf_program_attach_netfilter: Option<BpfProgramAttachNetfilterFn>,
     bpf_program_attach_netkit: Option<BpfProgramAttachNetkitFn>,
     bpf_program_attach_netns: Option<BpfProgramAttachNetnsFn>,
+    bpf_xdp_attach: Option<BpfXdpAttachFn>,
+    bpf_xdp_detach: Option<BpfXdpDetachFn>,
     bpf_link_destroy: BpfLinkDestroyFn,
     libbpf_get_error: LibbpfGetErrorFn,
 }
@@ -201,6 +207,7 @@ impl LibbpfApi {
                 )?,
                 bpf_map_fd: Self::load_symbol(handle, b"bpf_map__fd\0")?,
                 bpf_map_name: Self::load_symbol(handle, b"bpf_map__name\0")?,
+                bpf_program_fd: Self::load_symbol(handle, b"bpf_program__fd\0")?,
                 bpf_map_attach_struct_ops: Self::load_symbol(
                     handle,
                     b"bpf_map__attach_struct_ops\0",
@@ -241,6 +248,8 @@ impl LibbpfApi {
                     handle,
                     b"bpf_program__attach_netns\0",
                 ),
+                bpf_xdp_attach: Self::load_optional_symbol(handle, b"bpf_xdp_attach\0"),
+                bpf_xdp_detach: Self::load_optional_symbol(handle, b"bpf_xdp_detach\0"),
                 bpf_link_destroy: Self::load_symbol(handle, b"bpf_link__destroy\0")?,
                 libbpf_get_error: Self::load_symbol(handle, b"libbpf_get_error\0")?,
             });
@@ -421,6 +430,18 @@ fn destroy_libbpf_link(link: *mut bpf_link) {
     }
 }
 
+fn detach_libbpf_xdp(ifindex: c_int, flags: u32) {
+    if let Ok(api) = libbpf_api()
+        && let Some(detach_xdp) = api.bpf_xdp_detach
+    {
+        // SAFETY: `ifindex` identifies the interface this handle attached to, and null opts
+        // requests libbpf's default detach behavior.
+        unsafe {
+            detach_xdp(ifindex, flags, ptr::null());
+        }
+    }
+}
+
 fn export_maps_from_object(object: *mut bpf_object) -> Result<HashMap<String, AyaMap>, LoadError> {
     if object.is_null() {
         return Err(LoadError::Load(
@@ -545,6 +566,12 @@ pub struct LibbpfProgramHandle {
     _elf_bytes: Vec<u8>,
     object: *mut bpf_object,
     link: *mut bpf_link,
+    xdp_attachment: Option<LibbpfXdpAttachment>,
+}
+
+struct LibbpfXdpAttachment {
+    ifindex: c_int,
+    flags: u32,
 }
 
 // SAFETY: The handle owns process-local libbpf pointers and is only accessed
@@ -553,6 +580,29 @@ pub struct LibbpfProgramHandle {
 unsafe impl Send for LibbpfProgramHandle {}
 
 impl LibbpfProgramHandle {
+    fn from_link(elf_bytes: Vec<u8>, object: *mut bpf_object, link: *mut bpf_link) -> Self {
+        Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link,
+            xdp_attachment: None,
+        }
+    }
+
+    fn from_xdp_attachment(
+        elf_bytes: Vec<u8>,
+        object: *mut bpf_object,
+        ifindex: c_int,
+        flags: u32,
+    ) -> Self {
+        Self {
+            _elf_bytes: elf_bytes,
+            object,
+            link: ptr::null_mut(),
+            xdp_attachment: Some(LibbpfXdpAttachment { ifindex, flags }),
+        }
+    }
+
     fn loaded_program(
         object: *mut bpf_object,
         program_name: &CString,
@@ -610,11 +660,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_raw_tracepoint(
@@ -659,11 +705,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_tracepoint(
@@ -706,11 +748,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_trace(
@@ -745,11 +783,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_lsm(
@@ -789,11 +823,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_cgroup(
@@ -834,11 +864,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_netfilter(
@@ -882,11 +908,7 @@ impl LibbpfProgramHandle {
             ));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn load_and_attach_netkit(
@@ -931,11 +953,62 @@ impl LibbpfProgramHandle {
             ));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
+    }
+
+    pub fn load_and_attach_xdp(
+        elf_bytes: Vec<u8>,
+        program_name: &str,
+        ifindex: c_int,
+        flags: u32,
+        pin_root_path: Option<&str>,
+    ) -> Result<Self, LoadError> {
+        let api = libbpf_api()?;
+        let attach_xdp = api.bpf_xdp_attach.ok_or_else(|| {
+            LoadError::Load(
+                "libbpf does not provide bpf_xdp_attach; xdp live attach with libbpf-created maps requires libbpf 0.7 or newer".to_string(),
+            )
+        })?;
+        if api.bpf_xdp_detach.is_none() {
+            return Err(LoadError::Load(
+                "libbpf does not provide bpf_xdp_detach; xdp live attach cleanup requires libbpf 0.7 or newer".to_string(),
+            ));
+        }
+        let program_name = CString::new(program_name).map_err(|_| {
+            LoadError::Load(format!("invalid libbpf program name '{program_name}'"))
+        })?;
+
+        let object = open_libbpf_object(
+            &elf_bytes,
+            "Failed to open xdp object with libbpf",
+            pin_root_path,
+        )?;
+        load_libbpf_object(object, "Failed to load xdp object")?;
+        let program = Self::loaded_program(object, &program_name, "xdp")?;
+
+        // SAFETY: `program` is loaded by libbpf and has a valid program fd while `object`
+        // remains open.
+        let program_fd = unsafe { (api.bpf_program_fd)(program) };
+        if program_fd < 0 {
+            close_libbpf_object(object);
+            return Err(negative_rc_message(
+                "Failed to read file descriptor for xdp program",
+                program_fd,
+            ));
+        }
+
+        // SAFETY: `ifindex` was resolved by libc, `program_fd` is the loaded XDP program fd,
+        // and null opts requests libbpf's default attach behavior with the provided flags.
+        let attach_rc = unsafe { attach_xdp(ifindex, program_fd, flags, ptr::null()) };
+        if attach_rc != 0 {
+            close_libbpf_object(object);
+            return Err(negative_rc_message(
+                "Failed to attach xdp program",
+                attach_rc,
+            ));
+        }
+
+        Ok(Self::from_xdp_attachment(elf_bytes, object, ifindex, flags))
     }
 
     pub fn load_and_attach_netns(
@@ -976,11 +1049,7 @@ impl LibbpfProgramHandle {
             )));
         }
 
-        Ok(Self {
-            _elf_bytes: elf_bytes,
-            object,
-            link,
-        })
+        Ok(Self::from_link(elf_bytes, object, link))
     }
 
     pub fn export_maps(&self) -> Result<HashMap<String, AyaMap>, LoadError> {
@@ -1007,6 +1076,9 @@ impl Drop for LibbpfProgramHandle {
         if !self.link.is_null() {
             destroy_libbpf_link(self.link);
             self.link = ptr::null_mut();
+        }
+        if let Some(attachment) = self.xdp_attachment.take() {
+            detach_libbpf_xdp(attachment.ifindex, attachment.flags);
         }
 
         if !self.object.is_null() {

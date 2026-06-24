@@ -133,6 +133,9 @@ const NF_INET_FORWARD: u32 = 2;
 const NF_INET_LOCAL_OUT: u32 = 3;
 const NF_INET_POST_ROUTING: u32 = 4;
 const BPF_F_NETFILTER_IP_DEFRAG: u32 = 1 << 0;
+const XDP_FLAGS_SKB_MODE: u32 = 1 << 1;
+const XDP_FLAGS_DRV_MODE: u32 = 1 << 2;
+const XDP_FLAGS_HW_MODE: u32 = 1 << 3;
 
 fn netfilter_family_value(family: crate::program_spec::NetfilterProtocolFamily) -> u32 {
     match family {
@@ -148,6 +151,14 @@ fn netfilter_hook_value(hook: crate::program_spec::NetfilterHook) -> u32 {
         crate::program_spec::NetfilterHook::Forward => NF_INET_FORWARD,
         crate::program_spec::NetfilterHook::LocalOut => NF_INET_LOCAL_OUT,
         crate::program_spec::NetfilterHook::PostRouting => NF_INET_POST_ROUTING,
+    }
+}
+
+fn xdp_attach_mode_libbpf_flags(mode: crate::program_spec::XdpAttachMode) -> u32 {
+    match mode {
+        crate::program_spec::XdpAttachMode::Skb => XDP_FLAGS_SKB_MODE,
+        crate::program_spec::XdpAttachMode::Driver => XDP_FLAGS_DRV_MODE,
+        crate::program_spec::XdpAttachMode::Hardware => XDP_FLAGS_HW_MODE,
     }
 }
 
@@ -1091,6 +1102,14 @@ impl EbpfState {
         }
         if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
+        }
+        if matches!(program.prog_type.attach_kind(), ProgramAttachKind::Xdp)
+            && object_needs_libbpf_map_creation(object)
+        {
+            let target = spec
+                .xdp_target()
+                .unwrap_or_else(|| unreachable!("xdp attach kind must use xdp program spec"));
+            return self.attach_libbpf_xdp_object(object, pin_group, program, target);
         }
         if matches!(
             program.prog_type.attach_kind(),
@@ -2284,6 +2303,27 @@ impl EbpfState {
             &program.name,
             ifindex,
             opts,
+            pin_root_path.as_deref(),
+        )?;
+        self.insert_libbpf_program_active_probe(handle, program, pin_group)
+    }
+
+    fn attach_libbpf_xdp_object(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        program: &EbpfProgramSection,
+        target: &crate::program_spec::XdpTarget,
+    ) -> Result<u32, LoadError> {
+        let ifindex = network_interface_index(&target.interface, "xdp")?;
+        let flags = xdp_attach_mode_libbpf_flags(target.attach_mode);
+        let elf_bytes = libbpf_elf_bytes(object, pin_group)?;
+        let pin_root_path = pin_group.map(create_pin_group_dir).transpose()?;
+        let handle = LibbpfProgramHandle::load_and_attach_xdp(
+            elf_bytes,
+            &program.name,
+            ifindex,
+            flags,
             pin_root_path.as_deref(),
         )?;
         self.insert_libbpf_program_active_probe(handle, program, pin_group)
