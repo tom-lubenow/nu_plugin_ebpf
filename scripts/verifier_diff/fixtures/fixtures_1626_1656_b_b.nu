@@ -55,32 +55,30 @@ const VERIFIER_DIFF_FIXTURES_1626_1656_B_B = [
         kernel: "accept"
     }
     {
-        name: "core-list-first-empty-reject"
+        name: "core-list-first-empty-is-empty"
         category: "language-core"
-        tags: [aggregate list first reject]
+        tags: [aggregate list first empty is-empty accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [] | first'
+            '  [] | first | is-empty'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "first requires a stack-backed numeric list with proven non-empty length"
+        local: "accept"
+        kernel: "accept"
     }
     {
-        name: "core-list-last-empty-reject"
+        name: "core-list-last-empty-is-empty"
         category: "language-core"
-        tags: [aggregate list last reject]
+        tags: [aggregate list last empty is-empty accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [] | last'
+            '  [] | last | is-empty'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "last requires a stack-backed numeric list with proven non-empty length"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-first-count"

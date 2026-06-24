@@ -909,6 +909,13 @@ impl<'a> HirToMirLowering<'a> {
             let input_meta = input_meta.expect("checked stack-list metadata");
             let known_len = Self::numeric_list_known_len(&input_meta);
             let min_len = input_meta.list_min_len.or(known_len);
+            if known_len == Some(0) && self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::nothing(Span::unknown()),
+                );
+                return Ok(());
+            }
             if cmd_name == "first" && min_len.unwrap_or(0) == 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"

@@ -12227,6 +12227,72 @@ fn test_lower_last_on_empty_numeric_list_is_rejected() {
 }
 
 #[test]
+fn test_lower_first_last_on_empty_numeric_list_feed_is_empty() {
+    for (offset, scalar_name) in [(0, "first"), (10, "last")] {
+        let scalar_decl = DeclId::new(10_579 + offset);
+        let is_empty_decl = DeclId::new(10_580 + offset);
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(Vec::new(), Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: scalar_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: is_empty_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+        let decl_names = HashMap::from([
+            (scalar_decl, scalar_name.to_string()),
+            (is_empty_decl, "is-empty".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("empty numeric list {scalar_name} should feed is-empty: {err}")
+        });
+
+        let label = format!("empty numeric list {scalar_name} is-empty");
+        assert_program_returns_constant(&result.program, 1, &label);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("empty numeric list {scalar_name} is-empty should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_first_count_on_numeric_list_rebuilds_prefix() {
     let first_decl = DeclId::new(80);
     let get_decl = DeclId::new(81);
