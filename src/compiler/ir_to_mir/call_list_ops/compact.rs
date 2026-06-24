@@ -49,17 +49,14 @@ impl<'a> HirToMirLowering<'a> {
             .compile_time_only_list_builder_values(input_reg, input_vreg)
             .map(|values| values.to_vec())
         {
-            let columns = self.compact_column_names()?;
-            if !columns.is_empty()
-                && !values
-                    .iter()
-                    .all(|value| matches!(value, nu_protocol::Value::Record { .. }))
+            let columns = if values
+                .iter()
+                .all(|value| matches!(value, nu_protocol::Value::Record { .. }))
             {
-                return Err(CompileError::UnsupportedInstruction(
-                    "compact does not accept column arguments for non-record fixed lists in eBPF"
-                        .into(),
-                ));
-            }
+                self.compact_column_names()?
+            } else {
+                Vec::new()
+            };
             let vals = values
                 .into_iter()
                 .filter(|value| {
@@ -73,18 +70,17 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if !self.positional_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "compact does not accept column arguments for stack-backed numeric lists in eBPF"
-                    .into(),
-            ));
-        }
-
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "compact requires a pipeline input with tracked metadata in eBPF".into(),
             )
         })?;
+        if !self.positional_args.is_empty() && Self::compact_columns_target_records(&input_meta) {
+            return Err(CompileError::UnsupportedInstruction(
+                "compact column arguments for typed record arrays require compile-time known fixed-list input in eBPF"
+                    .into(),
+            ));
+        }
         if self.lower_typed_fixed_array_compact_identity(FixedArrayCompactIdentity {
             src_dst,
             dst_vreg,
@@ -576,6 +572,14 @@ impl<'a> HirToMirLowering<'a> {
             columns.push(self.top_level_field_name_arg(*reg, "compact")?);
         }
         Ok(columns)
+    }
+
+    fn compact_columns_target_records(input_meta: &RegMetadata) -> bool {
+        matches!(
+            input_meta.annotated_semantics.as_ref(),
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. })
+                if matches!(elem.as_ref(), AnnotatedValueSemantics::Record(_))
+        )
     }
 
     fn compact_keeps_value_for_columns(

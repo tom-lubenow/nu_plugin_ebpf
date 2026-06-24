@@ -3715,18 +3715,14 @@ fn eval_supported_constant_list_compact(
 ) -> Result<Value, LabeledError> {
     let (vals, value_span) =
         eval_supported_constant_list_or_bounded_range_input("compact", input, span)?;
-    if !columns.is_empty()
-        && !vals
-            .iter()
-            .all(|value| matches!(value, Value::Record { .. }))
+    let columns = if vals
+        .iter()
+        .all(|value| matches!(value, Value::Record { .. }))
     {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`compact` does not accept column arguments for non-record lists in compile-time global initializers",
-                span,
-            ),
-        );
-    }
+        columns
+    } else {
+        Vec::new()
+    };
 
     let vals = vals
         .into_iter()

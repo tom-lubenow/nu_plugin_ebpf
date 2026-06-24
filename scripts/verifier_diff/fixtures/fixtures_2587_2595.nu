@@ -149,17 +149,16 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         error_contains: "compact requires a stack-backed numeric list input in eBPF"
     }
     {
-        name: "core-list-compact-rejects-seq-column-argument"
+        name: "core-list-compact-seq-column-argument"
         category: "language-core"
-        tags: [list compact diagnostics reject]
+        tags: [list compact column accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (seq 1 3) | compact value'
+            '  (seq 1 3) | compact value | math sum'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "compact does not accept column arguments for non-record fixed lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
 ]

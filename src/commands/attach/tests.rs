@@ -2191,7 +2191,7 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_record_list_compact
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_rejects_constant_compact_column_on_non_record_list() {
+fn test_map_leading_annotated_mut_globals_supports_constant_compact_column_on_non_record_list() {
     let source = "{|| mut vals: list<int> = ([7, 2, 4] | compact pid); $vals }";
     let ir_block = IrBlock {
         instructions: vec![
@@ -2213,16 +2213,20 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_compact_column_on_non
         file_count: 0,
     };
 
-    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect_err("compact column arguments on non-record lists should be rejected");
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("compact column arguments on non-record lists should be ignored");
 
-    assert!(
-        err.labels
-            .iter()
-            .any(|label| label.text.contains("column arguments for non-record lists")),
-        "unexpected labels: {:?}",
-        err.labels
-    );
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("compact should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![7, 2, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
 }
 
 #[test]

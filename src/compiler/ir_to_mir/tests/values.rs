@@ -43219,12 +43219,16 @@ fn test_lower_compact_empty_on_numeric_list_is_passthrough() {
 }
 
 #[test]
-fn test_lower_compact_column_argument_on_numeric_list_is_rejected() {
+fn test_lower_compact_column_argument_on_numeric_list_is_passthrough() {
     let compact_decl = DeclId::new(130);
-    let hir = make_numeric_list_pipeline_call_program(compact_decl, Some(0));
-    let decl_names = HashMap::from([(compact_decl, "compact".to_string())]);
+    let get_decl = DeclId::new(131);
+    let hir = make_numeric_list_call_then_get_program(compact_decl, get_decl, Some(0), 1);
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -43232,19 +43236,16 @@ fn test_lower_compact_column_argument_on_numeric_list_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("compact column arguments should be rejected for numeric lists");
+    .expect("compact column arguments should be ignored for numeric lists");
 
-    assert!(
-        err.to_string()
-            .contains("compact does not accept column arguments"),
-        "unexpected error: {err}"
-    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact column argument followed by get should compile through codegen");
 }
 
 #[test]
 fn test_lower_find_on_numeric_list_filters_equal_values() {
-    let find_decl = DeclId::new(131);
-    let get_decl = DeclId::new(132);
+    let find_decl = DeclId::new(132);
+    let get_decl = DeclId::new(133);
     let hir = make_numeric_list_item_call_then_get_program(find_decl, get_decl, 20, 0);
     let decl_names = HashMap::from([
         (find_decl, "find".to_string()),

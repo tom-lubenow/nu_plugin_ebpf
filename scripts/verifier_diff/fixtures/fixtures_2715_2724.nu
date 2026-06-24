@@ -1,17 +1,16 @@
 const VERIFIER_DIFF_FIXTURES_2715_2724 = [
     {
-        name: "core-list-compact-rejects-fixed-list-column-argument"
+        name: "core-list-compact-fixed-list-column-argument"
         category: "language-core"
-        tags: [list compact diagnostics reject]
+        tags: [list compact column accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ["a" ""] | compact value'
+            '  ["a" ""] | compact value | length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "compact does not accept column arguments for non-record fixed lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-compact-rejects-missing-pipeline"

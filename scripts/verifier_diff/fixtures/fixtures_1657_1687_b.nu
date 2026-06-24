@@ -26,18 +26,17 @@ const VERIFIER_DIFF_FIXTURES_1657_1687_B = [
         kernel: "accept"
     }
     {
-        name: "core-list-compact-column-reject"
+        name: "core-list-compact-column"
         category: "language-core"
-        tags: [aggregate list compact reject]
+        tags: [aggregate list compact column accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | compact value'
+            '  [10 20 30] | compact value | get 1'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "compact does not accept column arguments"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-record-list-compact-column-length"
