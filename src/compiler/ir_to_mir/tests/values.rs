@@ -12181,12 +12181,12 @@ fn test_lower_last_on_in_place_numeric_list_returns_scalar_result() {
 }
 
 #[test]
-fn test_lower_first_on_empty_numeric_list_is_rejected() {
+fn test_lower_first_on_empty_numeric_list_returns_nothing() {
     let first_decl = DeclId::new(86);
     let hir = make_empty_numeric_list_pipeline_call_program(first_decl);
     let decl_names = HashMap::from([(first_decl, "first".to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -12194,22 +12194,20 @@ fn test_lower_first_on_empty_numeric_list_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("scalar first on an empty list should be rejected");
+    .expect("scalar first on an empty list should lower as nothing");
 
-    assert!(
-        err.to_string()
-            .contains("first requires a stack-backed numeric list with proven non-empty length"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty numeric list first");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty numeric list first should compile through codegen");
 }
 
 #[test]
-fn test_lower_last_on_empty_numeric_list_is_rejected() {
+fn test_lower_last_on_empty_numeric_list_returns_nothing() {
     let last_decl = DeclId::new(87);
     let hir = make_empty_numeric_list_pipeline_call_program(last_decl);
     let decl_names = HashMap::from([(last_decl, "last".to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -12217,13 +12215,11 @@ fn test_lower_last_on_empty_numeric_list_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("scalar last on an empty list should be rejected");
+    .expect("scalar last on an empty list should lower as nothing");
 
-    assert!(
-        err.to_string()
-            .contains("last requires a stack-backed numeric list with proven non-empty length"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty numeric list last");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty numeric list last should compile through codegen");
 }
 
 #[test]
