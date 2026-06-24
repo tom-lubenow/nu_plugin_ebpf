@@ -4877,6 +4877,114 @@ fn test_lower_xdp_eth_ipv4_icmp_echo_sequence_projection_uses_be16_load() {
 }
 
 #[test]
+fn test_lower_xdp_eth_ipv4_icmp_next_hop_mtu_projection_uses_be16_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("icmp"),
+            string_member("next_hop_mtu"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 icmp next_hop_mtu projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Add,
+            rhs: MirValue::Const(6),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv4_icmp_timestamp_projection_uses_be32_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("icmp"),
+            string_member("receive_timestamp"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 icmp receive_timestamp projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Add,
+            rhs: MirValue::Const(12),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_eth_ipv4_tcp_seq_projection_reuses_dynamic_payload_steps() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
@@ -5023,6 +5131,127 @@ fn test_lower_xdp_eth_ipv6_icmpv6_code_projection_adds_icmpv6_view() {
                 }
             )))
     );
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv6_icmpv6_mtu_projection_uses_be32_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("payload"),
+            string_member("ipv6"),
+            string_member("payload"),
+            string_member("icmpv6"),
+            string_member("mtu"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv6 icmpv6 mtu projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Add,
+            rhs: MirValue::Const(4),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_xdp_eth_ipv6_icmpv6_neighbor_advertisement_flag_extracts_bitfield() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("payload"),
+            string_member("ipv6"),
+            string_member("payload"),
+            string_member("icmpv6"),
+            string_member("na_solicited"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv6 icmpv6 na_solicited projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U8,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Add,
+            rhs: MirValue::Const(4),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shr,
+            rhs: MirValue::Const(6),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(1),
+            ..
+        }
+    )));
 }
 
 #[test]

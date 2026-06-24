@@ -309,6 +309,13 @@ const ICMP_FIELDS: &[PacketHeaderFieldSpec] = &[
         6,
         true,
     ),
+    packet_field("gateway", PacketHeaderFieldType::Bytes(4), 4, false),
+    packet_field("pointer", PacketHeaderFieldType::U8, 4, false),
+    packet_field("next_hop_mtu", PacketHeaderFieldType::U16, 6, true),
+    packet_field("originate_timestamp", PacketHeaderFieldType::U32, 8, true),
+    packet_field("receive_timestamp", PacketHeaderFieldType::U32, 12, true),
+    packet_field("transmit_timestamp", PacketHeaderFieldType::U32, 16, true),
+    packet_field("address_mask", PacketHeaderFieldType::U32, 8, true),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
@@ -337,6 +344,18 @@ const ICMPV6_FIELDS: &[PacketHeaderFieldSpec] = &[
         6,
         true,
     ),
+    packet_field("mtu", PacketHeaderFieldType::U32, 4, true),
+    packet_field("pointer", PacketHeaderFieldType::U32, 4, true),
+    packet_field("nd_target", PacketHeaderFieldType::Bytes(16), 8, false),
+    packet_field("ra_cur_hop_limit", PacketHeaderFieldType::U8, 4, false),
+    packet_bitfield("ra_managed", PacketHeaderFieldType::U8, 5, 7, 1, false),
+    packet_bitfield("ra_other", PacketHeaderFieldType::U8, 5, 6, 1, false),
+    packet_field("ra_router_lifetime", PacketHeaderFieldType::U16, 6, true),
+    packet_field("ra_reachable_time", PacketHeaderFieldType::U32, 8, true),
+    packet_field("ra_retrans_timer", PacketHeaderFieldType::U32, 12, true),
+    packet_bitfield("na_router", PacketHeaderFieldType::U8, 4, 7, 1, false),
+    packet_bitfield("na_solicited", PacketHeaderFieldType::U8, 4, 6, 1, false),
+    packet_bitfield("na_override", PacketHeaderFieldType::U8, 4, 5, 1, false),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
