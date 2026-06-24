@@ -631,10 +631,10 @@ and `socket_filter:tcp6:[::1]:31337`, which create and keep open a
 bound socket while attached. `socket_filter` return values are
 snapshot lengths: return `0` to drop the packet or a positive value to
 keep it, and aliases like `"pass"` / `"keep"` expand to
-`ctx.packet_len`. Deeper TCP option parsing, ICMP subtype-specific body
-decoding, ESP/non-front-decodable IPv6 extension headers, and named
-packet-program action helpers are still not modeled, but compile-time
-action aliases are available in return position. XDP closures can return strings like
+`ctx.packet_len`. Deeper TCP option parsing and ESP/non-front-decodable
+IPv6 extension headers are still not modeled. Compile-time action
+aliases are available in return position and through the `action`
+intrinsic, for example `action pass` or `"drop" | action`. XDP closures can return strings like
 `"pass"` / `"drop"`, TC / tc_action closures can return strings like `"ok"` /
 `"shot"`, and TCX/Netkit closures can return strings like `"next"` / `"pass"` /
 `"ok"` / `"drop"` / `"redirect"`. Raw numeric return codes still work. `redirect IFINDEX` is

@@ -1369,6 +1369,7 @@ impl EbpfProgramType {
         }
 
         match intrinsic {
+            ProgramIntrinsic::Action => self.supports_return_action_aliases(),
             ProgramIntrinsic::AdjustPacket => [
                 PacketAdjustMode::Head,
                 PacketAdjustMode::Meta,
@@ -3041,6 +3042,7 @@ pub enum ProgramIntrinsic {
     StopTimer,
     ReadStr,
     ReadKernelStr,
+    Action,
     AdjustPacket,
     AdjustMessage,
     Redirect,
@@ -3121,6 +3123,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StopTimer => "stop-timer",
             ProgramIntrinsic::ReadStr => "read-str",
             ProgramIntrinsic::ReadKernelStr => "read-kernel-str",
+            ProgramIntrinsic::Action => "action",
             ProgramIntrinsic::AdjustPacket => "adjust-packet",
             ProgramIntrinsic::AdjustMessage => "adjust-message",
             ProgramIntrinsic::Redirect => "redirect",
@@ -3153,6 +3156,7 @@ impl ProgramIntrinsic {
             "stop-timer" => Some(ProgramIntrinsic::StopTimer),
             "read-str" => Some(ProgramIntrinsic::ReadStr),
             "read-kernel-str" => Some(ProgramIntrinsic::ReadKernelStr),
+            "action" => Some(ProgramIntrinsic::Action),
             "adjust-packet" => Some(ProgramIntrinsic::AdjustPacket),
             "adjust-message" => Some(ProgramIntrinsic::AdjustMessage),
             "redirect" => Some(ProgramIntrinsic::Redirect),
@@ -3185,6 +3189,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::StartTimer | ProgramIntrinsic::StopTimer => ProgramCapability::Timers,
             ProgramIntrinsic::ReadStr => ProgramCapability::ReadUserString,
             ProgramIntrinsic::ReadKernelStr => ProgramCapability::ReadKernelString,
+            ProgramIntrinsic::Action => ProgramCapability::ActionAliases,
             ProgramIntrinsic::AdjustPacket
             | ProgramIntrinsic::AdjustMessage
             | ProgramIntrinsic::Redirect
@@ -3225,6 +3230,7 @@ pub enum ProgramCapability {
     StackTraces,
     ReadUserString,
     ReadKernelString,
+    ActionAliases,
     HelperCalls,
     KfuncCalls,
     Globals,
@@ -3246,6 +3252,7 @@ impl ProgramCapability {
             ProgramCapability::StackTraces => "stack-traces",
             ProgramCapability::ReadUserString => "read-user-string",
             ProgramCapability::ReadKernelString => "read-kernel-string",
+            ProgramCapability::ActionAliases => "action-aliases",
             ProgramCapability::HelperCalls => "helper-calls",
             ProgramCapability::KfuncCalls => "kfunc-calls",
             ProgramCapability::Globals => "globals",
@@ -3263,6 +3270,7 @@ impl ProgramCapability {
             ProgramCapability::StackTraces => "stack trace collection",
             ProgramCapability::ReadUserString => "userspace string reads",
             ProgramCapability::ReadKernelString => "kernel string reads",
+            ProgramCapability::ActionAliases => "program-specific action aliases",
             ProgramCapability::HelperCalls => "helper calls",
             ProgramCapability::KfuncCalls => "kfunc calls",
             ProgramCapability::Globals => "program globals",

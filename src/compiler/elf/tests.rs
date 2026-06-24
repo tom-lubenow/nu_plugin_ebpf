@@ -4850,6 +4850,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapPop)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("action"),
+        Some(ProgramIntrinsic::Action)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("adjust-packet"),
         Some(ProgramIntrinsic::AdjustPacket)
     );
@@ -4889,6 +4893,10 @@ fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::HelperCall.required_capability(),
         ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::Action.required_capability(),
+        ProgramCapability::ActionAliases
     );
     assert_eq!(
         ProgramIntrinsic::AdjustPacket.required_capability(),
@@ -5013,6 +5021,10 @@ fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::GlobalGet));
     assert!(EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::GlobalSet));
     assert!(!EbpfProgramType::Extension.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::Action));
+    assert!(EbpfProgramType::SocketFilter.supports_intrinsic(ProgramIntrinsic::Action));
+    assert!(!EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::Action));
+    assert!(!EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::Action));
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::AdjustPacket));
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::Redirect));
     assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::RedirectMap));
@@ -5036,6 +5048,7 @@ fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::HelperCalls));
+    assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::ActionAliases));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::Globals));
     assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));

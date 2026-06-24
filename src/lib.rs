@@ -56,6 +56,7 @@ impl Plugin for EbpfPlugin {
             Box::new(StopTimer),
             Box::new(ReadStr),
             Box::new(ReadKernelStr),
+            Box::new(Action),
             Box::new(AdjustPacket),
             Box::new(AdjustMessage),
             Box::new(Redirect),

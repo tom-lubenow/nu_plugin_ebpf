@@ -260,7 +260,10 @@ Context parameter syntax (recommended):
     selects a socket from a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` using
     `bpf_sk_select_reuseport`; `KEY` is materialized as the helper's u32
     key pointer automatically, and `--flags` must be `0`.
-    Raw numeric return codes still work. Packet reads
+    `action NAME` resolves the same program-specific return aliases as
+    string returns, so forms like `action pass`, `action drop`, or
+    `"pass" | action` can be used when an expression should produce the
+    action code explicitly. Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
     `arp`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,

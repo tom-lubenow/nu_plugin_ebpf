@@ -1360,6 +1360,209 @@ fn test_lower_socket_filter_pass_alias_return_to_packet_len() {
     ));
 }
 
+fn make_action_call_program(alias: &'static [u8]) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(alias.to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 2],
+            ast: vec![None; 2],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_pipelined_action_call_program(alias: &'static [u8]) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String(alias.to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 2],
+            ast: vec![None; 2],
+            comments: vec![],
+            register_count: 1,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+#[test]
+fn test_lower_xdp_action_intrinsic_to_const() {
+    let hir = make_action_call_program(b"pass");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "action".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp action pass intrinsic should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let action_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::Const(2),
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("action pass should lower to XDP_PASS constant");
+
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::VReg(vreg))
+        } if vreg == action_vreg
+    ));
+}
+
+#[test]
+fn test_lower_xdp_action_intrinsic_from_pipeline_to_const() {
+    let hir = make_pipelined_action_call_program(b"drop");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "action".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("piped xdp action drop intrinsic should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let action_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::Copy {
+                dst,
+                src: MirValue::Const(1),
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("action drop should lower to XDP_DROP constant");
+
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::VReg(vreg))
+        } if vreg == action_vreg
+    ));
+}
+
+#[test]
+fn test_lower_socket_filter_action_intrinsic_pass_to_packet_len() {
+    let hir = make_action_call_program(b"pass");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let decl_names = HashMap::from([(DeclId::new(42), "action".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("socket_filter action pass intrinsic should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let packet_len_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::PacketLen,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("socket_filter action pass should load ctx.packet_len");
+
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::VReg(vreg))
+        } if vreg == packet_len_vreg
+    ));
+}
+
+#[test]
+fn test_lower_action_intrinsic_rejects_unsupported_alias() {
+    let hir = make_action_call_program(b"ok");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "action".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("xdp action ok should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("action alias 'ok' is not supported on xdp programs"),
+        "{err}"
+    );
+}
+
 #[test]
 fn test_lower_socket_filter_permit_alias_return_to_packet_len() {
     let hir = make_return_literal_program(HirLiteral::String(b"permit".to_vec()));

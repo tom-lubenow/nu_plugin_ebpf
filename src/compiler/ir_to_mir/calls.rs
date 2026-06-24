@@ -2,7 +2,7 @@ use super::call_list_ops::{
     TypedFixedArrayAppendOrPrepend, TypedFixedArrayEachLowering, TypedFixedArrayWhereLowering,
 };
 use super::*;
-use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
+use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode, ProgramReturnAlias};
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature,
     KfuncArgKind, KfuncRetKind, KfuncSignature, helper_acquire_ref_kind,
@@ -4572,6 +4572,97 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 let aligned_len = align_to_eight(max_len).clamp(16, MAX_STRING_SIZE);
                 self.lower_probe_read_string(src_dst, dst_vreg, ptr_vreg, false, aligned_len)?;
+            }
+
+            "action" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "action does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("action", &[])?;
+                if self.positional_args.len() > 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "action accepts at most one alias argument".into(),
+                    ));
+                }
+                if self.pipeline_input_reg.is_some() && !self.positional_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "action accepts either pipeline input or one positional alias, not both"
+                            .into(),
+                    ));
+                }
+
+                let alias_reg = self
+                    .positional_args
+                    .first()
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "action requires an alias from pipeline input or a first positional argument"
+                                .into(),
+                        )
+                    })?;
+                let alias = self.literal_string_arg(alias_reg, "action")?;
+                let program_type = self
+                    .probe_ctx
+                    .as_ref()
+                    .map(|ctx| ctx.program_type())
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "action requires a concrete eBPF program context".into(),
+                        )
+                    })?;
+                let action = program_type.return_action_alias(&alias).ok_or_else(|| {
+                    let supported = program_type
+                        .return_action_alias_pairs()
+                        .into_iter()
+                        .map(|(alias, _)| alias)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let supported = if supported.is_empty() {
+                        "none".to_string()
+                    } else {
+                        supported
+                    };
+                    CompileError::UnsupportedInstruction(format!(
+                        "action alias '{}' is not supported on {} programs; supported aliases: {}",
+                        alias,
+                        program_type.canonical_prefix(),
+                        supported
+                    ))
+                })?;
+
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+                self.reset_call_result_metadata(src_dst);
+                let result_ty = match action {
+                    ProgramReturnAlias::Const(value) => {
+                        self.emit(MirInst::Copy {
+                            dst: result_vreg,
+                            src: MirValue::Const(value),
+                        });
+                        let meta = self.get_or_create_metadata(src_dst);
+                        meta.literal_int = Some(value);
+                        meta.constant_value = Some(nu_protocol::Value::int(value, Span::unknown()));
+                        MirType::I64
+                    }
+                    ProgramReturnAlias::PacketLen => {
+                        self.emit(MirInst::LoadCtxField {
+                            dst: result_vreg,
+                            field: CtxField::PacketLen,
+                            slot: None,
+                        });
+                        MirType::U32
+                    }
+                };
+                self.vreg_type_hints.insert(result_vreg, result_ty.clone());
+                self.get_or_create_metadata(src_dst).field_type = Some(result_ty);
             }
 
             "adjust-packet" => {

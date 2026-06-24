@@ -519,6 +519,21 @@ pub(super) const DEFAULT_PROBE_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
+pub(super) const ACTION_ALIAS_PROBE_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::StackTraces,
+    ProgramCapability::ReadUserString,
+    ProgramCapability::ReadKernelString,
+    ProgramCapability::ActionAliases,
+    ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 pub(super) const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
@@ -530,11 +545,24 @@ pub(super) const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
+pub(super) const ACTION_ALIAS_XDP_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::ActionAliases,
+    ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 pub(super) const CGROUP_SOCK_ADDR_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Emit,
     ProgramCapability::Counters,
     ProgramCapability::Histograms,
     ProgramCapability::Timers,
+    ProgramCapability::ActionAliases,
     ProgramCapability::HelperCalls,
     ProgramCapability::KfuncCalls,
     ProgramCapability::Globals,
@@ -852,7 +880,7 @@ pub(super) const LSM_CGROUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::LsmCgroup,
     target_kind: ProgramTargetKind::LsmHook,
     kernel_target_validation: Some(KernelTargetValidationKind::LsmHook),
-    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
 };
@@ -927,7 +955,7 @@ pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Xdp,
     target_kind: ProgramTargetKind::NetworkInterface,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -959,7 +987,7 @@ pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SocketFilter,
     target_kind: ProgramTargetKind::SocketFilterTarget,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -975,7 +1003,7 @@ pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupDevice,
     target_kind: ProgramTargetKind::CgroupPath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -991,7 +1019,7 @@ pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SkLookup,
     target_kind: ProgramTargetKind::NetworkNamespacePath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1007,7 +1035,7 @@ pub(super) const FLOW_DISSECTOR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::FlowDissector,
     target_kind: ProgramTargetKind::NetworkNamespacePath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1023,7 +1051,7 @@ pub(super) const NETFILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Netfilter,
     target_kind: ProgramTargetKind::NetfilterHook,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1039,7 +1067,7 @@ pub(super) const LWT_IN_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Lwt,
     target_kind: ProgramTargetKind::LightweightTunnelRoute,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1055,7 +1083,7 @@ pub(super) const LWT_OUT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Lwt,
     target_kind: ProgramTargetKind::LightweightTunnelRoute,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1071,7 +1099,7 @@ pub(super) const LWT_XMIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Lwt,
     target_kind: ProgramTargetKind::LightweightTunnelRoute,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1087,7 +1115,7 @@ pub(super) const LWT_SEG6LOCAL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Lwt,
     target_kind: ProgramTargetKind::LightweightTunnelRoute,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1103,7 +1131,7 @@ pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SkReuseport,
     target_kind: ProgramTargetKind::SocketReuseportMode,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1119,7 +1147,7 @@ pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SkMsg,
     target_kind: ProgramTargetKind::PinnedSockMapPath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1135,7 +1163,7 @@ pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SkSkb,
     target_kind: ProgramTargetKind::PinnedSockMapPath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1183,7 +1211,7 @@ pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Tc,
     target_kind: ProgramTargetKind::TrafficControlInterface,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1199,7 +1227,7 @@ pub(super) const TCX_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Tcx,
     target_kind: ProgramTargetKind::TrafficControlInterface,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1215,7 +1243,7 @@ pub(super) const NETKIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Netkit,
     target_kind: ProgramTargetKind::TrafficControlInterface,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1231,7 +1259,7 @@ pub(super) const TC_ACTION_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::TcAction,
     target_kind: ProgramTargetKind::TrafficControlAction,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1247,7 +1275,7 @@ pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupSkb,
     target_kind: ProgramTargetKind::CgroupPathAttachType,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1263,7 +1291,7 @@ pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupSock,
     target_kind: ProgramTargetKind::CgroupPathSockAttachType,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1279,7 +1307,7 @@ pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupSysctl,
     target_kind: ProgramTargetKind::CgroupPath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1295,7 +1323,7 @@ pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupSockopt,
     target_kind: ProgramTargetKind::CgroupPathSockoptAttachType,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: ACTION_ALIAS_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -1483,6 +1511,7 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::StopTimer,
     ProgramIntrinsic::ReadStr,
     ProgramIntrinsic::ReadKernelStr,
+    ProgramIntrinsic::Action,
     ProgramIntrinsic::AdjustPacket,
     ProgramIntrinsic::AdjustMessage,
     ProgramIntrinsic::Redirect,
@@ -1513,6 +1542,7 @@ pub(super) const PROGRAM_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::StackTraces,
     ProgramCapability::ReadUserString,
     ProgramCapability::ReadKernelString,
+    ProgramCapability::ActionAliases,
     ProgramCapability::HelperCalls,
     ProgramCapability::KfuncCalls,
     ProgramCapability::Globals,

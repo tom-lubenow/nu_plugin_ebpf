@@ -8,6 +8,50 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 
 #[derive(Clone)]
+pub struct Action;
+
+impl PluginCommand for Action {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "action"
+    }
+
+    fn description(&self) -> &str {
+        "Resolve a program-specific packet/action return alias to its numeric eBPF return code."
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("action")
+            .input_output_types(vec![(Type::String, Type::Int), (Type::Nothing, Type::Int)])
+            .optional(
+                "alias",
+                SyntaxShape::String,
+                "Program action alias; otherwise uses pipeline input",
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'xdp:lo' {|ctx| action pass }",
+            description: "Return the XDP_PASS action code",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
 pub struct AdjustPacket;
 
 impl PluginCommand for AdjustPacket {

@@ -87,7 +87,7 @@ pub use helpers::{
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;
 pub use program_intrinsics::{
-    AdjustMessage, AdjustPacket, AssignSocket, Redirect, RedirectMap, RedirectSocket,
+    Action, AdjustMessage, AdjustPacket, AssignSocket, Redirect, RedirectMap, RedirectSocket,
 };
 pub use setup::EbpfSetup;
 pub use spec::EbpfSpec;

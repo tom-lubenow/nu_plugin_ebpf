@@ -363,6 +363,11 @@ impl EbpfProgramType {
             .map(|entry| entry.value)
     }
 
+    pub(crate) fn supports_return_action_aliases(&self) -> bool {
+        self.return_action_alias_entries()
+            .is_some_and(|entries| !entries.is_empty())
+    }
+
     pub(crate) fn return_action_alias_pairs(&self) -> Vec<(&'static str, ProgramReturnAlias)> {
         self.return_action_alias_entries()
             .unwrap_or(&[])
