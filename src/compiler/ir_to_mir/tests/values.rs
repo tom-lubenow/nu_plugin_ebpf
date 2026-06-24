@@ -43300,6 +43300,122 @@ fn test_lower_find_on_numeric_list_filters_equal_values() {
 }
 
 #[test]
+fn test_lower_find_dynamic_string_needle_on_numeric_list_returns_empty() {
+    let find_decl = DeclId::new(10_577);
+    let length_decl = DeclId::new(10_578);
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 3 },
+    }];
+
+    for (index, value) in [10, 20, 30].into_iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Int(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let needle_reg = RegId::new(5);
+    let path_reg = RegId::new(6);
+    stmts.push(HirStmt::LoadVariable {
+        dst: needle_reg,
+        var_id: ctx_var,
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: path_reg,
+        lit: HirLiteral::CellPath(Box::new(CellPath {
+            members: vec![string_member("comm")],
+        })),
+    });
+    stmts.push(HirStmt::FollowCellPath {
+        src_dst: needle_reg,
+        path: path_reg,
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: find_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![needle_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(7),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("dynamic string find needle cannot match numeric stack list items");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected dynamic string needle find on a numeric list to materialize an empty result"
+    );
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. }))
+            && instructions.iter().all(|inst| !matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    ..
+                }
+            )),
+        "expected impossible string needle to skip numeric item scanning"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("dynamic string needle find followed by length should compile through codegen");
+}
+
+#[test]
 fn test_lower_find_multiple_needles_on_numeric_list_or_combines_matches() {
     let find_decl = DeclId::new(1133);
     let length_decl = DeclId::new(1134);

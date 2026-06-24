@@ -93,18 +93,17 @@ const VERIFIER_DIFF_FIXTURES_2587_2595 = [
         kernel: "accept"
     }
     {
-        name: "core-list-find-rejects-dynamic-string-stack-search"
+        name: "core-list-find-dynamic-string-stack-search-length"
         category: "language-core"
-        tags: [list find string diagnostics reject]
+        tags: [list find string length accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (seq 1 3) | find $ctx.comm'
+            '  (seq 1 3) | find $ctx.comm | length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "find search argument must be a numeric scalar in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-sort-rejects-mixed-fixed-list"

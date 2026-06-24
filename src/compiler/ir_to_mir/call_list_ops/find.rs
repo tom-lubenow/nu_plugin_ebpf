@@ -329,6 +329,7 @@ impl<'a> HirToMirLowering<'a> {
         needles: &[(VReg, RegId)],
         constant_type_error: &str,
         runtime_type_error: &str,
+        allow_string_no_match: bool,
     ) -> Result<(Vec<MirValue>, Option<Vec<i64>>), CompileError> {
         let mut needle_values = Vec::with_capacity(needles.len());
         let mut needle_consts = Vec::with_capacity(needles.len());
@@ -345,6 +346,13 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| meta.constant_value.as_ref())
                     .is_some()
             {
+                if allow_string_no_match
+                    && needle_meta
+                        .as_ref()
+                        .is_some_and(Self::metadata_is_string_find_needle)
+                {
+                    continue;
+                }
                 return Err(CompileError::UnsupportedInstruction(
                     constant_type_error.into(),
                 ));
@@ -357,6 +365,13 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             all_constant = false;
+            if allow_string_no_match
+                && needle_meta
+                    .as_ref()
+                    .is_some_and(Self::metadata_is_string_find_needle)
+            {
+                continue;
+            }
             if !matches!(
                 self.typed_value_runtime_type(*needle_reg, *needle_vreg),
                 Some(
@@ -480,7 +495,14 @@ impl<'a> HirToMirLowering<'a> {
             &needles,
             "find search argument must be an integer scalar for typed fixed arrays in eBPF",
             "find search argument must be an integer or bool scalar in eBPF",
+            false,
         )?;
+        if needle_values.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "find search argument must include at least one numeric scalar for typed fixed arrays in eBPF"
+                    .into(),
+            ));
+        }
         let constant_value = Self::typed_fixed_array_find_constant_value(
             input_meta,
             needle_consts.as_deref(),
@@ -741,7 +763,18 @@ impl<'a> HirToMirLowering<'a> {
             &needles,
             "find search argument must be an integer scalar for stack-backed numeric lists in eBPF",
             "find search argument must be a numeric scalar in eBPF",
+            true,
         )?;
+        if needle_values.is_empty() {
+            return self.lower_stack_list_find_no_numeric_needles(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_vreg,
+                input_meta,
+                invert,
+            );
+        }
 
         let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
@@ -832,6 +865,39 @@ impl<'a> HirToMirLowering<'a> {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);
         }
 
+        Ok(())
+    }
+
+    fn lower_stack_list_find_no_numeric_needles(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_vreg: VReg,
+        input_meta: RegMetadata,
+        invert: bool,
+    ) -> Result<(), CompileError> {
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        if invert {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            if let Some(ty) = self.vreg_type_hints.get(&input_vreg).cloned() {
+                self.vreg_type_hints.insert(result_vreg, ty);
+            }
+            self.reg_metadata.insert(src_dst.get(), input_meta);
+            return Ok(());
+        }
+
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, 0);
+        self.install_stack_numeric_list_result_metadata(src_dst, out_slot, out_ty, 0, Some(0));
+        self.get_or_create_metadata(src_dst).constant_value =
+            Some(nu_protocol::Value::list(Vec::new(), Span::unknown()));
         Ok(())
     }
 
