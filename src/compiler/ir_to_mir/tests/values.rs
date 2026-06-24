@@ -43351,6 +43351,99 @@ fn test_lower_find_multiple_needles_on_numeric_list_or_combines_matches() {
 }
 
 #[test]
+fn test_lower_find_regex_on_compile_time_numeric_list_filters_by_text_pattern() {
+    let find_decl = DeclId::new(1135);
+    let length_decl = DeclId::new(1136);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 3 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(2),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(20),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(4),
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(5),
+                        val: Box::new(Value::string("2", Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: find_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            named: vec![(b"regex".to_vec(), RegId::new(5))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: length_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find --regex should fold compile-time numeric lists");
+
+    assert_program_returns_constant(&result.program, 2, "find --regex length");
+    assert_no_runtime_list_operations(&result.program, "compile-time find --regex");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find --regex followed by length should compile through codegen");
+}
+
+#[test]
 fn test_lower_find_invert_on_numeric_list_filters_unequal_values() {
     let find_decl = DeclId::new(1131);
     let get_decl = DeclId::new(1132);

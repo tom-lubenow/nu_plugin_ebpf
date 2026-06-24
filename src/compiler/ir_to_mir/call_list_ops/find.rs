@@ -23,6 +23,13 @@ struct MaterializedStackListFind {
     invert: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct FindFlags {
+    invert: bool,
+    regex: bool,
+    regex_needle: Option<(VReg, RegId)>,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(in crate::compiler::ir_to_mir) fn lower_stack_list_find(
         &mut self,
@@ -30,13 +37,18 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        let invert = self.find_invert_flag()?;
-        if !self.named_args.is_empty() {
+        let flags = self.find_flags()?;
+        let invert = flags.invert;
+        if flags.regex_needle.is_some() && !self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "find supports only --invert flag and no named arguments in eBPF".into(),
+                "find --regex cannot be used with additional search terms in eBPF".into(),
             ));
         }
-        if self.positional_args.is_empty() {
+        let needles = flags
+            .regex_needle
+            .map(|needle| vec![needle])
+            .unwrap_or_else(|| self.positional_args.clone());
+        if needles.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
                 "find requires at least one numeric search argument in eBPF".into(),
             ));
@@ -46,12 +58,15 @@ impl<'a> HirToMirLowering<'a> {
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
-        let needles = self.positional_args.clone();
 
         if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
                 .map(|values| (reg, values.to_vec()))
         }) {
+            if flags.regex {
+                return self.lower_compile_time_list_find_regex(src_dst, values, &needles, invert);
+            }
+
             let constant_needles = needles
                 .iter()
                 .map(|(_, needle_reg)| self.find_constant_needle_value(*needle_reg))
@@ -115,6 +130,15 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if flags.regex {
+            if let Some(values) = self.find_constant_input_list_values(input_reg) {
+                return self.lower_compile_time_list_find_regex(src_dst, values, &needles, invert);
+            }
+            return Err(CompileError::UnsupportedInstruction(
+                "find --regex requires compile-time known fixed-list input in eBPF".into(),
+            ));
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -147,19 +171,52 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn find_invert_flag(&self) -> Result<bool, CompileError> {
-        let mut invert = false;
+    fn find_flags(&self) -> Result<FindFlags, CompileError> {
+        let mut flags = FindFlags::default();
         for flag in &self.named_flags {
             match flag.as_str() {
-                "invert" | "v" => invert = true,
+                "invert" | "v" => flags.invert = true,
+                "regex" => flags.regex = true,
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(
-                        "find supports only --invert flag and no named arguments in eBPF".into(),
+                        "find supports only --invert and --regex flags and no named arguments in eBPF"
+                            .into(),
                     ));
                 }
             }
         }
-        Ok(invert)
+        for (name, (vreg, reg)) in &self.named_args {
+            match name.as_str() {
+                "invert" | "v" => {
+                    self.find_switch_named_arg_is_true(name, *reg)?;
+                    flags.invert = true;
+                }
+                "regex" => {
+                    flags.regex = true;
+                    flags.regex_needle = Some((*vreg, *reg));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "find supports only --invert and --regex flags and no named arguments in eBPF"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        Ok(flags)
+    }
+
+    fn find_switch_named_arg_is_true(&self, name: &str, reg: RegId) -> Result<(), CompileError> {
+        if self
+            .get_metadata(reg)
+            .and_then(|meta| meta.constant_value.as_ref())
+            .is_some_and(|value| matches!(value, nu_protocol::Value::Bool { val: true, .. }))
+        {
+            return Ok(());
+        }
+        Err(CompileError::UnsupportedInstruction(format!(
+            "find --{name} cannot receive a value in eBPF"
+        )))
     }
 
     fn find_constant_needle_value(&self, needle_reg: RegId) -> Option<nu_protocol::Value> {
@@ -172,12 +229,99 @@ impl<'a> HirToMirLowering<'a> {
             })
     }
 
+    fn find_constant_input_list_values(
+        &self,
+        input_reg: Option<RegId>,
+    ) -> Option<Vec<nu_protocol::Value>> {
+        let meta = self.get_metadata(input_reg?)?;
+        let nu_protocol::Value::List { vals, .. } = meta.constant_value.as_ref()? else {
+            return None;
+        };
+        Some(vals.clone())
+    }
+
     fn value_matches_any_needle(
         value: &nu_protocol::Value,
         needles: &[nu_protocol::Value],
         invert: bool,
     ) -> bool {
         needles.iter().any(|needle| value == needle) != invert
+    }
+
+    fn lower_compile_time_list_find_regex(
+        &mut self,
+        src_dst: RegId,
+        values: Vec<nu_protocol::Value>,
+        needles: &[(VReg, RegId)],
+        invert: bool,
+    ) -> Result<(), CompileError> {
+        if needles.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "find --regex requires exactly one search argument in eBPF".into(),
+            ));
+        }
+        let pattern_value = self
+            .find_constant_needle_value(needles[0].1)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "find --regex search argument must be compile-time constant in eBPF".into(),
+                )
+            })?;
+        let pattern = Self::find_regex_pattern_text(&pattern_value)?;
+        let regex = regex::Regex::new(&pattern).map_err(|err| {
+            CompileError::UnsupportedInstruction(format!(
+                "find --regex pattern is invalid in eBPF: {err}"
+            ))
+        })?;
+
+        let vals = values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let text = Self::find_regex_item_text(&value, index)?;
+                Ok((regex.is_match(&text) != invert).then_some(value))
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        self.lower_compile_time_list_transform_result(
+            src_dst,
+            &nu_protocol::Value::list(vals, Span::unknown()),
+        )?;
+        Ok(())
+    }
+
+    fn find_regex_pattern_text(value: &nu_protocol::Value) -> Result<String, CompileError> {
+        match value {
+            nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                Ok(val.clone())
+            }
+            nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Float { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Bool { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Nothing { .. } => Ok("null".to_string()),
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "find --regex search argument must be a compile-time string or scalar in eBPF; got {}",
+                other.get_type()
+            ))),
+        }
+    }
+
+    fn find_regex_item_text(
+        value: &nu_protocol::Value,
+        index: usize,
+    ) -> Result<String, CompileError> {
+        match value {
+            nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Float { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Bool { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Nothing { .. } => Ok("null".to_string()),
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "find --regex supports only compile-time numeric, bool, or null list items in eBPF; item {index} has type {}",
+                other.get_type()
+            ))),
+        }
     }
 
     fn find_numeric_needle_values(

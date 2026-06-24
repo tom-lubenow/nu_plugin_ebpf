@@ -15253,6 +15253,7 @@ fn eval_supported_constant_list_find_call(
 ) -> Result<Value, LabeledError> {
     let mut needle_exprs = Vec::new();
     let mut invert = false;
+    let mut regex = false;
     for arg in args {
         match arg {
             nu_protocol::ast::Argument::Positional(expr)
@@ -15272,12 +15273,25 @@ fn eval_supported_constant_list_find_call(
                     }
                     invert = true;
                 }
+                "regex" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`find --regex` requires a search argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    regex = true;
+                    needle_exprs.push(expr);
+                }
                 _ => {
                     return Err(LabeledError::new(
                         "Unsupported annotated mutable global initializer",
                     )
                     .with_label(
-                        "`find` supports only --invert in compile-time global initializers",
+                        "`find` supports only --invert and --regex in compile-time global initializers",
                         arg.span(),
                     ));
                 }
@@ -15300,7 +15314,7 @@ fn eval_supported_constant_list_find_call(
         );
     }
 
-    eval_supported_constant_list_find(working_set, input, &needle_exprs, env, span, invert)
+    eval_supported_constant_list_find(working_set, input, &needle_exprs, env, span, invert, regex)
 }
 
 fn eval_supported_constant_list_find_external_call(
@@ -15312,6 +15326,7 @@ fn eval_supported_constant_list_find_external_call(
 ) -> Result<Value, LabeledError> {
     let mut needle_exprs = Vec::new();
     let mut invert = false;
+    let mut regex = false;
     for arg in args {
         let ExternalArgument::Regular(expr) = arg else {
             return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -15328,11 +15343,14 @@ fn eval_supported_constant_list_find_external_call(
             {
                 invert = true;
             }
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "--regex" => {
+                regex = true;
+            }
             Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
                 return Err(
                     LabeledError::new("Unsupported annotated mutable global initializer")
                         .with_label(
-                            "`find` supports only --invert in compile-time global initializers",
+                            "`find` supports only --invert and --regex in compile-time global initializers",
                             expr.span,
                         ),
                 );
@@ -15352,7 +15370,7 @@ fn eval_supported_constant_list_find_external_call(
         );
     }
 
-    eval_supported_constant_list_find(working_set, input, &needle_exprs, env, span, invert)
+    eval_supported_constant_list_find(working_set, input, &needle_exprs, env, span, invert, regex)
 }
 
 fn eval_supported_constant_list_find(
@@ -15362,6 +15380,7 @@ fn eval_supported_constant_list_find(
     env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
     invert: bool,
+    use_regex: bool,
 ) -> Result<Value, LabeledError> {
     let (vals, value_span) =
         eval_supported_constant_list_or_bounded_range_input("find", input, span)?;
@@ -15369,11 +15388,95 @@ fn eval_supported_constant_list_find(
         .iter()
         .map(|needle_expr| eval_supported_constant_value_with_env(working_set, needle_expr, env))
         .collect::<Result<Vec<_>, _>>()?;
+    if use_regex {
+        return eval_supported_constant_list_find_regex(vals, value_span, needles, invert, span);
+    }
     let vals = vals
         .into_iter()
         .filter(|value| needles.iter().any(|needle| value == needle) != invert)
         .collect::<Vec<_>>();
     Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_list_find_regex(
+    vals: Vec<Value>,
+    value_span: Span,
+    needles: Vec<Value>,
+    invert: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let [pattern_value] = needles.as_slice() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`find --regex` requires exactly one search argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern = eval_supported_constant_find_regex_pattern_text(pattern_value, span)?;
+    let regex = regex::Regex::new(&pattern).map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`find --regex` pattern is invalid in global initializers: {err}"),
+            span,
+        )
+    })?;
+
+    let vals = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let text = eval_supported_constant_find_regex_item_text(&value, index, span)?;
+            Ok((regex.is_match(&text) != invert).then_some(value))
+        })
+        .collect::<Result<Vec<_>, LabeledError>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_find_regex_pattern_text(
+    value: &Value,
+    span: Span,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val.clone()),
+        Value::Int { val, .. } => Ok(val.to_string()),
+        Value::Float { val, .. } => Ok(val.to_string()),
+        Value::Bool { val, .. } => Ok(val.to_string()),
+        Value::Nothing { .. } => Ok("null".to_string()),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`find --regex` search argument must be a compile-time string or scalar in global initializers; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_find_regex_item_text(
+    value: &Value,
+    index: usize,
+    span: Span,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(val.to_string()),
+        Value::Float { val, .. } => Ok(val.to_string()),
+        Value::Bool { val, .. } => Ok(val.to_string()),
+        Value::Nothing { .. } => Ok("null".to_string()),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`find --regex` supports only compile-time numeric, bool, or null list items in global initializers; item {index} has type {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
 }
 
 fn eval_supported_constant_list_or_bounded_range_input(

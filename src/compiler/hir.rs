@@ -1098,12 +1098,22 @@ fn compile_time_value_consumer_matches(
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Find => {
+            let has_regex_arg = args
+                .named
+                .iter()
+                .any(|(name, _)| name.as_slice() == b"regex");
             decl_name == Some("find")
                 && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 0)
-                && args.positional.len() == 1
+                && (!args.positional.is_empty() || has_regex_arg)
                 && args.rest.is_empty()
-                && args.named.is_empty()
-                && args.flags.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"invert" | b"v" | b"regex"))
+                && args
+                    .flags
+                    .iter()
+                    .all(|flag| matches!(flag.as_slice(), b"invert" | b"v" | b"regex"))
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::SplitList => {

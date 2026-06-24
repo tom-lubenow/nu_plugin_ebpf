@@ -1,17 +1,16 @@
 const VERIFIER_DIFF_FIXTURES_2587_2595 = [
     {
-        name: "core-list-find-rejects-flags"
+        name: "core-list-find-regex"
         category: "language-core"
-        tags: [list find diagnostics reject]
+        tags: [list find regex accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2 3] | find --regex 2'
+            '  [1 2 3] | find --regex 2 | math sum'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "find supports only --invert flag and no named arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-find-invert"
